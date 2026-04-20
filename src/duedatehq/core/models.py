@@ -83,6 +83,65 @@ class Client:
     tax_year: int
     created_at: datetime
     updated_at: datetime
+    client_type: str = "business"
+    legal_name: str | None = None
+    home_jurisdiction: str | None = None
+    primary_contact_name: str | None = None
+    primary_contact_email: str | None = None
+    primary_contact_phone: str | None = None
+    preferred_communication_channel: str | None = None
+    responsible_cpa: str | None = None
+    is_active: bool = True
+
+
+@dataclass(slots=True)
+class ClientTaxProfile:
+    profile_id: str
+    tenant_id: str
+    client_id: str
+    tax_year: int
+    entity_election: str | None
+    first_year_filing: bool | None
+    final_year_filing: bool | None
+    extension_requested: bool | None
+    extension_filed: bool | None
+    estimated_tax_required: bool | None
+    payroll_present: bool | None
+    contractor_reporting_required: bool | None
+    notice_received: bool | None
+    intake_status: str
+    source: str
+    created_at: datetime
+    updated_at: datetime
+
+
+@dataclass(slots=True)
+class ClientJurisdiction:
+    client_jurisdiction_id: str
+    tenant_id: str
+    client_id: str
+    tax_year: int
+    jurisdiction: str
+    jurisdiction_type: str
+    active: bool
+    source: str
+    notes: str | None
+    created_at: datetime
+
+
+@dataclass(slots=True)
+class ClientContact:
+    contact_id: str
+    tenant_id: str
+    client_id: str
+    name: str
+    role: str | None
+    email: str | None
+    phone: str | None
+    preferred_channel: str | None
+    is_primary: bool
+    created_at: datetime
+    updated_at: datetime
 
 
 @dataclass(slots=True)

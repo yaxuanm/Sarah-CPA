@@ -55,7 +55,7 @@ def test_app_wires_executor_and_response_generator(tmp_path):
 
 
 def test_postgres_schema_file_exists_and_has_rls_policies():
-    schema_path = Path("C:/sarah-cpa/db/postgres_schema.sql")
+    schema_path = Path(__file__).resolve().parents[1] / "db" / "postgres_schema.sql"
     schema = schema_path.read_text(encoding="utf-8")
 
     assert schema_path.exists()

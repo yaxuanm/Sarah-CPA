@@ -51,7 +51,7 @@ Returns:
 ### client add
 
 ```bash
-duedatehq client add <tenant_id> <name> --entity <entity_type> --states <csv> --tax-year <year>
+duedatehq client add <tenant_id> <name> --entity <entity_type> --states <csv> --tax-year <year> [--client-type <individual|business>] [--legal-name <name>] [--home-jurisdiction <state>] [--contact-name <name>] [--contact-email <email>] [--contact-phone <phone>] [--preferred-channel <email|sms|slack>] [--responsible-cpa <name>] [--entity-election <value>] [--intake-status <draft|in_progress|ready|needs_followup>] [--profile-source <manual|import|inferred>] [--first-year-filing | --no-first-year-filing] [--final-year-filing | --no-final-year-filing] [--extension-requested | --no-extension-requested] [--extension-filed | --no-extension-filed] [--estimated-tax-required | --no-estimated-tax-required] [--payroll-present | --no-payroll-present] [--contractor-reporting-required | --no-contractor-reporting-required] [--notice-received | --no-notice-received]
 ```
 
 Arguments:
@@ -69,10 +69,48 @@ Arguments:
 - `--tax-year`
   - Required
   - Integer
+- `--client-type`
+  - Optional
+  - Defaults to `business`
+- `--legal-name`
+  - Optional
+- `--home-jurisdiction`
+  - Optional
+  - Resident or home jurisdiction for the client
+- `--contact-name`, `--contact-email`, `--contact-phone`
+  - Optional
+  - Seeds the primary client contact record
+- `--preferred-channel`
+  - Optional
+  - Preferred channel for the primary contact
+- `--responsible-cpa`
+  - Optional
+- `--entity-election`
+  - Optional
+- `--intake-status`
+  - Optional
+  - Defaults to `draft`
+- `--profile-source`
+  - Optional
+  - Defaults to `manual`
+- Annual filing flags
+  - Optional boolean flags stored on the annual tax profile:
+  - `--first-year-filing`
+  - `--final-year-filing`
+  - `--extension-requested`
+  - `--extension-filed`
+  - `--estimated-tax-required`
+  - `--payroll-present`
+  - `--contractor-reporting-required`
+  - `--notice-received`
 
 Behavior:
 
 - Creates a client.
+- Stores stable profile fields on `clients`.
+- Seeds an annual `client_tax_profiles` row for the provided tax year.
+- Seeds resident and operating jurisdictions in `client_jurisdictions`.
+- Creates a primary contact in `client_contacts` when contact details are provided.
 - Automatically generates deadlines from active rules.
 
 Returns:

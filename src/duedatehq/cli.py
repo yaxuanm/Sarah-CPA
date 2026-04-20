@@ -34,6 +34,25 @@ def build_parser() -> argparse.ArgumentParser:
     client_add.add_argument("--entity", required=True)
     client_add.add_argument("--states", required=True)
     client_add.add_argument("--tax-year", type=int, required=True)
+    client_add.add_argument("--client-type", default="business")
+    client_add.add_argument("--legal-name")
+    client_add.add_argument("--home-jurisdiction")
+    client_add.add_argument("--contact-name")
+    client_add.add_argument("--contact-email")
+    client_add.add_argument("--contact-phone")
+    client_add.add_argument("--preferred-channel")
+    client_add.add_argument("--responsible-cpa")
+    client_add.add_argument("--entity-election")
+    client_add.add_argument("--intake-status", default="draft")
+    client_add.add_argument("--profile-source", default="manual")
+    client_add.add_argument("--first-year-filing", action=argparse.BooleanOptionalAction, default=None)
+    client_add.add_argument("--final-year-filing", action=argparse.BooleanOptionalAction, default=None)
+    client_add.add_argument("--extension-requested", action=argparse.BooleanOptionalAction, default=None)
+    client_add.add_argument("--extension-filed", action=argparse.BooleanOptionalAction, default=None)
+    client_add.add_argument("--estimated-tax-required", action=argparse.BooleanOptionalAction, default=None)
+    client_add.add_argument("--payroll-present", action=argparse.BooleanOptionalAction, default=None)
+    client_add.add_argument("--contractor-reporting-required", action=argparse.BooleanOptionalAction, default=None)
+    client_add.add_argument("--notice-received", action=argparse.BooleanOptionalAction, default=None)
     client_update = client_subparsers.add_parser("update-states")
     client_update.add_argument("tenant_id")
     client_update.add_argument("client_id")
@@ -221,6 +240,25 @@ def main() -> int:
                 entity_type=args.entity,
                 registered_states=split_csv(args.states),
                 tax_year=args.tax_year,
+                client_type=args.client_type,
+                legal_name=args.legal_name,
+                home_jurisdiction=args.home_jurisdiction,
+                primary_contact_name=args.contact_name,
+                primary_contact_email=args.contact_email,
+                primary_contact_phone=args.contact_phone,
+                preferred_communication_channel=args.preferred_channel,
+                responsible_cpa=args.responsible_cpa,
+                entity_election=args.entity_election,
+                first_year_filing=args.first_year_filing,
+                final_year_filing=args.final_year_filing,
+                extension_requested=args.extension_requested,
+                extension_filed=args.extension_filed,
+                estimated_tax_required=args.estimated_tax_required,
+                payroll_present=args.payroll_present,
+                contractor_reporting_required=args.contractor_reporting_required,
+                notice_received=args.notice_received,
+                intake_status=args.intake_status,
+                profile_source=args.profile_source,
                 actor="cli",
             )
             print_json({"client_id": client.client_id, "tenant_id": client.tenant_id})
