@@ -12,6 +12,9 @@ from .events import Event, EventType
 from .models import (
     AuditRecord,
     Client,
+    ClientContact,
+    ClientJurisdiction,
+    ClientTaxProfile,
     Deadline,
     DeadlineAction,
     DeadlineStatus,
@@ -90,27 +93,93 @@ class InfrastructureEngine:
         entity_type: str,
         registered_states: list[str],
         tax_year: int,
+        client_type: str = "business",
+        legal_name: str | None = None,
+        home_jurisdiction: str | None = None,
+        primary_contact_name: str | None = None,
+        primary_contact_email: str | None = None,
+        primary_contact_phone: str | None = None,
+        preferred_communication_channel: str | None = None,
+        responsible_cpa: str | None = None,
+        entity_election: str | None = None,
+        first_year_filing: bool | None = None,
+        final_year_filing: bool | None = None,
+        extension_requested: bool | None = None,
+        extension_filed: bool | None = None,
+        estimated_tax_required: bool | None = None,
+        payroll_present: bool | None = None,
+        contractor_reporting_required: bool | None = None,
+        notice_received: bool | None = None,
+        intake_status: str = "draft",
+        profile_source: str = "manual",
         actor: str = "system",
         actor_ip: str = "127.0.0.1",
     ) -> Client:
         now = self.clock.now()
+        normalized_states = sorted({state.upper() for state in registered_states})
+        normalized_home_jurisdiction = home_jurisdiction.upper() if home_jurisdiction else None
         client = Client(
             client_id=str(uuid4()),
             tenant_id=tenant_id,
             name=name,
             entity_type=entity_type.lower(),
-            registered_states=sorted({state.upper() for state in registered_states}),
+            registered_states=normalized_states,
             tax_year=tax_year,
             created_at=now,
             updated_at=now,
+            client_type=client_type.lower(),
+            legal_name=legal_name,
+            home_jurisdiction=normalized_home_jurisdiction,
+            primary_contact_name=primary_contact_name,
+            primary_contact_email=primary_contact_email,
+            primary_contact_phone=primary_contact_phone,
+            preferred_communication_channel=preferred_communication_channel,
+            responsible_cpa=responsible_cpa,
         )
+        tax_profile = ClientTaxProfile(
+            profile_id=str(uuid4()),
+            tenant_id=tenant_id,
+            client_id=client.client_id,
+            tax_year=tax_year,
+            entity_election=entity_election,
+            first_year_filing=first_year_filing,
+            final_year_filing=final_year_filing,
+            extension_requested=extension_requested,
+            extension_filed=extension_filed,
+            estimated_tax_required=estimated_tax_required,
+            payroll_present=payroll_present,
+            contractor_reporting_required=contractor_reporting_required,
+            notice_received=notice_received,
+            intake_status=intake_status,
+            source=profile_source,
+            created_at=now,
+            updated_at=now,
+        )
+        primary_contact = None
+        if primary_contact_name or primary_contact_email or primary_contact_phone:
+            primary_contact = ClientContact(
+                contact_id=str(uuid4()),
+                tenant_id=tenant_id,
+                client_id=client.client_id,
+                name=primary_contact_name or name,
+                role="primary",
+                email=primary_contact_email,
+                phone=primary_contact_phone,
+                preferred_channel=preferred_communication_channel,
+                is_primary=True,
+                created_at=now,
+                updated_at=now,
+            )
         correlation_id = str(uuid4())
         with self._transaction(tenant_id=tenant_id) as conn:
             conn.execute(
                 """
                 INSERT INTO clients (
-                    client_id, tenant_id, name, entity_type, registered_states, tax_year, created_at, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    client_id, tenant_id, name, entity_type, registered_states, tax_year,
+                    client_type, legal_name, home_jurisdiction, primary_contact_name,
+                    primary_contact_email, primary_contact_phone, preferred_communication_channel,
+                    responsible_cpa, is_active, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     client.client_id,
@@ -119,10 +188,30 @@ class InfrastructureEngine:
                     client.entity_type,
                     self.repositories.storage.encode_json(client.registered_states),
                     client.tax_year,
+                    client.client_type,
+                    client.legal_name,
+                    client.home_jurisdiction,
+                    client.primary_contact_name,
+                    client.primary_contact_email,
+                    client.primary_contact_phone,
+                    client.preferred_communication_channel,
+                    client.responsible_cpa,
+                    self._bool_to_db(client.is_active),
                     client.created_at.isoformat(),
                     client.updated_at.isoformat(),
                 ),
             )
+            self._upsert_client_tax_profile(conn, tax_profile)
+            self._sync_client_jurisdictions(
+                conn,
+                tenant_id=tenant_id,
+                client_id=client.client_id,
+                tax_year=client.tax_year,
+                registered_states=client.registered_states,
+                home_jurisdiction=client.home_jurisdiction,
+                source=profile_source,
+            )
+            self._upsert_primary_client_contact(conn, primary_contact)
             self._insert_audit(
                 conn=conn,
                 tenant_id=tenant_id,
@@ -137,6 +226,15 @@ class InfrastructureEngine:
                     "entity_type": client.entity_type,
                     "registered_states": client.registered_states,
                     "tax_year": client.tax_year,
+                    "client_type": client.client_type,
+                    "legal_name": client.legal_name,
+                    "home_jurisdiction": client.home_jurisdiction,
+                    "primary_contact_name": client.primary_contact_name,
+                    "primary_contact_email": client.primary_contact_email,
+                    "primary_contact_phone": client.primary_contact_phone,
+                    "preferred_communication_channel": client.preferred_communication_channel,
+                    "responsible_cpa": client.responsible_cpa,
+                    "intake_status": tax_profile.intake_status,
                 },
                 correlation_id=correlation_id,
             )
@@ -176,6 +274,15 @@ class InfrastructureEngine:
                     "updated_at": now.isoformat(),
                 }
             )
+            self._sync_client_jurisdictions(
+                conn,
+                tenant_id=tenant_id,
+                client_id=client_id,
+                tax_year=client.tax_year,
+                registered_states=normalized_states,
+                home_jurisdiction=client.home_jurisdiction,
+                source="manual",
+            )
             correlation_id = str(uuid4())
             self._insert_audit(
                 conn=conn,
@@ -185,7 +292,7 @@ class InfrastructureEngine:
                 action_type="client_updated",
                 object_type="client",
                 object_id=client_id,
-                before={"registered_states": json.loads(row["registered_states"])},
+                before={"registered_states": self._decode_json_field(row["registered_states"], default=[])},
                 after={"registered_states": normalized_states},
                 correlation_id=correlation_id,
             )
@@ -1327,6 +1434,169 @@ class InfrastructureEngine:
             ),
         )
 
+    def _upsert_client_tax_profile(self, conn, profile: ClientTaxProfile) -> None:
+        conn.execute(
+            """
+            INSERT INTO client_tax_profiles (
+                profile_id, tenant_id, client_id, tax_year, entity_election,
+                first_year_filing, final_year_filing, extension_requested, extension_filed,
+                estimated_tax_required, payroll_present, contractor_reporting_required,
+                notice_received, intake_status, source, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT (client_id, tax_year) DO UPDATE SET
+                entity_election = excluded.entity_election,
+                first_year_filing = excluded.first_year_filing,
+                final_year_filing = excluded.final_year_filing,
+                extension_requested = excluded.extension_requested,
+                extension_filed = excluded.extension_filed,
+                estimated_tax_required = excluded.estimated_tax_required,
+                payroll_present = excluded.payroll_present,
+                contractor_reporting_required = excluded.contractor_reporting_required,
+                notice_received = excluded.notice_received,
+                intake_status = excluded.intake_status,
+                source = excluded.source,
+                updated_at = excluded.updated_at
+            """,
+            (
+                profile.profile_id,
+                profile.tenant_id,
+                profile.client_id,
+                profile.tax_year,
+                profile.entity_election,
+                self._bool_to_db(profile.first_year_filing),
+                self._bool_to_db(profile.final_year_filing),
+                self._bool_to_db(profile.extension_requested),
+                self._bool_to_db(profile.extension_filed),
+                self._bool_to_db(profile.estimated_tax_required),
+                self._bool_to_db(profile.payroll_present),
+                self._bool_to_db(profile.contractor_reporting_required),
+                self._bool_to_db(profile.notice_received),
+                profile.intake_status,
+                profile.source,
+                profile.created_at.isoformat(),
+                profile.updated_at.isoformat(),
+            ),
+        )
+
+    def _sync_client_jurisdictions(
+        self,
+        conn,
+        *,
+        tenant_id: str,
+        client_id: str,
+        tax_year: int,
+        registered_states: list[str],
+        home_jurisdiction: str | None,
+        source: str,
+    ) -> None:
+        conn.execute(
+            """
+            DELETE FROM client_jurisdictions
+            WHERE tenant_id = ? AND client_id = ? AND tax_year = ? AND jurisdiction_type IN ('resident', 'operating')
+            """,
+            (tenant_id, client_id, tax_year),
+        )
+        jurisdictions: list[ClientJurisdiction] = []
+        if home_jurisdiction:
+            jurisdictions.append(
+                ClientJurisdiction(
+                    client_jurisdiction_id=str(uuid4()),
+                    tenant_id=tenant_id,
+                    client_id=client_id,
+                    tax_year=tax_year,
+                    jurisdiction=home_jurisdiction,
+                    jurisdiction_type="resident",
+                    active=True,
+                    source=source,
+                    notes=None,
+                    created_at=self.clock.now(),
+                )
+            )
+        for state in sorted({state.upper() for state in registered_states}):
+            jurisdictions.append(
+                ClientJurisdiction(
+                    client_jurisdiction_id=str(uuid4()),
+                    tenant_id=tenant_id,
+                    client_id=client_id,
+                    tax_year=tax_year,
+                    jurisdiction=state,
+                    jurisdiction_type="operating",
+                    active=True,
+                    source=source,
+                    notes=None,
+                    created_at=self.clock.now(),
+                )
+            )
+        for jurisdiction in jurisdictions:
+            conn.execute(
+                """
+                INSERT INTO client_jurisdictions (
+                    client_jurisdiction_id, tenant_id, client_id, tax_year, jurisdiction,
+                    jurisdiction_type, active, source, notes, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT (client_id, tax_year, jurisdiction, jurisdiction_type) DO UPDATE SET
+                    active = excluded.active,
+                    source = excluded.source,
+                    notes = excluded.notes
+                """,
+                (
+                    jurisdiction.client_jurisdiction_id,
+                    jurisdiction.tenant_id,
+                    jurisdiction.client_id,
+                    jurisdiction.tax_year,
+                    jurisdiction.jurisdiction,
+                    jurisdiction.jurisdiction_type,
+                    self._bool_to_db(jurisdiction.active),
+                    jurisdiction.source,
+                    jurisdiction.notes,
+                    jurisdiction.created_at.isoformat(),
+                ),
+            )
+
+    def _upsert_primary_client_contact(self, conn, contact: ClientContact | None) -> None:
+        if contact is None:
+            return
+        conn.execute(
+            "DELETE FROM client_contacts WHERE tenant_id = ? AND client_id = ? AND is_primary = ?",
+            (contact.tenant_id, contact.client_id, self._bool_to_db(True)),
+        )
+        conn.execute(
+            """
+            INSERT INTO client_contacts (
+                contact_id, tenant_id, client_id, name, role, email, phone,
+                preferred_channel, is_primary, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                contact.contact_id,
+                contact.tenant_id,
+                contact.client_id,
+                contact.name,
+                contact.role,
+                contact.email,
+                contact.phone,
+                contact.preferred_channel,
+                self._bool_to_db(contact.is_primary),
+                contact.created_at.isoformat(),
+                contact.updated_at.isoformat(),
+            ),
+        )
+
+    def _bool_to_db(self, value: bool | None) -> bool | int | None:
+        if value is None:
+            return None
+        storage = self.repositories.storage
+        if storage.__class__.__name__ == "SQLiteStorage":
+            return int(value)
+        return value
+
+    def _decode_json_field(self, value: object, default: object) -> object:
+        if value is None:
+            return default
+        if isinstance(value, str):
+            return json.loads(value)
+        return value
+
     def _rule_matches_client(self, rule: RuleRecord, client: Client) -> bool:
         if client.entity_type not in rule.entity_types:
             return False
@@ -1338,10 +1608,19 @@ class InfrastructureEngine:
             tenant_id=row["tenant_id"],
             name=row["name"],
             entity_type=row["entity_type"],
-            registered_states=json.loads(row["registered_states"]),
+            registered_states=self._decode_json_field(row["registered_states"], default=[]),
             tax_year=row["tax_year"],
             created_at=self._parse_datetime(row["created_at"]),
             updated_at=self._parse_datetime(row["updated_at"]),
+            client_type=row.get("client_type", "business"),
+            legal_name=row.get("legal_name"),
+            home_jurisdiction=row.get("home_jurisdiction"),
+            primary_contact_name=row.get("primary_contact_name"),
+            primary_contact_email=row.get("primary_contact_email"),
+            primary_contact_phone=row.get("primary_contact_phone"),
+            preferred_communication_channel=row.get("preferred_communication_channel"),
+            responsible_cpa=row.get("responsible_cpa"),
+            is_active=bool(row.get("is_active", True)),
         )
 
     def _rule_from_row(self, row: dict) -> RuleRecord:

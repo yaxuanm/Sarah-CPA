@@ -42,9 +42,73 @@ class SQLiteStorage:
                     entity_type TEXT NOT NULL,
                     registered_states TEXT NOT NULL,
                     tax_year INTEGER NOT NULL,
+                    client_type TEXT NOT NULL DEFAULT 'business',
+                    legal_name TEXT,
+                    home_jurisdiction TEXT,
+                    primary_contact_name TEXT,
+                    primary_contact_email TEXT,
+                    primary_contact_phone TEXT,
+                    preferred_communication_channel TEXT,
+                    responsible_cpa TEXT,
+                    is_active INTEGER NOT NULL DEFAULT 1,
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL,
                     FOREIGN KEY (tenant_id) REFERENCES tenants(tenant_id)
+                );
+
+                CREATE TABLE IF NOT EXISTS client_tax_profiles (
+                    profile_id TEXT PRIMARY KEY,
+                    tenant_id TEXT NOT NULL,
+                    client_id TEXT NOT NULL,
+                    tax_year INTEGER NOT NULL,
+                    entity_election TEXT,
+                    first_year_filing INTEGER,
+                    final_year_filing INTEGER,
+                    extension_requested INTEGER,
+                    extension_filed INTEGER,
+                    estimated_tax_required INTEGER,
+                    payroll_present INTEGER,
+                    contractor_reporting_required INTEGER,
+                    notice_received INTEGER,
+                    intake_status TEXT NOT NULL,
+                    source TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    UNIQUE (client_id, tax_year),
+                    FOREIGN KEY (tenant_id) REFERENCES tenants(tenant_id),
+                    FOREIGN KEY (client_id) REFERENCES clients(client_id)
+                );
+
+                CREATE TABLE IF NOT EXISTS client_jurisdictions (
+                    client_jurisdiction_id TEXT PRIMARY KEY,
+                    tenant_id TEXT NOT NULL,
+                    client_id TEXT NOT NULL,
+                    tax_year INTEGER NOT NULL,
+                    jurisdiction TEXT NOT NULL,
+                    jurisdiction_type TEXT NOT NULL,
+                    active INTEGER NOT NULL,
+                    source TEXT NOT NULL,
+                    notes TEXT,
+                    created_at TEXT NOT NULL,
+                    UNIQUE (client_id, tax_year, jurisdiction, jurisdiction_type),
+                    FOREIGN KEY (tenant_id) REFERENCES tenants(tenant_id),
+                    FOREIGN KEY (client_id) REFERENCES clients(client_id)
+                );
+
+                CREATE TABLE IF NOT EXISTS client_contacts (
+                    contact_id TEXT PRIMARY KEY,
+                    tenant_id TEXT NOT NULL,
+                    client_id TEXT NOT NULL,
+                    name TEXT NOT NULL,
+                    role TEXT,
+                    email TEXT,
+                    phone TEXT,
+                    preferred_channel TEXT,
+                    is_primary INTEGER NOT NULL,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    FOREIGN KEY (tenant_id) REFERENCES tenants(tenant_id),
+                    FOREIGN KEY (client_id) REFERENCES clients(client_id)
                 );
 
                 CREATE TABLE IF NOT EXISTS rules (
@@ -207,6 +271,7 @@ class SQLiteStorage:
                 END;
                 """
             )
+            self._ensure_clients_columns(conn)
 
     @contextmanager
     def transaction(self, tenant_id: str | None = None) -> Iterator[sqlite3.Connection]:
@@ -227,3 +292,23 @@ class SQLiteStorage:
     @contextmanager
     def tenant_context(self, connection: sqlite3.Connection, tenant_id: str | None):
         yield connection
+
+    def _ensure_clients_columns(self, conn: sqlite3.Connection) -> None:
+        existing_columns = {
+            row["name"]
+            for row in conn.execute("PRAGMA table_info(clients)").fetchall()
+        }
+        expected_columns = {
+            "client_type": "TEXT NOT NULL DEFAULT 'business'",
+            "legal_name": "TEXT",
+            "home_jurisdiction": "TEXT",
+            "primary_contact_name": "TEXT",
+            "primary_contact_email": "TEXT",
+            "primary_contact_phone": "TEXT",
+            "preferred_communication_channel": "TEXT",
+            "responsible_cpa": "TEXT",
+            "is_active": "INTEGER NOT NULL DEFAULT 1",
+        }
+        for column_name, column_def in expected_columns.items():
+            if column_name not in existing_columns:
+                conn.execute(f"ALTER TABLE clients ADD COLUMN {column_name} {column_def}")
