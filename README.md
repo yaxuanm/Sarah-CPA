@@ -1,1 +1,97 @@
 # Sarah-CPA
+
+DueDateHQ first-phase infrastructure, validated without any frontend.
+
+## What Works
+
+- Rule ingestion into an append-preserving rule table with supersession tracking
+- Low-confidence rule routing into a manual review queue
+- Client-to-rule mapping into concrete deadlines
+- Reminder queue generation and rebuild on deadline changes
+- Deadline state machine with transition history
+- Append-only audit log enforced by database triggers
+- CLI commands for create/list/update/export flows
+
+## Database
+
+By default the CLI writes to `.duedatehq/duedatehq.sqlite3` in the repo root.
+
+You can also set `DUEDATEHQ_DATABASE_URL` instead of passing `--db`.
+
+Use another database file with:
+
+```bash
+python -m duedatehq.cli --db C:\path\to\test.sqlite3 ...
+```
+
+For a PostgreSQL-backed app, pass a DSN instead:
+
+```bash
+python -m duedatehq.cli --db postgresql://user:pass@localhost:5432/duedatehq tenant add "Acme Tenant"
+python -m duedatehq.cli --db postgresql://user:pass@localhost:5432/duedatehq db init
+python -m duedatehq.cli --db postgresql://user:pass@localhost:5432/duedatehq db status
+python -m duedatehq.cli --db postgresql://user:pass@localhost:5432/duedatehq db rls-check
+```
+
+The PostgreSQL schema and RLS policies live in:
+
+```bash
+db/postgres_schema.sql
+```
+
+That schema includes:
+
+- tenant-scoped tables with `tenant_id`
+- row-level security policies for tenant-bound tables
+- append-only audit log triggers
+- helper SQL functions to require `app.tenant_id`
+
+## CLI
+
+```bash
+python -m duedatehq.cli tenant add "Acme Tenant"
+python -m duedatehq.cli fetch --list-sources --all
+python -m duedatehq.cli fetch --source irs --text-file notice.txt --source-url https://irs.gov/example
+python -m duedatehq.cli worker fetch --source irs --text-file notice.txt --source-url https://irs.gov/example
+python -m duedatehq.cli worker fetch --source irs --url https://irs.gov/newsroom/example
+python -m duedatehq.cli worker fetch --source federal_register --rss-url https://example.com/feed.xml --entry-title-contains deadline
+python -m duedatehq.cli rule add --tax-type franchise_tax --jurisdiction CA --entity-types s-corp --deadline-date 2026-04-20 --effective-from 2026-01-01 --source-url https://ftb.ca.gov/rule
+python -m duedatehq.cli client add <tenant_id> "Acme LLC" --entity s-corp --states TX,CA,DE --tax-year 2026
+python -m duedatehq.cli deadline list <tenant_id> --client <client_id> --show-reminders
+python -m duedatehq.cli deadline action <tenant_id> <deadline_id> complete --actor user-1
+python -m duedatehq.cli today <tenant_id>
+python -m duedatehq.cli notify preview <tenant_id> --within-days 14
+python -m duedatehq.cli notify history <tenant_id>
+python -m duedatehq.cli worker schedule-reminders <tenant_id> --hours 24
+python -m duedatehq.cli worker jobs --tenant-id <tenant_id>
+python -m duedatehq.cli log --tenant-id <tenant_id>
+```
+
+For raw text ingestion:
+
+```bash
+python -m duedatehq.cli rule ingest-text --source-url https://irs.gov/example --text-file notice.txt
+python -m duedatehq.cli rule review-queue
+```
+
+## Worker Boundaries
+
+- `FetchWorker`: wraps a fetcher and pushes documents through rule ingestion
+- `ReminderScheduler`: batches the next time window of reminder jobs into a queue
+- `ReminderWorker`: drains queued reminder jobs and marks due reminders as triggered
+- `PersistentJobQueue`: stores worker jobs in the database instead of process memory
+
+Reminder reads now default to the current active queue. Historical cancelled reminders remain in the database and surface through history-oriented views such as `notify history`.
+
+## Verification
+
+```bash
+python -m pytest -q
+```
+
+For PostgreSQL integration verification:
+
+```bash
+$env:DUEDATEHQ_TEST_POSTGRES_DSN="postgresql://user:pass@localhost:5432/duedatehq_test"
+python -m pytest -q tests/test_postgres_integration.py
+```
