@@ -147,3 +147,26 @@ def test_executor_raises_entity_not_found(app):
                 "op_class": "read",
             }
         )
+
+
+def test_executor_assigns_step_ids_when_missing(app):
+    tenant = _seed_executor_data(app)
+    executor = PlanExecutor(app.engine)
+
+    result = executor.execute(
+        {
+            "plan": [
+                {
+                    "type": "cli_call",
+                    "cli_group": "today",
+                    "cli_command": "today",
+                    "args": {"tenant_id": tenant.tenant_id, "limit": 5, "enrich": True},
+                }
+            ],
+            "intent_label": "today",
+            "op_class": "read",
+        }
+    )
+
+    assert result["steps_executed"] == ["s1"]
+    assert result["meta"]["total"] >= 1

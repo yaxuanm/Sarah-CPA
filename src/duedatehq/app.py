@@ -8,8 +8,11 @@ from .core.bus import InMemoryEventBus
 from .core.clock import SystemClock
 from .core.conversation import ConversationService
 from .core.engine import InfrastructureEngine
+from .core.executor import PlanExecutor
+from .core.interaction_backend import InteractionBackend
 from .core.postgres import PostgresStorage
 from .core.repositories import Repositories
+from .core.response_generator import ResponseGenerator
 from .core.storage import SQLiteStorage
 
 
@@ -17,6 +20,9 @@ from .core.storage import SQLiteStorage
 class App:
     engine: InfrastructureEngine
     conversation: ConversationService
+    executor: PlanExecutor
+    response_generator: ResponseGenerator
+    interaction_backend: InteractionBackend
 
 
 def create_app(db_path: str | None = None) -> App:
@@ -29,7 +35,16 @@ def create_app(db_path: str | None = None) -> App:
         clock=clock,
     )
     conversation = ConversationService(engine)
-    return App(engine=engine, conversation=conversation)
+    executor = PlanExecutor(engine)
+    response_generator = ResponseGenerator(engine)
+    interaction_backend = InteractionBackend(executor, response_generator)
+    return App(
+        engine=engine,
+        conversation=conversation,
+        executor=executor,
+        response_generator=response_generator,
+        interaction_backend=interaction_backend,
+    )
 
 
 def build_storage(db_path: str | None = None):

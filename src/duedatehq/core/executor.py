@@ -26,7 +26,7 @@ class PlanExecutor:
         self.engine = engine
 
     def execute(self, plan: dict[str, Any]) -> dict[str, Any]:
-        steps = plan.get("plan", [])
+        steps = self._normalize_steps(plan.get("plan", []))
         results: dict[str, Any] = {}
         bindings: dict[str, Any] = {}
         errors: list[dict[str, Any]] = []
@@ -66,6 +66,14 @@ class PlanExecutor:
             "meta": meta,
             "errors": errors,
         }
+
+    def _normalize_steps(self, steps: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        normalized: list[dict[str, Any]] = []
+        for index, step in enumerate(steps, start=1):
+            payload = dict(step)
+            payload.setdefault("step_id", f"s{index}")
+            normalized.append(payload)
+        return normalized
 
     def _execute_step(
         self,

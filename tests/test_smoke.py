@@ -9,7 +9,7 @@ import types
 
 import pytest
 
-from duedatehq.api import chat as api_chat
+from duedatehq.api import chat as api_chat, process_action as api_process_action, process_plan as api_process_plan
 from duedatehq.app import build_storage, create_app
 from duedatehq.cli import main as cli_main
 from duedatehq.core.conversation import InteractionMode
@@ -45,6 +45,13 @@ def test_storage_selector_supports_env_var(monkeypatch, tmp_path):
 
     assert storage.__class__.__name__ == "SQLiteStorage"
     assert str(storage.db_path).endswith("env.sqlite3")
+
+
+def test_app_wires_executor_and_response_generator(tmp_path):
+    app = create_app(str(tmp_path / "wired.sqlite3"))
+
+    assert app.executor.engine is app.engine
+    assert app.response_generator.engine is app.engine
 
 
 def test_postgres_schema_file_exists_and_has_rls_policies():
@@ -672,6 +679,99 @@ def test_api_chat_returns_reply_and_render_block(tmp_path):
     assert response["intent"] == "deadlines"
     assert response["render_blocks"][0]["block_type"] == "deadlines"
     assert response["render_blocks"][0]["items"]
+
+
+def test_api_process_plan_returns_structured_response(tmp_path):
+    db_path = str(tmp_path / "plan.sqlite3")
+    app = create_app(db_path)
+    tenant = app.engine.create_tenant("Tenant A")
+    app.engine.create_rule(
+        tax_type="federal_income",
+        jurisdiction="FEDERAL",
+        entity_types=["s-corp"],
+        deadline_date="2026-04-25",
+        effective_from="2026-01-01",
+        source_url="https://irs.gov/r1",
+        confidence_score=0.99,
+    )
+    app.engine.register_client(
+        tenant_id=tenant.tenant_id,
+        name="Acme LLC",
+        entity_type="s-corp",
+        registered_states=["CA"],
+        tax_year=2026,
+    )
+
+    response = api_process_plan(
+        {
+            "plan": [
+                {
+                    "step_id": "s1",
+                    "type": "cli_call",
+                    "cli_group": "today",
+                    "cli_command": "today",
+                    "args": {"tenant_id": tenant.tenant_id, "limit": 5, "enrich": True},
+                }
+            ],
+            "intent_label": "today",
+            "op_class": "read",
+        },
+        tenant_id=tenant.tenant_id,
+        db_path=db_path,
+        session_id="session-api-1",
+        today="2026-04-20",
+    )
+
+    assert response["status"] == "ok"
+    assert response["view"]["type"] == "ListCard"
+    assert response["session_id"] == "session-api-1"
+
+
+def test_api_process_action_executes_and_refreshes_today(tmp_path):
+    db_path = str(tmp_path / "action.sqlite3")
+    app = create_app(db_path)
+    tenant = app.engine.create_tenant("Tenant A")
+    app.engine.create_rule(
+        tax_type="franchise_tax",
+        jurisdiction="CA",
+        entity_types=["s-corp"],
+        deadline_date="2026-04-25",
+        effective_from="2026-01-01",
+        source_url="https://ftb.ca.gov/r1",
+        confidence_score=0.99,
+    )
+    client = app.engine.register_client(
+        tenant_id=tenant.tenant_id,
+        name="Acme LLC",
+        entity_type="s-corp",
+        registered_states=["CA"],
+        tax_year=2026,
+    )
+    deadline = app.engine.list_deadlines(tenant.tenant_id, client.client_id)[0]
+
+    response = api_process_action(
+        {
+            "plan": [
+                {
+                    "step_id": "s1",
+                    "type": "cli_call",
+                    "cli_group": "deadline",
+                    "cli_command": "action",
+                    "args": {"tenant_id": tenant.tenant_id, "deadline_id": deadline.deadline_id, "action": "complete"},
+                }
+            ],
+            "intent_label": "deadline_action_complete",
+            "op_class": "write",
+        },
+        tenant_id=tenant.tenant_id,
+        db_path=db_path,
+        session_id="session-api-2",
+        today="2026-04-20",
+    )
+
+    assert response["status"] == "ok"
+    assert response["view"]["type"] == "ListCard"
+    assert response["session_id"] == "session-api-2"
 
 
 def test_state_machine_and_audit_protections(app):

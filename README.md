@@ -15,6 +15,7 @@ DueDateHQ first-phase infrastructure, validated without any frontend.
 - Notification delivery routing for email, SMS, and Slack
 - Celery dispatch hooks for fetch, reminder scheduling, and notification delivery
 - Interactive chat mode with text-first realtime view rendering and a voice-ready input mode
+- Structured plan execution pipeline: executor, response generator, and interaction backend
 - CLI commands for create/list/update/export/worker flows
 
 ## Database
@@ -124,6 +125,32 @@ The current render contract is:
 
 - one short language conclusion
 - one or more structured render blocks such as `Today`, `Deadlines`, `Rule Review Queue`, or `Pending Notifications`
+
+## Structured Interaction Backend
+
+The repo now includes deterministic interaction primitives for the v5 guide:
+
+- `PlanExecutor`: executes `cli_call`, `resolve_entity`, `foreach`, and `post_filter` plan steps
+- `ResponseGenerator`: turns executor output into frontend payloads such as `ListCard`, `ClientCard`, `ConfirmCard`, and `GuidanceCard`
+- `InteractionBackend`: routes read plans, write plans, and confirmed actions through the executor/renderer pipeline
+
+The programmatic entry points live in `duedatehq.api`:
+
+- `process_plan(...)`
+- `process_action(...)`
+- `chat(...)`
+
+These are intended for small-scale interaction and LLM smoke testing before a dedicated frontend or HTTP transport is added.
+
+## Small Demo Data
+
+A minimal demo seed script is available for local testing:
+
+```bash
+C:\sarah-cpa\.tools\python\3.11.9\python.exe scripts\seed_small_demo.py
+```
+
+It creates one demo tenant with a few rules, three clients, several deadlines, a small amount of history, and one notification route. The script is idempotent for the demo tenant name.
 
 ## Verification
 
