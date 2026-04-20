@@ -61,6 +61,16 @@ Branch:
   - model-generated plan JSON
   - local execution through `process_plan(...)`
 
+### Interaction vNext Framing
+
+- added `docs/interactive-rendering-vnext.md`
+- documented the next-step product direction beyond command translation:
+  - work-product generation
+  - task-specific workspaces
+  - managed multi-step flows
+  - strategy-aware recommendations
+  - controlled self-extension under guardrails
+
 ## Latest Local Verification
 
 The following targeted test groups passed locally:

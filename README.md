@@ -142,6 +142,10 @@ The programmatic entry points live in `duedatehq.api`:
 
 These are intended for small-scale interaction and LLM smoke testing before a dedicated frontend or HTTP transport is added.
 
+For the next-step interaction direction, see:
+
+- `docs/interactive-rendering-vnext.md`
+
 ## Small Demo Data
 
 A minimal demo seed script is available for local testing:
