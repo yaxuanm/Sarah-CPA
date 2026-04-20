@@ -16,6 +16,10 @@ from .models import (
     DeadlineAction,
     DeadlineStatus,
     DeadlineTransition,
+    NotificationChannel,
+    NotificationDelivery,
+    NotificationRoute,
+    NotificationStatus,
     Reminder,
     ReminderStatus,
     ReminderType,
@@ -411,12 +415,12 @@ class InfrastructureEngine:
                 after={"tax_type": rule.tax_type, "jurisdiction": rule.jurisdiction, "deadline_date": rule.deadline_date},
                 correlation_id=correlation_id,
             )
-            self._refresh_deadlines_for_rule(conn, rule, correlation_id, actor, actor_ip)
         self._publish(
             EventType.RULE_CHANGED,
             {"rule_id": rule.rule_id, "jurisdiction": rule.jurisdiction, "deadline_date": rule.deadline_date},
             actor,
         )
+        self._refresh_deadlines_for_rule(rule, correlation_id, actor, actor_ip)
         return rule
 
     def list_rules(self) -> list[RuleRecord]:
@@ -585,12 +589,94 @@ class InfrastructureEngine:
             rows = conn.execute(query, params).fetchall()
         return [self._reminder_from_row(dict(row)) for row in rows]
 
-    def trigger_due_reminders(self, now: datetime | None = None) -> int:
-        now = now or self.clock.now()
-        with self._transaction() as conn:
+    def configure_notification_route(
+        self,
+        tenant_id: str,
+        channel: NotificationChannel,
+        destination: str,
+        *,
+        enabled: bool = True,
+        actor: str = "system",
+        actor_ip: str = "127.0.0.1",
+    ) -> NotificationRoute:
+        route = NotificationRoute(
+            route_id=str(uuid4()),
+            tenant_id=tenant_id,
+            channel=channel,
+            destination=destination,
+            enabled=enabled,
+            created_at=self.clock.now(),
+        )
+        with self._transaction(tenant_id=tenant_id) as conn:
+            conn.execute(
+                """
+                INSERT INTO notification_routes (
+                    route_id, tenant_id, channel, destination, enabled, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    route.route_id,
+                    route.tenant_id,
+                    route.channel.value,
+                    route.destination,
+                    1 if route.enabled else 0,
+                    route.created_at.isoformat(),
+                ),
+            )
+            self._insert_audit(
+                conn=conn,
+                tenant_id=tenant_id,
+                actor=actor,
+                actor_ip=actor_ip,
+                action_type="notification_route_created",
+                object_type="notification_route",
+                object_id=route.route_id,
+                before={},
+                after={"channel": route.channel.value, "destination": route.destination, "enabled": route.enabled},
+                correlation_id=str(uuid4()),
+            )
+        return route
+
+    def list_notification_routes(self, tenant_id: str) -> list[NotificationRoute]:
+        with self._connect(tenant_id=tenant_id) as conn:
             rows = conn.execute(
-                "SELECT * FROM reminders WHERE status = ? AND scheduled_at <= ? ORDER BY scheduled_at",
-                (ReminderStatus.SCHEDULED.value, now.isoformat()),
+                "SELECT * FROM notification_routes WHERE tenant_id = ? ORDER BY created_at",
+                (tenant_id,),
+            ).fetchall()
+        return [self._notification_route_from_row(dict(row)) for row in rows]
+
+    def list_notification_deliveries(
+        self,
+        tenant_id: str,
+        deadline_id: str | None = None,
+        *,
+        pending_only: bool = False,
+    ) -> list[NotificationDelivery]:
+        query = "SELECT * FROM notification_deliveries WHERE tenant_id = ?"
+        params: list[object] = [tenant_id]
+        if deadline_id:
+            query += " AND deadline_id = ?"
+            params.append(deadline_id)
+        if pending_only:
+            query += " AND status = ?"
+            params.append(NotificationStatus.PENDING.value)
+        query += " ORDER BY created_at"
+        with self._connect(tenant_id=tenant_id) as conn:
+            rows = conn.execute(query, params).fetchall()
+        return [self._notification_delivery_from_row(dict(row)) for row in rows]
+
+    def trigger_due_reminders(self, now: datetime | None = None, tenant_id: str | None = None) -> int:
+        now = now or self.clock.now()
+        query = "SELECT * FROM reminders WHERE status = ? AND scheduled_at <= ?"
+        params: list[object] = [ReminderStatus.SCHEDULED.value, now.isoformat()]
+        if tenant_id:
+            query += " AND tenant_id = ?"
+            params.append(tenant_id)
+        query += " ORDER BY scheduled_at"
+        with self._transaction(tenant_id=tenant_id) as conn:
+            rows = conn.execute(
+                query,
+                params,
             ).fetchall()
             for row in rows:
                 conn.execute(
@@ -602,7 +688,66 @@ class InfrastructureEngine:
                     {"tenant_id": row["tenant_id"], "deadline_id": row["deadline_id"], "reminder_id": row["reminder_id"]},
                     "scheduler",
                 )
+                self._queue_notification_deliveries(
+                    conn=conn,
+                    reminder=self._reminder_from_row(dict({**dict(row), "status": ReminderStatus.TRIGGERED.value, "triggered_at": now.isoformat()})),
+                    actor="scheduler",
+                    actor_ip="127.0.0.1",
+                )
         return len(rows)
+
+    def dispatch_notification_deliveries(
+        self,
+        tenant_id: str,
+        notifier_registry,
+        *,
+        actor: str = "system",
+        actor_ip: str = "127.0.0.1",
+    ) -> int:
+        deliveries = self.list_notification_deliveries(tenant_id, pending_only=True)
+        sent = 0
+        for delivery in deliveries:
+            notifier = notifier_registry.get(delivery.channel)
+            status = NotificationStatus.SENT
+            provider_message_id = None
+            error_message = None
+            sent_at = self.clock.now()
+            try:
+                provider_message_id = notifier.send(delivery)
+            except Exception as exc:
+                status = NotificationStatus.FAILED
+                error_message = str(exc)
+                sent_at = None
+            with self._transaction(tenant_id=tenant_id) as conn:
+                conn.execute(
+                    """
+                    UPDATE notification_deliveries
+                    SET status = ?, provider_message_id = ?, error_message = ?, sent_at = ?
+                    WHERE delivery_id = ?
+                    """,
+                    (
+                        status.value,
+                        provider_message_id,
+                        error_message,
+                        sent_at.isoformat() if sent_at else None,
+                        delivery.delivery_id,
+                    ),
+                )
+                self._insert_audit(
+                    conn=conn,
+                    tenant_id=tenant_id,
+                    actor=actor,
+                    actor_ip=actor_ip,
+                    action_type="notification_delivery_updated",
+                    object_type="notification_delivery",
+                    object_id=delivery.delivery_id,
+                    before={"status": NotificationStatus.PENDING.value},
+                    after={"status": status.value, "channel": delivery.channel.value},
+                    correlation_id=str(uuid4()),
+                )
+            if status is NotificationStatus.SENT:
+                sent += 1
+        return sent
 
     def export_deadlines(self, tenant_id: str, actor: str, actor_ip: str = "127.0.0.1") -> list[dict[str, object]]:
         deadlines = self.list_deadlines(tenant_id)
@@ -683,7 +828,7 @@ class InfrastructureEngine:
         ]
 
     def list_clients(self, tenant_id: str) -> list[Client]:
-        with self._connect() as conn:
+        with self._connect(tenant_id=tenant_id) as conn:
             rows = conn.execute("SELECT * FROM clients WHERE tenant_id = ? ORDER BY created_at", (tenant_id,)).fetchall()
         return [self._client_from_row(dict(row)) for row in rows]
 
@@ -742,6 +887,87 @@ class InfrastructureEngine:
         reminders.sort(key=lambda item: item.scheduled_at)
         return reminders
 
+    def _queue_notification_deliveries(self, conn, reminder: Reminder, actor: str, actor_ip: str) -> None:
+        routes = conn.execute(
+            "SELECT * FROM notification_routes WHERE tenant_id = ? AND enabled = 1 ORDER BY created_at",
+            (reminder.tenant_id,),
+        ).fetchall()
+        if not routes:
+            return
+        deadline_row = conn.execute(
+            "SELECT * FROM deadlines WHERE deadline_id = ?",
+            (reminder.deadline_id,),
+        ).fetchone()
+        client_row = conn.execute(
+            "SELECT * FROM clients WHERE client_id = ?",
+            (reminder.client_id,),
+        ).fetchone()
+        if deadline_row is None or client_row is None:
+            return
+        deadline = self._deadline_from_row(dict(deadline_row))
+        client = self._client_from_row(dict(client_row))
+        for route_row in routes:
+            route = self._notification_route_from_row(dict(route_row))
+            delivery = NotificationDelivery(
+                delivery_id=str(uuid4()),
+                tenant_id=reminder.tenant_id,
+                client_id=reminder.client_id,
+                deadline_id=reminder.deadline_id,
+                reminder_id=reminder.reminder_id,
+                channel=route.channel,
+                destination=route.destination,
+                subject=f"{client.name}: {deadline.tax_type} due {deadline.due_date}",
+                body=self._build_notification_body(client, deadline, reminder),
+                status=NotificationStatus.PENDING,
+                provider_message_id=None,
+                error_message=None,
+                created_at=self.clock.now(),
+                sent_at=None,
+            )
+            conn.execute(
+                """
+                INSERT INTO notification_deliveries (
+                    delivery_id, tenant_id, client_id, deadline_id, reminder_id, channel, destination,
+                    subject, body, status, provider_message_id, error_message, created_at, sent_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?, NULL)
+                """,
+                (
+                    delivery.delivery_id,
+                    delivery.tenant_id,
+                    delivery.client_id,
+                    delivery.deadline_id,
+                    delivery.reminder_id,
+                    delivery.channel.value,
+                    delivery.destination,
+                    delivery.subject,
+                    delivery.body,
+                    delivery.status.value,
+                    delivery.created_at.isoformat(),
+                ),
+            )
+            self._insert_audit(
+                conn=conn,
+                tenant_id=delivery.tenant_id,
+                actor=actor,
+                actor_ip=actor_ip,
+                action_type="notification_delivery_created",
+                object_type="notification_delivery",
+                object_id=delivery.delivery_id,
+                before={},
+                after={"channel": delivery.channel.value, "destination": delivery.destination, "deadline_id": delivery.deadline_id},
+                correlation_id=str(uuid4()),
+            )
+
+    def _build_notification_body(self, client: Client, deadline: Deadline, reminder: Reminder) -> str:
+        return (
+            f"Client: {client.name}\n"
+            f"Tax type: {deadline.tax_type}\n"
+            f"Jurisdiction: {deadline.jurisdiction}\n"
+            f"Due date: {deadline.due_date}\n"
+            f"Reminder: {reminder.reminder_day}\n"
+            "Actions: complete / snooze / waive"
+        )
+
     def _queue_rule_review(
         self,
         parsed: RuleParseResult,
@@ -777,12 +1003,20 @@ class InfrastructureEngine:
             )
         return item
 
-    def _refresh_deadlines_for_rule(self, conn, rule: RuleRecord, correlation_id: str, actor: str, actor_ip: str) -> None:
-        rows = conn.execute("SELECT * FROM clients ORDER BY created_at").fetchall()
-        for row in rows:
-            client = self._client_from_row(dict(row))
-            if self._rule_matches_client(rule, client):
-                self._upsert_deadline_from_rule(conn, client, rule, correlation_id, actor, actor_ip)
+    def _refresh_deadlines_for_rule(self, rule: RuleRecord, correlation_id: str, actor: str, actor_ip: str) -> None:
+        with self._connect() as conn:
+            tenant_rows = conn.execute("SELECT tenant_id FROM tenants WHERE is_deleted = 0 ORDER BY created_at").fetchall()
+        for tenant_row in tenant_rows:
+            tenant_id = tenant_row["tenant_id"]
+            with self._transaction(tenant_id=tenant_id) as tenant_conn:
+                rows = tenant_conn.execute(
+                    "SELECT * FROM clients WHERE tenant_id = ? ORDER BY created_at",
+                    (tenant_id,),
+                ).fetchall()
+                for row in rows:
+                    client = self._client_from_row(dict(row))
+                    if self._rule_matches_client(rule, client):
+                        self._upsert_deadline_from_rule(tenant_conn, client, rule, correlation_id, actor, actor_ip)
 
     def _upsert_deadlines_for_client(self, conn, client: Client, correlation_id: str, actor: str, actor_ip: str) -> None:
         rows = conn.execute("SELECT * FROM rules WHERE status = ?", (RuleStatus.ACTIVE.value,)).fetchall()
@@ -1106,6 +1340,34 @@ class InfrastructureEngine:
             reminder_type=ReminderType(row["reminder_type"]),
             responded_at=self._parse_datetime(row["responded_at"]) if row["responded_at"] else None,
             response=row["response"],
+        )
+
+    def _notification_route_from_row(self, row: dict) -> NotificationRoute:
+        return NotificationRoute(
+            route_id=row["route_id"],
+            tenant_id=row["tenant_id"],
+            channel=NotificationChannel(row["channel"]),
+            destination=row["destination"],
+            enabled=bool(row["enabled"]),
+            created_at=self._parse_datetime(row["created_at"]),
+        )
+
+    def _notification_delivery_from_row(self, row: dict) -> NotificationDelivery:
+        return NotificationDelivery(
+            delivery_id=row["delivery_id"],
+            tenant_id=row["tenant_id"],
+            client_id=row["client_id"],
+            deadline_id=row["deadline_id"],
+            reminder_id=row["reminder_id"],
+            channel=NotificationChannel(row["channel"]),
+            destination=row["destination"],
+            subject=row["subject"],
+            body=row["body"],
+            status=NotificationStatus(row["status"]),
+            provider_message_id=row["provider_message_id"],
+            error_message=row["error_message"],
+            created_at=self._parse_datetime(row["created_at"]),
+            sent_at=self._parse_datetime(row["sent_at"]) if row["sent_at"] else None,
         )
 
     def _publish(self, event_type: EventType, payload: dict, source: str) -> None:

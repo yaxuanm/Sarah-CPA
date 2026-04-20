@@ -7,10 +7,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from .app import build_storage, create_app
+from .core.dispatchers import CeleryDispatcher
 from .core.postgres import PostgresStorage
-from .core.models import DeadlineAction
-from .core.fetchers import FileFetcher
-from .core.fetchers import HttpTextFetcher, RssEntryFetcher
+from .core.fetchers import FileFetcher, HtmlFetcher, HttpTextFetcher, PdfFetcher, RssEntryFetcher, fetcher_for_source
+from .core.models import DeadlineAction, NotificationChannel
+from .core.notifiers import ConsoleNotifier, JsonWebhookNotifier, NotifierRegistry, SMTPEmailNotifier
 from .core.workers import FetchWorker, PersistentJobQueue, ReminderScheduler, ReminderWorker
 
 
@@ -100,21 +101,37 @@ def build_parser() -> argparse.ArgumentParser:
 
     notify_parser = subparsers.add_parser("notify")
     notify_subparsers = notify_parser.add_subparsers(dest="notify_command", required=True)
+    notify_config = notify_subparsers.add_parser("config")
+    notify_config_subparsers = notify_config.add_subparsers(dest="notify_config_command", required=True)
+    notify_config_add = notify_config_subparsers.add_parser("add")
+    notify_config_add.add_argument("tenant_id")
+    notify_config_add.add_argument("--channel", choices=[item.value for item in NotificationChannel], required=True)
+    notify_config_add.add_argument("--destination", required=True)
+    notify_config_list = notify_config_subparsers.add_parser("list")
+    notify_config_list.add_argument("tenant_id")
     notify_preview = notify_subparsers.add_parser("preview")
     notify_preview.add_argument("tenant_id")
     notify_preview.add_argument("--within-days", type=int, default=7)
     notify_history = notify_subparsers.add_parser("history")
     notify_history.add_argument("tenant_id")
+    notify_send = notify_subparsers.add_parser("send-pending")
+    notify_send.add_argument("tenant_id")
+    notify_send.add_argument("--smtp-host")
+    notify_send.add_argument("--smtp-port", type=int, default=25)
+    notify_send.add_argument("--smtp-sender")
+    notify_send.add_argument("--sms-webhook")
+    notify_send.add_argument("--slack-webhook")
 
     worker_parser = subparsers.add_parser("worker")
     worker_subparsers = worker_parser.add_subparsers(dest="worker_command", required=True)
     worker_fetch = worker_subparsers.add_parser("fetch")
     worker_fetch.add_argument("--source")
     worker_fetch.add_argument("--state")
-    worker_fetch_mode = worker_fetch.add_mutually_exclusive_group(required=True)
+    worker_fetch_mode = worker_fetch.add_mutually_exclusive_group(required=False)
     worker_fetch_mode.add_argument("--text-file")
     worker_fetch_mode.add_argument("--url")
     worker_fetch_mode.add_argument("--rss-url")
+    worker_fetch.add_argument("--format", choices=["text", "html", "pdf"], default="html")
     worker_fetch.add_argument("--source-url")
     worker_fetch.add_argument("--fetched-at", default=None)
     worker_fetch.add_argument("--entry-title-contains")
@@ -124,6 +141,20 @@ def build_parser() -> argparse.ArgumentParser:
     worker_scheduler.add_argument("--hours", type=int, default=24)
     worker_jobs = worker_subparsers.add_parser("jobs")
     worker_jobs.add_argument("--tenant-id")
+    celery_parser = subparsers.add_parser("celery")
+    celery_subparsers = celery_parser.add_subparsers(dest="celery_command", required=True)
+    celery_ping = celery_subparsers.add_parser("ping")
+    celery_ping.add_argument("--broker-url", required=False)
+    celery_fetch = celery_subparsers.add_parser("dispatch-fetch")
+    celery_fetch.add_argument("--broker-url", required=False)
+    celery_fetch.add_argument("--source")
+    celery_fetch.add_argument("--state")
+    celery_schedule = celery_subparsers.add_parser("dispatch-reminders")
+    celery_schedule.add_argument("tenant_id")
+    celery_schedule.add_argument("--broker-url", required=False)
+    celery_notify = celery_subparsers.add_parser("dispatch-notifications")
+    celery_notify.add_argument("tenant_id")
+    celery_notify.add_argument("--broker-url", required=False)
 
     db_parser = subparsers.add_parser("db")
     db_subparsers = db_parser.add_subparsers(dest="db_command", required=True)
@@ -266,7 +297,7 @@ def main() -> int:
             print_json(result)
             return 0
         if args.deadline_command == "trigger-reminders":
-            triggered = engine.trigger_due_reminders(parse_ts(args.at) if args.at else None)
+            triggered = engine.trigger_due_reminders(parse_ts(args.at) if args.at else None, tenant_id=args.tenant_id)
             reminders = engine.list_reminders(args.tenant_id)
             print_json({"triggered": triggered, "reminders": [serialize(item) for item in reminders]}, default=str)
             return 0
@@ -287,11 +318,35 @@ def main() -> int:
         return 0
 
     if args.command == "notify":
+        if args.notify_command == "config":
+            if args.notify_config_command == "add":
+                route = engine.configure_notification_route(
+                    tenant_id=args.tenant_id,
+                    channel=NotificationChannel(args.channel),
+                    destination=args.destination,
+                    actor="cli",
+                )
+                print_json(serialize(route), default=str)
+                return 0
+            if args.notify_config_command == "list":
+                print_json([serialize(item) for item in engine.list_notification_routes(args.tenant_id)], default=str)
+                return 0
         if args.notify_command == "preview":
             print_json([serialize(item) for item in engine.notify_preview(args.tenant_id, args.within_days)], default=str)
             return 0
         if args.notify_command == "history":
             print_json([serialize(item) for item in engine.notify_history(args.tenant_id)], default=str)
+            return 0
+        if args.notify_command == "send-pending":
+            registry = build_notifier_registry(args)
+            sent = engine.dispatch_notification_deliveries(args.tenant_id, registry, actor="cli")
+            print_json(
+                {
+                    "sent": sent,
+                    "deliveries": [serialize(item) for item in engine.list_notification_deliveries(args.tenant_id)],
+                },
+                default=str,
+            )
             return 0
 
     if args.command == "worker":
@@ -307,16 +362,20 @@ def main() -> int:
                     fetched_at=fetched_at,
                 )
             elif args.url:
-                fetcher = HttpTextFetcher(
-                    url=args.url,
-                    fetched_at=fetched_at,
-                )
-            else:
+                if args.format == "text":
+                    fetcher = HttpTextFetcher(url=args.url, fetched_at=fetched_at)
+                elif args.format == "pdf":
+                    fetcher = PdfFetcher(url=args.url, fetched_at=fetched_at)
+                else:
+                    fetcher = HtmlFetcher(url=args.url, fetched_at=fetched_at)
+            elif args.rss_url:
                 fetcher = RssEntryFetcher(
                     url=args.rss_url,
                     entry_title_contains=args.entry_title_contains,
                     fetched_at=fetched_at,
                 )
+            else:
+                fetcher = fetcher_for_source(source=args.source, state=args.state, fetched_at=fetched_at)
             result = worker.run(source=args.source, state=args.state, fetcher=fetcher)
             print_json({"fetch_run": serialize(result["fetch_run"]), "result": serialize(result["result"])}, default=str)
             return 0
@@ -331,6 +390,27 @@ def main() -> int:
         if args.worker_command == "jobs":
             queue = PersistentJobQueue(app.engine.repositories.storage)
             print_json([serialize(job) for job in queue.list_jobs(args.tenant_id)], default=str)
+            return 0
+
+    if args.command == "celery":
+        from .core.celery_app import get_celery_app
+
+        app_instance = get_celery_app(getattr(args, "broker_url", None))
+        if args.celery_command == "ping":
+            print_json({"broker_url": app_instance.conf.broker_url, "task_default_queue": app_instance.conf.task_default_queue})
+            return 0
+        dispatcher = CeleryDispatcher(getattr(args, "broker_url", None))
+        if args.celery_command == "dispatch-fetch":
+            task_id = dispatcher.dispatch_fetch(source=args.source, state=args.state, db_url=args.db_path)
+            print_json({"task_id": task_id, "task": "duedatehq.fetch_source"})
+            return 0
+        if args.celery_command == "dispatch-reminders":
+            task_id = dispatcher.dispatch_schedule_reminders(args.tenant_id, db_url=args.db_path)
+            print_json({"task_id": task_id, "task": "duedatehq.schedule_reminders"})
+            return 0
+        if args.celery_command == "dispatch-notifications":
+            task_id = dispatcher.dispatch_notifications(args.tenant_id, db_url=args.db_path)
+            print_json({"task_id": task_id, "task": "duedatehq.send_notifications"})
             return 0
 
     return 1
@@ -352,6 +432,21 @@ def serialize(value):
     if is_dataclass(value):
         return asdict(value)
     return value
+
+
+def build_notifier_registry(args) -> NotifierRegistry:
+    notifiers = {
+        NotificationChannel.EMAIL: ConsoleNotifier(NotificationChannel.EMAIL),
+        NotificationChannel.SMS: ConsoleNotifier(NotificationChannel.SMS),
+        NotificationChannel.SLACK: ConsoleNotifier(NotificationChannel.SLACK),
+    }
+    if args.smtp_host and args.smtp_sender:
+        notifiers[NotificationChannel.EMAIL] = SMTPEmailNotifier(args.smtp_host, args.smtp_port, args.smtp_sender)
+    if args.sms_webhook:
+        notifiers[NotificationChannel.SMS] = JsonWebhookNotifier(NotificationChannel.SMS, args.sms_webhook)
+    if args.slack_webhook:
+        notifiers[NotificationChannel.SLACK] = JsonWebhookNotifier(NotificationChannel.SLACK, args.slack_webhook)
+    return NotifierRegistry(notifiers)
 
 
 if __name__ == "__main__":

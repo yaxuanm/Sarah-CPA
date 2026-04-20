@@ -31,6 +31,18 @@ class ReminderStatus(StrEnum):
     CANCELLED = "cancelled"
 
 
+class NotificationChannel(StrEnum):
+    EMAIL = "email"
+    SMS = "sms"
+    SLACK = "slack"
+
+
+class NotificationStatus(StrEnum):
+    PENDING = "pending"
+    SENT = "sent"
+    FAILED = "failed"
+
+
 class DeadlineAction(StrEnum):
     COMPLETE = "complete"
     SNOOZE = "snooze"
@@ -48,6 +60,8 @@ class SourceDefinition:
     official: bool
     poll_frequency_minutes: int
     display_name: str
+    default_url: str
+    fetch_format: str
 
 
 @dataclass(slots=True)
@@ -156,6 +170,34 @@ class Reminder:
     reminder_type: ReminderType
     responded_at: datetime | None
     response: str | None
+
+
+@dataclass(slots=True)
+class NotificationRoute:
+    route_id: str
+    tenant_id: str
+    channel: NotificationChannel
+    destination: str
+    enabled: bool
+    created_at: datetime
+
+
+@dataclass(slots=True)
+class NotificationDelivery:
+    delivery_id: str
+    tenant_id: str
+    client_id: str
+    deadline_id: str
+    reminder_id: str
+    channel: NotificationChannel
+    destination: str
+    subject: str
+    body: str
+    status: NotificationStatus
+    provider_message_id: str | None
+    error_message: str | None
+    created_at: datetime
+    sent_at: datetime | None
 
 
 @dataclass(slots=True)

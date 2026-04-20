@@ -206,7 +206,13 @@ class ReminderWorker:
     def run(self, queued_jobs: list[QueuedJob], now: datetime) -> int:
         if not queued_jobs:
             return 0
-        dispatched = self.engine.trigger_due_reminders(now)
+        tenant_ids = sorted({job.tenant_id for job in queued_jobs if job.tenant_id})
+        dispatched = 0
+        if tenant_ids:
+            for tenant_id in tenant_ids:
+                dispatched += self.engine.trigger_due_reminders(now, tenant_id=tenant_id)
+        else:
+            dispatched = self.engine.trigger_due_reminders(now)
         if self.queue and hasattr(self.queue, "complete"):
             self.queue.complete(queued_jobs, now)
         return dispatched

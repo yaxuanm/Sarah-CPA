@@ -3,13 +3,16 @@ import os
 from pathlib import Path
 import sqlite3
 from datetime import datetime, timedelta, timezone
-from unittest.mock import patch
+import sys
+import types
 
 import pytest
 
 from duedatehq.app import build_storage, create_app
-from duedatehq.core.fetchers import FileFetcher, HttpTextFetcher, RssEntryFetcher
-from duedatehq.core.models import DeadlineAction, DeadlineStatus, ReminderStatus, RuleReviewItem, RuleStatus
+from duedatehq.core.dispatchers import CeleryDispatcher
+from duedatehq.core.fetchers import FileFetcher, HttpTextFetcher, RssEntryFetcher, fetcher_for_source
+from duedatehq.core.models import DeadlineAction, DeadlineStatus, NotificationChannel, NotificationStatus, ReminderStatus, RuleReviewItem, RuleStatus
+from duedatehq.core.notifiers import ConsoleNotifier, NotifierRegistry
 from duedatehq.core.postgres import PostgresStorage
 from duedatehq.core.sources import official_source_registry
 from duedatehq.core.workers import FetchWorker, InMemoryJobQueue, PersistentJobQueue, ReminderScheduler, ReminderWorker
@@ -79,6 +82,15 @@ def test_source_registry_matches_document_coverage():
     assert registry["irs"].poll_frequency_minutes == 15
     assert registry["fema"].poll_frequency_minutes == 15
     assert registry["state_ca"].poll_frequency_minutes == 60
+    assert registry["irs"].default_url.startswith("https://")
+
+
+def test_official_source_fetcher_factory_returns_expected_fetcher():
+    irs_fetcher = fetcher_for_source(source="irs")
+    fema_fetcher = fetcher_for_source(source="fema")
+
+    assert irs_fetcher.__class__.__name__ == "HtmlFetcher"
+    assert fema_fetcher.__class__.__name__ == "RssEntryFetcher"
 
 
 def test_fetch_records_run_and_writes_rule(app):
@@ -323,6 +335,82 @@ def test_today_and_notify_views(app):
     assert history
 
 
+def test_notification_routes_and_deliveries(app):
+    tenant = app.engine.create_tenant("Tenant A")
+    app.engine.create_rule(
+        tax_type="federal_income",
+        jurisdiction="FEDERAL",
+        entity_types=["s-corp"],
+        deadline_date="2026-04-02",
+        effective_from="2026-01-01",
+        source_url="https://irs.gov/r1",
+        confidence_score=0.99,
+    )
+    client = app.engine.register_client(
+        tenant_id=tenant.tenant_id,
+        name="Acme LLC",
+        entity_type="s-corp",
+        registered_states=["CA"],
+        tax_year=2026,
+    )
+    deadline = app.engine.list_deadlines(tenant.tenant_id, client.client_id)[0]
+    app.engine.configure_notification_route(
+        tenant.tenant_id,
+        NotificationChannel.EMAIL,
+        "owner@example.com",
+        actor="user-1",
+    )
+    app.engine.trigger_due_reminders(datetime(2026, 4, 30, tzinfo=timezone.utc))
+    deliveries = app.engine.list_notification_deliveries(tenant.tenant_id, deadline.deadline_id)
+
+    assert deliveries
+    assert deliveries[0].status == NotificationStatus.PENDING
+
+    registry = NotifierRegistry({NotificationChannel.EMAIL: ConsoleNotifier(NotificationChannel.EMAIL)})
+    sent = app.engine.dispatch_notification_deliveries(tenant.tenant_id, registry, actor="system")
+    assert sent == len(deliveries)
+    deliveries = app.engine.list_notification_deliveries(tenant.tenant_id, deadline.deadline_id)
+    assert all(item.status == NotificationStatus.SENT for item in deliveries)
+
+
+def test_trigger_due_reminders_is_tenant_scoped(app):
+    tenant_a = app.engine.create_tenant("Tenant A")
+    tenant_b = app.engine.create_tenant("Tenant B")
+    app.engine.create_rule(
+        tax_type="federal_income",
+        jurisdiction="FEDERAL",
+        entity_types=["s-corp"],
+        deadline_date="2026-04-02",
+        effective_from="2026-01-01",
+        source_url="https://irs.gov/r1",
+        confidence_score=0.99,
+    )
+    client_a = app.engine.register_client(
+        tenant_id=tenant_a.tenant_id,
+        name="Alpha LLC",
+        entity_type="s-corp",
+        registered_states=["CA"],
+        tax_year=2026,
+    )
+    client_b = app.engine.register_client(
+        tenant_id=tenant_b.tenant_id,
+        name="Beta LLC",
+        entity_type="s-corp",
+        registered_states=["CA"],
+        tax_year=2026,
+    )
+    deadline_a = app.engine.list_deadlines(tenant_a.tenant_id, client_a.client_id)[0]
+    deadline_b = app.engine.list_deadlines(tenant_b.tenant_id, client_b.client_id)[0]
+
+    triggered = app.engine.trigger_due_reminders(datetime(2026, 4, 30, tzinfo=timezone.utc), tenant_id=tenant_a.tenant_id)
+
+    assert triggered == 4
+    reminders_a = app.engine.list_reminders(tenant_a.tenant_id, deadline_a.deadline_id, include_history=True)
+    reminders_b = app.engine.list_reminders(tenant_b.tenant_id, deadline_b.deadline_id, include_history=True)
+    assert all(item.status == ReminderStatus.TRIGGERED for item in reminders_a)
+    assert all(item.status == ReminderStatus.SCHEDULED for item in reminders_b)
+
+
 def test_reminder_scheduler_and_worker_flow(app):
     tenant = app.engine.create_tenant("Tenant A")
     app.engine.create_rule(
@@ -372,6 +460,27 @@ def test_persistent_job_queue_round_trip(app):
     queue.complete(claimed, now)
     jobs = queue.list_jobs("tenant-a")
     assert jobs[0].status == "completed"
+
+
+def test_celery_dispatcher_and_app(monkeypatch):
+    calls = []
+
+    class FakeCeleryApp:
+        def __init__(self, *args, **kwargs):
+            self.conf = types.SimpleNamespace(broker_url=kwargs["broker"], task_default_queue="duedatehq")
+
+        def send_task(self, name, kwargs):
+            calls.append((name, kwargs))
+            return types.SimpleNamespace(id=f"task-{len(calls)}")
+
+    fake_celery_module = types.SimpleNamespace(Celery=FakeCeleryApp)
+    monkeypatch.setitem(sys.modules, "celery", fake_celery_module)
+
+    dispatcher = CeleryDispatcher("redis://localhost:6379/9")
+    task_id = dispatcher.dispatch_schedule_reminders("tenant-a", db_url="sqlite:///tmp")
+
+    assert task_id == "task-1"
+    assert calls[0][0] == "duedatehq.schedule_reminders"
 
 
 def test_state_machine_and_audit_protections(app):

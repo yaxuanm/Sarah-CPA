@@ -98,6 +98,37 @@ class SQLiteStorage:
                     completed_at TEXT
                 );
 
+                CREATE TABLE IF NOT EXISTS notification_routes (
+                    route_id TEXT PRIMARY KEY,
+                    tenant_id TEXT NOT NULL,
+                    channel TEXT NOT NULL,
+                    destination TEXT NOT NULL,
+                    enabled INTEGER NOT NULL,
+                    created_at TEXT NOT NULL,
+                    FOREIGN KEY (tenant_id) REFERENCES tenants(tenant_id)
+                );
+
+                CREATE TABLE IF NOT EXISTS notification_deliveries (
+                    delivery_id TEXT PRIMARY KEY,
+                    tenant_id TEXT NOT NULL,
+                    client_id TEXT NOT NULL,
+                    deadline_id TEXT NOT NULL,
+                    reminder_id TEXT NOT NULL,
+                    channel TEXT NOT NULL,
+                    destination TEXT NOT NULL,
+                    subject TEXT NOT NULL,
+                    body TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    provider_message_id TEXT,
+                    error_message TEXT,
+                    created_at TEXT NOT NULL,
+                    sent_at TEXT,
+                    FOREIGN KEY (tenant_id) REFERENCES tenants(tenant_id),
+                    FOREIGN KEY (client_id) REFERENCES clients(client_id),
+                    FOREIGN KEY (deadline_id) REFERENCES deadlines(deadline_id),
+                    FOREIGN KEY (reminder_id) REFERENCES reminders(reminder_id)
+                );
+
                 CREATE TABLE IF NOT EXISTS deadlines (
                     deadline_id TEXT PRIMARY KEY,
                     client_id TEXT NOT NULL,
