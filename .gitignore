@@ -1,6 +1,8 @@
 .duedatehq/
 *.sqlite3
 .tmp_*.sqlite3
+.tmp/
+.tools/
 __pycache__/
 *.pyc
 .pytest_cache/
