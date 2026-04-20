@@ -1,0 +1,1746 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>DueDateHQ · Frontend Design Spec</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Fraunces:opsz,wght,SOFT@9..144,500..700,100&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --ink-950: #101826;
+      --ink-900: #192235;
+      --ink-800: #263148;
+      --ink-700: #42506b;
+      --ink-600: #62718d;
+      --ink-500: #8592aa;
+      --paper-50: #fbfaf7;
+      --paper-100: #f4f0e7;
+      --paper-200: #ebe3d4;
+      --line: rgba(27, 39, 58, 0.12);
+
+      --brand-700: #1544b5;
+      --brand-600: #1f56d8;
+      --brand-500: #3f78f0;
+      --brand-100: #eaf1ff;
+
+      --teal-700: #0d776c;
+      --teal-500: #14a192;
+      --teal-100: #e7f8f5;
+
+      --gold-700: #8d6317;
+      --gold-500: #c9972f;
+      --gold-100: #fff4d9;
+
+      --rose-700: #9f3042;
+      --rose-500: #da5b6f;
+      --rose-100: #ffe8ed;
+
+      --success-700: #276444;
+      --success-100: #e8f6ec;
+      --warn-700: #926519;
+      --warn-100: #fff3d7;
+      --danger-700: #9f2d31;
+      --danger-100: #fde8e8;
+
+      --radius-sm: 10px;
+      --radius-md: 16px;
+      --radius-lg: 24px;
+      --radius-xl: 32px;
+
+      --shadow-soft: 0 20px 60px rgba(24, 36, 56, 0.08);
+      --shadow-card: 0 10px 30px rgba(20, 32, 52, 0.08);
+      --shadow-focus: 0 0 0 4px rgba(31, 86, 216, 0.14);
+
+      --max-width: 1380px;
+      --sidebar-width: 272px;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    html {
+      scroll-behavior: smooth;
+    }
+
+    body {
+      background:
+        radial-gradient(circle at top left, rgba(63, 120, 240, 0.08), transparent 28%),
+        radial-gradient(circle at 85% 12%, rgba(20, 161, 146, 0.10), transparent 24%),
+        linear-gradient(180deg, #f8f5ee 0%, #fbfaf7 38%, #f5f7fb 100%);
+      color: var(--ink-900);
+      font-family: "Manrope", -apple-system, BlinkMacSystemFont, sans-serif;
+      line-height: 1.5;
+      padding: 32px;
+    }
+
+    body::before {
+      content: "";
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      background-image: radial-gradient(rgba(16, 24, 38, 0.06) 0.5px, transparent 0.5px);
+      background-size: 14px 14px;
+      opacity: 0.15;
+    }
+
+    a {
+      color: inherit;
+      text-decoration: none;
+    }
+
+    .page {
+      position: relative;
+      z-index: 1;
+      max-width: var(--max-width);
+      margin: 0 auto;
+    }
+
+    .hero {
+      display: grid;
+      grid-template-columns: 1.15fr 0.85fr;
+      gap: 28px;
+      align-items: stretch;
+      margin-bottom: 28px;
+    }
+
+    .hero-card,
+    .spec-card,
+    .app-shell,
+    .surface,
+    .token-card,
+    .component-card,
+    .screen-card {
+      background: rgba(255, 255, 255, 0.82);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border: 1px solid rgba(255, 255, 255, 0.75);
+      box-shadow: var(--shadow-soft);
+    }
+
+    .hero-card {
+      border-radius: var(--radius-xl);
+      padding: 36px;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .hero-card::after {
+      content: "";
+      position: absolute;
+      width: 280px;
+      height: 280px;
+      right: -90px;
+      top: -80px;
+      background: radial-gradient(circle, rgba(63, 120, 240, 0.18) 0%, rgba(63, 120, 240, 0) 72%);
+    }
+
+    .eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 18px;
+      padding: 8px 14px;
+      border-radius: 999px;
+      background: rgba(16, 24, 38, 0.06);
+      color: var(--ink-800);
+      font-family: "IBM Plex Mono", monospace;
+      font-size: 12px;
+      font-weight: 500;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .eyebrow-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--teal-500);
+      box-shadow: 0 0 0 6px rgba(20, 161, 146, 0.14);
+    }
+
+    .hero h1,
+    .screen-title,
+    .spec-title {
+      font-family: "Fraunces", Georgia, serif;
+      letter-spacing: -0.03em;
+      line-height: 1.02;
+    }
+
+    .hero h1 {
+      max-width: 720px;
+      font-size: clamp(54px, 7vw, 88px);
+      font-weight: 650;
+      color: var(--ink-950);
+      margin-bottom: 18px;
+    }
+
+    .hero h1 em {
+      font-style: normal;
+      color: var(--brand-600);
+    }
+
+    .hero-copy {
+      max-width: 640px;
+      font-size: 18px;
+      color: var(--ink-700);
+      margin-bottom: 28px;
+    }
+
+    .hero-stats {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 14px;
+    }
+
+    .hero-stat {
+      border-radius: 20px;
+      padding: 18px;
+      background: rgba(255, 255, 255, 0.7);
+      border: 1px solid rgba(16, 24, 38, 0.08);
+    }
+
+    .hero-stat-label {
+      font-family: "IBM Plex Mono", monospace;
+      font-size: 11px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--ink-600);
+      margin-bottom: 10px;
+    }
+
+    .hero-stat-value {
+      font-size: 24px;
+      font-weight: 800;
+      color: var(--ink-950);
+      letter-spacing: -0.03em;
+    }
+
+    .hero-stat-copy {
+      margin-top: 6px;
+      font-size: 13px;
+      color: var(--ink-700);
+    }
+
+    .spec-card {
+      border-radius: var(--radius-xl);
+      padding: 28px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      gap: 22px;
+    }
+
+    .spec-title {
+      font-size: 38px;
+      margin-bottom: 12px;
+      color: var(--ink-950);
+    }
+
+    .spec-copy {
+      font-size: 15px;
+      color: var(--ink-700);
+    }
+
+    .spec-list {
+      display: grid;
+      gap: 12px;
+    }
+
+    .spec-item {
+      display: grid;
+      grid-template-columns: 100px 1fr;
+      gap: 12px;
+      align-items: start;
+      padding-top: 12px;
+      border-top: 1px solid var(--line);
+    }
+
+    .spec-item-label {
+      font-family: "IBM Plex Mono", monospace;
+      font-size: 11px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--ink-500);
+    }
+
+    .spec-item-value {
+      font-size: 14px;
+      color: var(--ink-800);
+    }
+
+    .section {
+      margin-top: 24px;
+    }
+
+    .section-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: end;
+      gap: 16px;
+      margin-bottom: 18px;
+    }
+
+    .section-kicker {
+      font-family: "IBM Plex Mono", monospace;
+      font-size: 11px;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--brand-600);
+      margin-bottom: 8px;
+    }
+
+    .section-title {
+      font-family: "Fraunces", Georgia, serif;
+      font-size: 38px;
+      line-height: 1.04;
+      letter-spacing: -0.03em;
+      color: var(--ink-950);
+    }
+
+    .section-copy {
+      max-width: 560px;
+      color: var(--ink-700);
+      font-size: 15px;
+    }
+
+    .token-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 16px;
+    }
+
+    .token-card {
+      border-radius: 24px;
+      overflow: hidden;
+    }
+
+    .token-swatch {
+      height: 118px;
+      padding: 18px;
+      display: flex;
+      align-items: end;
+      color: white;
+      font-family: "IBM Plex Mono", monospace;
+      font-size: 12px;
+      letter-spacing: 0.04em;
+    }
+
+    .token-meta {
+      padding: 18px;
+      background: rgba(255, 255, 255, 0.86);
+    }
+
+    .token-name {
+      font-weight: 800;
+      color: var(--ink-950);
+      margin-bottom: 6px;
+    }
+
+    .token-desc {
+      font-size: 14px;
+      color: var(--ink-700);
+    }
+
+    .type-grid,
+    .component-grid,
+    .screen-grid {
+      display: grid;
+      gap: 16px;
+    }
+
+    .type-grid {
+      grid-template-columns: 1.1fr 0.9fr;
+    }
+
+    .surface {
+      border-radius: 24px;
+      padding: 26px;
+    }
+
+    .type-scale {
+      display: grid;
+      gap: 18px;
+    }
+
+    .type-item {
+      border-top: 1px solid var(--line);
+      padding-top: 16px;
+    }
+
+    .type-label {
+      font-family: "IBM Plex Mono", monospace;
+      font-size: 11px;
+      color: var(--ink-500);
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      margin-bottom: 8px;
+    }
+
+    .type-display {
+      color: var(--ink-950);
+    }
+
+    .display-xl {
+      font-family: "Fraunces", Georgia, serif;
+      font-size: 54px;
+      line-height: 0.96;
+      letter-spacing: -0.045em;
+    }
+
+    .display-lg {
+      font-family: "Fraunces", Georgia, serif;
+      font-size: 38px;
+      line-height: 1.04;
+      letter-spacing: -0.035em;
+    }
+
+    .display-md {
+      font-size: 22px;
+      font-weight: 800;
+      letter-spacing: -0.03em;
+    }
+
+    .body-lg {
+      font-size: 18px;
+      color: var(--ink-700);
+    }
+
+    .body-md {
+      font-size: 15px;
+      color: var(--ink-700);
+    }
+
+    .mono-sm {
+      font-family: "IBM Plex Mono", monospace;
+      font-size: 12px;
+      color: var(--ink-600);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+
+    .rules {
+      display: grid;
+      gap: 14px;
+    }
+
+    .rule {
+      border-radius: 18px;
+      padding: 16px 18px;
+      background: rgba(16, 24, 38, 0.04);
+      border: 1px solid rgba(16, 24, 38, 0.06);
+    }
+
+    .rule strong {
+      display: block;
+      color: var(--ink-950);
+      margin-bottom: 6px;
+      font-size: 15px;
+    }
+
+    .rule span {
+      font-size: 14px;
+      color: var(--ink-700);
+    }
+
+    .component-grid {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+
+    .component-card {
+      border-radius: 24px;
+      padding: 22px;
+    }
+
+    .component-title {
+      font-size: 18px;
+      font-weight: 800;
+      color: var(--ink-950);
+      margin-bottom: 12px;
+    }
+
+    .component-copy {
+      font-size: 14px;
+      color: var(--ink-700);
+      margin-bottom: 18px;
+    }
+
+    .button-row,
+    .badge-row,
+    .stat-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+    }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      min-height: 44px;
+      padding: 0 18px;
+      border-radius: 14px;
+      border: 1px solid transparent;
+      font-weight: 700;
+      font-size: 14px;
+      letter-spacing: -0.02em;
+    }
+
+    .btn-primary {
+      background: linear-gradient(180deg, var(--brand-500), var(--brand-600));
+      color: white;
+      box-shadow: 0 14px 30px rgba(31, 86, 216, 0.24);
+    }
+
+    .btn-secondary {
+      background: rgba(16, 24, 38, 0.05);
+      color: var(--ink-900);
+      border-color: rgba(16, 24, 38, 0.08);
+    }
+
+    .btn-ghost {
+      background: rgba(255, 255, 255, 0.72);
+      color: var(--brand-700);
+      border-color: rgba(31, 86, 216, 0.18);
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 12px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 800;
+      letter-spacing: 0.02em;
+    }
+
+    .badge::before {
+      content: "";
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: currentColor;
+      opacity: 0.65;
+    }
+
+    .badge-critical {
+      background: var(--danger-100);
+      color: var(--danger-700);
+    }
+
+    .badge-watch {
+      background: var(--warn-100);
+      color: var(--warn-700);
+    }
+
+    .badge-cleared {
+      background: var(--success-100);
+      color: var(--success-700);
+    }
+
+    .deadline-row {
+      display: grid;
+      grid-template-columns: 68px 1fr auto;
+      gap: 14px;
+      align-items: center;
+      padding: 14px;
+      border-radius: 18px;
+      border: 1px solid rgba(16, 24, 38, 0.08);
+      background: rgba(255, 255, 255, 0.72);
+    }
+
+    .date-pill {
+      border-radius: 16px;
+      background: var(--paper-100);
+      padding: 10px 12px;
+      text-align: center;
+    }
+
+    .date-pill strong {
+      display: block;
+      font-size: 21px;
+      letter-spacing: -0.03em;
+      color: var(--ink-950);
+    }
+
+    .date-pill span {
+      font-family: "IBM Plex Mono", monospace;
+      font-size: 11px;
+      text-transform: uppercase;
+      color: var(--ink-600);
+    }
+
+    .deadline-main strong {
+      display: block;
+      font-size: 15px;
+      color: var(--ink-950);
+    }
+
+    .deadline-main span {
+      font-size: 13px;
+      color: var(--ink-700);
+    }
+
+    .signal-card {
+      border-radius: 22px;
+      padding: 18px;
+      background: linear-gradient(180deg, rgba(255, 244, 217, 0.9), rgba(255, 255, 255, 0.88));
+      border: 1px solid rgba(201, 151, 47, 0.18);
+    }
+
+    .signal-top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 10px;
+    }
+
+    .signal-source {
+      font-family: "IBM Plex Mono", monospace;
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--gold-700);
+    }
+
+    .signal-card strong {
+      display: block;
+      color: var(--ink-950);
+      font-size: 16px;
+      margin-bottom: 6px;
+    }
+
+    .signal-card p {
+      color: var(--ink-700);
+      font-size: 14px;
+    }
+
+    .app-shell {
+      margin-top: 20px;
+      border-radius: 36px;
+      padding: 18px;
+    }
+
+    .app-frame {
+      display: grid;
+      grid-template-columns: var(--sidebar-width) 1fr;
+      gap: 18px;
+      min-height: 980px;
+    }
+
+    .sidebar {
+      border-radius: 28px;
+      padding: 22px 18px;
+      background: linear-gradient(180deg, rgba(15, 24, 38, 0.96), rgba(26, 38, 56, 0.96));
+      color: rgba(255, 255, 255, 0.92);
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+    }
+
+    .brand-lockup {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 28px;
+      padding: 10px 12px;
+    }
+
+    .brand-mark {
+      width: 44px;
+      height: 44px;
+      border-radius: 14px;
+      display: grid;
+      place-items: center;
+      background: linear-gradient(160deg, var(--brand-500), var(--teal-500));
+      color: white;
+      font-family: "Fraunces", Georgia, serif;
+      font-size: 26px;
+      box-shadow: 0 16px 32px rgba(31, 86, 216, 0.28);
+    }
+
+    .brand-text strong {
+      display: block;
+      font-size: 16px;
+      letter-spacing: -0.03em;
+    }
+
+    .brand-text span {
+      display: block;
+      margin-top: 3px;
+      color: rgba(255, 255, 255, 0.6);
+      font-size: 12px;
+    }
+
+    .nav-group {
+      display: grid;
+      gap: 8px;
+      margin-bottom: 18px;
+    }
+
+    .nav-label {
+      padding: 0 12px;
+      margin-bottom: 4px;
+      font-family: "IBM Plex Mono", monospace;
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: rgba(255, 255, 255, 0.46);
+    }
+
+    .nav-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 12px 14px;
+      border-radius: 16px;
+      color: rgba(255, 255, 255, 0.72);
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid transparent;
+      font-weight: 700;
+      font-size: 14px;
+    }
+
+    .nav-item.active {
+      color: white;
+      background: linear-gradient(180deg, rgba(63, 120, 240, 0.24), rgba(63, 120, 240, 0.14));
+      border-color: rgba(63, 120, 240, 0.32);
+    }
+
+    .nav-count {
+      min-width: 26px;
+      height: 26px;
+      padding: 0 8px;
+      border-radius: 999px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-family: "IBM Plex Mono", monospace;
+      font-size: 11px;
+      background: rgba(255, 255, 255, 0.10);
+    }
+
+    .sidebar-note {
+      margin-top: 22px;
+      padding: 16px;
+      border-radius: 20px;
+      background: linear-gradient(180deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.03));
+      border: 1px solid rgba(255, 255, 255, 0.08);
+    }
+
+    .sidebar-note strong {
+      display: block;
+      margin-bottom: 8px;
+      font-size: 14px;
+    }
+
+    .sidebar-note p {
+      color: rgba(255, 255, 255, 0.65);
+      font-size: 13px;
+      line-height: 1.55;
+    }
+
+    .main {
+      border-radius: 28px;
+      padding: 22px;
+      background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.92), rgba(247, 250, 255, 0.92));
+      border: 1px solid rgba(16, 24, 38, 0.08);
+    }
+
+    .topbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 18px;
+      margin-bottom: 18px;
+    }
+
+    .topbar-copy small {
+      display: block;
+      font-family: "IBM Plex Mono", monospace;
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--brand-600);
+      margin-bottom: 8px;
+    }
+
+    .topbar-copy h2 {
+      font-family: "Fraunces", Georgia, serif;
+      font-size: 40px;
+      letter-spacing: -0.03em;
+      line-height: 1.05;
+      color: var(--ink-950);
+    }
+
+    .topbar-actions {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+    }
+
+    .search {
+      min-width: 280px;
+      height: 44px;
+      padding: 0 16px;
+      border-radius: 14px;
+      border: 1px solid rgba(16, 24, 38, 0.08);
+      background: rgba(255, 255, 255, 0.9);
+      color: var(--ink-900);
+      font-size: 14px;
+    }
+
+    .hero-banner {
+      display: grid;
+      grid-template-columns: 1.15fr 0.85fr;
+      gap: 16px;
+      margin-bottom: 16px;
+    }
+
+    .banner-main,
+    .banner-side {
+      border-radius: 26px;
+      padding: 24px;
+    }
+
+    .banner-main {
+      background: linear-gradient(160deg, rgba(21, 68, 181, 0.96), rgba(23, 110, 213, 0.92));
+      color: white;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .banner-main::after {
+      content: "";
+      position: absolute;
+      inset: auto -80px -120px auto;
+      width: 260px;
+      height: 260px;
+      border-radius: 50%;
+      background: rgba(255, 255, 255, 0.09);
+    }
+
+    .banner-side {
+      background: linear-gradient(180deg, rgba(255, 248, 230, 0.9), rgba(255, 255, 255, 0.94));
+      border: 1px solid rgba(201, 151, 47, 0.14);
+    }
+
+    .banner-label {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 12px;
+      padding: 7px 10px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.14);
+      font-family: "IBM Plex Mono", monospace;
+      font-size: 11px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .banner-main h3,
+    .banner-side h3 {
+      font-size: 26px;
+      letter-spacing: -0.03em;
+      line-height: 1.08;
+      margin-bottom: 10px;
+    }
+
+    .banner-main p {
+      max-width: 520px;
+      color: rgba(255, 255, 255, 0.86);
+    }
+
+    .banner-side p {
+      font-size: 14px;
+      color: var(--ink-700);
+      margin-bottom: 16px;
+    }
+
+    .impact-list {
+      display: grid;
+      gap: 10px;
+    }
+
+    .impact-item {
+      padding: 12px 14px;
+      border-radius: 16px;
+      background: rgba(255, 255, 255, 0.78);
+      border: 1px solid rgba(16, 24, 38, 0.07);
+    }
+
+    .impact-item strong {
+      display: block;
+      font-size: 14px;
+      color: var(--ink-950);
+      margin-bottom: 4px;
+    }
+
+    .impact-item span {
+      font-size: 13px;
+      color: var(--ink-700);
+    }
+
+    .stat-strip {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 14px;
+      margin-bottom: 16px;
+    }
+
+    .stat-card {
+      border-radius: 22px;
+      padding: 18px;
+      background: rgba(255, 255, 255, 0.86);
+      border: 1px solid rgba(16, 24, 38, 0.07);
+      box-shadow: var(--shadow-card);
+    }
+
+    .stat-card .label {
+      display: block;
+      font-family: "IBM Plex Mono", monospace;
+      font-size: 11px;
+      color: var(--ink-500);
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      margin-bottom: 10px;
+    }
+
+    .stat-card .value {
+      font-size: 30px;
+      font-weight: 800;
+      color: var(--ink-950);
+      letter-spacing: -0.03em;
+      margin-bottom: 6px;
+    }
+
+    .stat-card .hint {
+      font-size: 13px;
+      color: var(--ink-700);
+    }
+
+    .dashboard-grid {
+      display: grid;
+      grid-template-columns: 1.1fr 0.9fr;
+      gap: 16px;
+      margin-bottom: 16px;
+    }
+
+    .panel {
+      border-radius: 26px;
+      padding: 20px;
+      background: rgba(255, 255, 255, 0.88);
+      border: 1px solid rgba(16, 24, 38, 0.07);
+      box-shadow: var(--shadow-card);
+    }
+
+    .panel-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      margin-bottom: 18px;
+    }
+
+    .panel-head h3 {
+      font-size: 20px;
+      letter-spacing: -0.03em;
+      color: var(--ink-950);
+    }
+
+    .panel-head span {
+      font-size: 13px;
+      color: var(--ink-600);
+    }
+
+    .queue {
+      display: grid;
+      gap: 12px;
+    }
+
+    .client-list {
+      display: grid;
+      gap: 12px;
+    }
+
+    .client-row {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 12px;
+      align-items: center;
+      padding: 14px 16px;
+      border-radius: 18px;
+      border: 1px solid rgba(16, 24, 38, 0.08);
+      background: rgba(247, 249, 253, 0.72);
+    }
+
+    .client-main strong {
+      display: block;
+      font-size: 15px;
+      color: var(--ink-950);
+      margin-bottom: 4px;
+    }
+
+    .client-main span {
+      font-size: 13px;
+      color: var(--ink-700);
+    }
+
+    .client-risk {
+      text-align: right;
+    }
+
+    .client-risk strong {
+      display: block;
+      font-size: 20px;
+      color: var(--ink-950);
+      letter-spacing: -0.03em;
+    }
+
+    .client-risk span {
+      font-size: 12px;
+      color: var(--ink-600);
+    }
+
+    .screen-grid {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+
+    .screen-card {
+      border-radius: 26px;
+      overflow: hidden;
+    }
+
+    .screen-top {
+      padding: 18px 18px 0;
+    }
+
+    .screen-chip {
+      display: inline-flex;
+      margin-bottom: 12px;
+      padding: 7px 10px;
+      border-radius: 999px;
+      background: rgba(16, 24, 38, 0.06);
+      font-family: "IBM Plex Mono", monospace;
+      font-size: 11px;
+      color: var(--ink-700);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+
+    .screen-title {
+      font-size: 28px;
+      margin-bottom: 8px;
+      color: var(--ink-950);
+    }
+
+    .screen-copy {
+      color: var(--ink-700);
+      font-size: 14px;
+      margin-bottom: 18px;
+    }
+
+    .mini-ui {
+      padding: 0 18px 18px;
+    }
+
+    .mini-frame {
+      border-radius: 22px;
+      padding: 16px;
+      background: linear-gradient(180deg, rgba(244, 246, 252, 0.98), rgba(255, 255, 255, 0.98));
+      border: 1px solid rgba(16, 24, 38, 0.08);
+      min-height: 280px;
+    }
+
+    .mini-strip {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 14px;
+    }
+
+    .mini-pill {
+      height: 10px;
+      border-radius: 999px;
+      background: rgba(16, 24, 38, 0.10);
+    }
+
+    .mini-card {
+      border-radius: 16px;
+      padding: 12px;
+      background: rgba(255, 255, 255, 0.9);
+      border: 1px solid rgba(16, 24, 38, 0.08);
+      margin-bottom: 10px;
+    }
+
+    .mini-card strong {
+      display: block;
+      font-size: 13px;
+      color: var(--ink-950);
+      margin-bottom: 4px;
+    }
+
+    .mini-card span {
+      font-size: 12px;
+      color: var(--ink-700);
+    }
+
+    .footer-note {
+      margin-top: 26px;
+      padding: 18px 20px;
+      border-radius: 20px;
+      background: rgba(16, 24, 38, 0.04);
+      border: 1px solid rgba(16, 24, 38, 0.06);
+      font-size: 14px;
+      color: var(--ink-700);
+    }
+
+    @media (max-width: 1160px) {
+      .hero,
+      .type-grid,
+      .hero-banner,
+      .dashboard-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .token-grid,
+      .component-grid,
+      .screen-grid,
+      .stat-strip {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      .app-frame {
+        grid-template-columns: 1fr;
+      }
+
+      .sidebar {
+        min-height: auto;
+      }
+    }
+
+    @media (max-width: 760px) {
+      body {
+        padding: 18px;
+      }
+
+      .hero-card,
+      .spec-card,
+      .surface,
+      .component-card,
+      .panel,
+      .main,
+      .sidebar {
+        padding: 18px;
+      }
+
+      .token-grid,
+      .component-grid,
+      .screen-grid,
+      .stat-strip,
+      .hero-stats {
+        grid-template-columns: 1fr;
+      }
+
+      .topbar {
+        flex-direction: column;
+        align-items: stretch;
+      }
+
+      .topbar-actions {
+        flex-direction: column;
+        align-items: stretch;
+      }
+
+      .search {
+        min-width: auto;
+        width: 100%;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <section class="hero">
+      <div class="hero-card">
+        <div class="eyebrow">
+          <span class="eyebrow-dot"></span>
+          DueDateHQ Frontend System
+        </div>
+        <h1>让 <em>deadline intelligence</em> 看起来像一套真正能落地的产品。</h1>
+        <p class="hero-copy">
+          这套规范不是“会计软件通用后台皮肤”，而是为 DueDateHQ 量身定做的产品视觉语言：
+          专业、可信、节奏清晰，并且天然支持高风险截止日、州税公告、客户影响和分诊队列这些核心场景。
+        </p>
+        <div class="hero-stats">
+          <div class="hero-stat">
+            <div class="hero-stat-label">Design Direction</div>
+            <div class="hero-stat-value">Editorial Ops</div>
+            <div class="hero-stat-copy">既像金融工作台，也像高可信情报面板。</div>
+          </div>
+          <div class="hero-stat">
+            <div class="hero-stat-label">Product Tone</div>
+            <div class="hero-stat-value">Calm + Exact</div>
+            <div class="hero-stat-copy">不炫技，不轻浮，靠信息秩序建立信任。</div>
+          </div>
+          <div class="hero-stat">
+            <div class="hero-stat-label">Primary Surface</div>
+            <div class="hero-stat-value">Triage Dashboard</div>
+            <div class="hero-stat-copy">默认首页就是 CPA 每周一的决策台。</div>
+          </div>
+        </div>
+      </div>
+      <aside class="spec-card">
+        <div>
+          <div class="section-kicker">Spec Summary</div>
+          <div class="spec-title">一套可直接当项目基线的前端规范</div>
+          <p class="spec-copy">
+            这份预览覆盖品牌情绪、颜色、字体、布局、组件和关键页面。你后面无论是做 Web App、Pitch 截图，还是正式产品 UI，都能沿着这一套继续往下扩。
+          </p>
+        </div>
+        <div class="spec-list">
+          <div class="spec-item">
+            <div class="spec-item-label">Fonts</div>
+            <div class="spec-item-value">Fraunces + Manrope + IBM Plex Mono</div>
+          </div>
+          <div class="spec-item">
+            <div class="spec-item-label">Color</div>
+            <div class="spec-item-value">Navy / Paper / Signal Blue / Compliance Teal / Alert Gold / Critical Rose</div>
+          </div>
+          <div class="spec-item">
+            <div class="spec-item-label">Components</div>
+            <div class="spec-item-value">Queue rows, impact banners, client risk cards, import wizard blocks, source-backed notices</div>
+          </div>
+          <div class="spec-item">
+            <div class="spec-item-label">Usage</div>
+            <div class="spec-item-value">适合 MVP，也适合你后面继续扩成完整产品设计系统</div>
+          </div>
+        </div>
+      </aside>
+    </section>
+
+    <section class="section">
+      <div class="section-head">
+        <div>
+          <div class="section-kicker">01 · Brand Tokens</div>
+          <h2 class="section-title">颜色不是装饰，而是风险等级和可信度系统</h2>
+        </div>
+        <p class="section-copy">
+          主色不走科技紫，也不走纯黑灰企业后台。我们用深海军蓝做信息骨架，用浅纸色降低金融后台的压迫感，再把信号色留给真正重要的变更与风险。
+        </p>
+      </div>
+      <div class="token-grid">
+        <article class="token-card">
+          <div class="token-swatch" style="background:#192235;">#192235</div>
+          <div class="token-meta">
+            <div class="token-name">Ink Navy</div>
+            <div class="token-desc">正文、标题、侧边栏和高密度信息承载色。整个产品的“可信骨架”。</div>
+          </div>
+        </article>
+        <article class="token-card">
+          <div class="token-swatch" style="background:#1f56d8;">#1F56D8</div>
+          <div class="token-meta">
+            <div class="token-name">Signal Blue</div>
+            <div class="token-desc">主按钮、关键入口、系统推荐动作。代表“现在该处理什么”。</div>
+          </div>
+        </article>
+        <article class="token-card">
+          <div class="token-swatch" style="background:#14a192;">#14A192</div>
+          <div class="token-meta">
+            <div class="token-name">Compliance Teal</div>
+            <div class="token-desc">已同步、已核验、可信来源、正常完成态。适合“放心”的感觉。</div>
+          </div>
+        </article>
+        <article class="token-card">
+          <div class="token-swatch" style="background:#c9972f;">#C9972F</div>
+          <div class="token-meta">
+            <div class="token-name">Alert Gold</div>
+            <div class="token-desc">官方公告、政策变化、需要人工核验的内容。强调“注意，不是报错”。</div>
+          </div>
+        </article>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="type-grid">
+        <div class="surface">
+          <div class="section-kicker">02 · Typography</div>
+          <h2 class="section-title" style="font-size:34px; margin-bottom:18px;">有判断力的排版层级</h2>
+          <div class="type-scale">
+            <div class="type-item">
+              <div class="type-label">Display XL / Hero</div>
+              <div class="type-display display-xl">Every deadline, explained before it becomes a penalty.</div>
+            </div>
+            <div class="type-item">
+              <div class="type-label">Display LG / Page Head</div>
+              <div class="type-display display-lg">This Week's Triage Queue</div>
+            </div>
+            <div class="type-item">
+              <div class="type-label">Display MD / Panel Title</div>
+              <div class="type-display display-md">Affected Clients After California Extension</div>
+            </div>
+            <div class="type-item">
+              <div class="type-label">Body LG / Narrative</div>
+              <div class="type-display body-lg">Used for banners, onboarding copy, and explanatory text around tax deadline logic.</div>
+            </div>
+            <div class="type-item">
+              <div class="type-label">Mono SM / Metadata</div>
+              <div class="type-display mono-sm">UPDATED 04.19.2026 · SOURCE VERIFIED</div>
+            </div>
+          </div>
+        </div>
+        <div class="surface">
+          <div class="section-kicker">03 · Principles</div>
+          <h2 class="section-title" style="font-size:34px; margin-bottom:18px;">界面规则</h2>
+          <div class="rules">
+            <div class="rule">
+              <strong>先分诊，再管理</strong>
+              <span>首页不是总览式 KPI 仪表盘，而是“现在该做什么”的工作台。</span>
+            </div>
+            <div class="rule">
+              <strong>每个重要日期都要可追溯</strong>
+              <span>截止日旁要能看到州、税种、来源和最近变更时间，避免黑箱。</span>
+            </div>
+            <div class="rule">
+              <strong>风险色只留给风险</strong>
+              <span>红色和金色只出现在罚款风险、规则变更、数据冲突等真正需要注意的地方。</span>
+            </div>
+            <div class="rule">
+              <strong>让高密度信息也能呼吸</strong>
+              <span>靠留白、分组和字重层级组织复杂信息，而不是靠大量边框和表格线。</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="section-head">
+        <div>
+          <div class="section-kicker">04 · Core Components</div>
+          <h2 class="section-title">这套产品最常出现的 UI 颗粒</h2>
+        </div>
+        <p class="section-copy">
+          DueDateHQ 不需要炫目的组件库，需要的是一组专门服务于 deadline intelligence 的基础部件：明确动作、明确优先级、明确来源、明确状态。
+        </p>
+      </div>
+      <div class="component-grid">
+        <article class="component-card">
+          <div class="component-title">Buttons & Actions</div>
+          <div class="component-copy">主按钮只保留一个强行动作，其他动作用次级或幽灵按钮承接。</div>
+          <div class="button-row">
+            <span class="btn btn-primary">Review Affected Clients</span>
+            <span class="btn btn-secondary">Mark As Extension</span>
+            <span class="btn btn-ghost">Open Source Notice</span>
+          </div>
+        </article>
+        <article class="component-card">
+          <div class="component-title">Status Badges</div>
+          <div class="component-copy">状态标签不堆太多文字，优先用颜色和短语快速传达判断。</div>
+          <div class="badge-row">
+            <span class="badge badge-critical">Critical</span>
+            <span class="badge badge-watch">Needs Review</span>
+            <span class="badge badge-cleared">Verified</span>
+          </div>
+        </article>
+        <article class="component-card">
+          <div class="component-title">Signal Card</div>
+          <div class="component-copy">州税局公告、灾难延期、规则变化，都应该收束进统一的 notice 卡片。</div>
+          <div class="signal-card">
+            <div class="signal-top">
+              <span class="signal-source">California FTB</span>
+              <span class="badge badge-watch">Update</span>
+            </div>
+            <strong>Los Angeles County extension pushed to Oct 15</strong>
+            <p>8 个客户受到影响，其中 3 个客户已有既定沟通计划需要改期。</p>
+          </div>
+        </article>
+        <article class="component-card">
+          <div class="component-title">Deadline Queue Row</div>
+          <div class="component-copy">默认行高适中，保证快速扫描。每一行必须给出对象、动作和时间压力。</div>
+          <div class="deadline-row">
+            <div class="date-pill">
+              <strong>22</strong>
+              <span>APR</span>
+            </div>
+            <div class="deadline-main">
+              <strong>Q1 Payroll Filing · Northwind Services LLC</strong>
+              <span>California · S-Corp · 4 days left · waiting on client docs</span>
+            </div>
+            <span class="badge badge-critical">Critical</span>
+          </div>
+        </article>
+        <article class="component-card">
+          <div class="component-title">Client Risk Snapshot</div>
+          <div class="component-copy">客户列表不要只有姓名和标签，要能看出风险密度和覆盖州数。</div>
+          <div class="client-row">
+            <div class="client-main">
+              <strong>Sunset Retail Group</strong>
+              <span>CA, NY, TX · Partnership · 6 active deadlines</span>
+            </div>
+            <div class="client-risk">
+              <strong>High</strong>
+              <span>2 this week</span>
+            </div>
+          </div>
+        </article>
+        <article class="component-card">
+          <div class="component-title">Motion Rules</div>
+          <div class="component-copy">动画只服务于感知层级，不做花哨过渡。建议统一控制在 180–240ms。</div>
+          <div class="stat-row">
+            <span class="badge badge-cleared">Fade In</span>
+            <span class="badge badge-watch">Slide 8px</span>
+            <span class="badge badge-critical">No Bounce</span>
+          </div>
+        </article>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="section-head">
+        <div>
+          <div class="section-kicker">05 · Product Preview</div>
+          <h2 class="section-title">完整产品建议以这个工作台为视觉中枢</h2>
+        </div>
+        <p class="section-copy">
+          这不是最终页面稿，而是整套设计规范落到实际产品里的“母版界面”。你后续再做客户详情、导入向导、公告中心，都会从这里长出来。
+        </p>
+      </div>
+
+      <div class="app-shell">
+        <div class="app-frame">
+          <aside class="sidebar">
+            <div class="brand-lockup">
+              <div class="brand-mark">D</div>
+              <div class="brand-text">
+                <strong>DueDateHQ</strong>
+                <span>Deadline intelligence for CPAs</span>
+              </div>
+            </div>
+
+            <div class="nav-group">
+              <div class="nav-label">Workspace</div>
+              <a class="nav-item active" href="#">
+                Triage Dashboard
+                <span class="nav-count">12</span>
+              </a>
+              <a class="nav-item" href="#">
+                Clients
+                <span class="nav-count">84</span>
+              </a>
+              <a class="nav-item" href="#">
+                Calendar
+                <span class="nav-count">28</span>
+              </a>
+              <a class="nav-item" href="#">
+                Extensions
+                <span class="nav-count">5</span>
+              </a>
+            </div>
+
+            <div class="nav-group">
+              <div class="nav-label">Signals</div>
+              <a class="nav-item" href="#">
+                State Notices
+                <span class="nav-count">3</span>
+              </a>
+              <a class="nav-item" href="#">
+                Imported Conflicts
+                <span class="nav-count">7</span>
+              </a>
+              <a class="nav-item" href="#">
+                Source Center
+                <span class="nav-count">51</span>
+              </a>
+            </div>
+
+            <div class="nav-group">
+              <div class="nav-label">Admin</div>
+              <a class="nav-item" href="#">
+                Import Wizard
+                <span class="nav-count">New</span>
+              </a>
+              <a class="nav-item" href="#">
+                Rules Engine
+                <span class="nav-count">9</span>
+              </a>
+            </div>
+
+            <div class="sidebar-note">
+              <strong>Design intention</strong>
+              <p>
+                侧边栏使用深色是为了让主内容区的风险、公告和待处理项更有层次感。它像一张稳定的桌子，不像“又一个 SaaS 后台”。
+              </p>
+            </div>
+          </aside>
+
+          <main class="main">
+            <div class="topbar">
+              <div class="topbar-copy">
+                <small>Monday · Weekly Review</small>
+                <h2>Good morning, Sarah. Here’s what can’t slip this week.</h2>
+              </div>
+              <div class="topbar-actions">
+                <input class="search" value="Search client, state, form or notice" aria-label="Search">
+                <span class="btn btn-secondary">Export Brief</span>
+                <span class="btn btn-primary">Review Queue</span>
+              </div>
+            </div>
+
+            <div class="hero-banner">
+              <section class="banner-main">
+                <div class="banner-label">12 Time-Sensitive Items</div>
+                <h3>Three deadlines are inside the 7-day window, and one official notice needs your review.</h3>
+                <p>
+                  首页首屏应该先告诉用户“这周该处理什么”，而不是先给一堆总览图表。对于 CPA，这是一个工作台，不是 BI 仪表盘。
+                </p>
+              </section>
+
+              <aside class="banner-side">
+                <div class="banner-label" style="background:rgba(201,151,47,0.16); color:var(--gold-700);">Official Signal</div>
+                <h3 style="color:var(--ink-950);">California extension update detected</h3>
+                <p>系统应把公告、受影响客户和建议动作放在一起，避免用户自行推理。</p>
+                <div class="impact-list">
+                  <div class="impact-item">
+                    <strong>8 impacted clients</strong>
+                    <span>其中 3 个客户本周原本要提交资料</span>
+                  </div>
+                  <div class="impact-item">
+                    <strong>Source attached</strong>
+                    <span>所有变更都要能点回官方来源链接</span>
+                  </div>
+                </div>
+              </aside>
+            </div>
+
+            <div class="stat-strip">
+              <div class="stat-card">
+                <span class="label">Critical This Week</span>
+                <div class="value">3</div>
+                <div class="hint">最危险的项目要集中且明显</div>
+              </div>
+              <div class="stat-card">
+                <span class="label">Needs Client Input</span>
+                <div class="value">7</div>
+                <div class="hint">直接关联后续客户提醒流程</div>
+              </div>
+              <div class="stat-card">
+                <span class="label">Notices Awaiting Review</span>
+                <div class="value">1</div>
+                <div class="hint">AI 信号不等于已采信规则</div>
+              </div>
+              <div class="stat-card">
+                <span class="label">Portfolio Health</span>
+                <div class="value">89%</div>
+                <div class="hint">只保留少量汇总指标，不喧宾夺主</div>
+              </div>
+            </div>
+
+            <div class="dashboard-grid">
+              <section class="panel">
+                <div class="panel-head">
+                  <h3>This Week’s Triage Queue</h3>
+                  <span>Sorted by penalty exposure + due date proximity</span>
+                </div>
+                <div class="queue">
+                  <div class="deadline-row">
+                    <div class="date-pill">
+                      <strong>22</strong>
+                      <span>APR</span>
+                    </div>
+                    <div class="deadline-main">
+                      <strong>Q1 Payroll Filing · Northwind Services LLC</strong>
+                      <span>CA · 4 days left · docs pending · payroll tax</span>
+                    </div>
+                    <span class="badge badge-critical">Critical</span>
+                  </div>
+                  <div class="deadline-row">
+                    <div class="date-pill">
+                      <strong>24</strong>
+                      <span>APR</span>
+                    </div>
+                    <div class="deadline-main">
+                      <strong>PTE Election Review · Harbor Studio Partners</strong>
+                      <span>NY · 6 days left · owner approval needed</span>
+                    </div>
+                    <span class="badge badge-watch">Review</span>
+                  </div>
+                  <div class="deadline-row">
+                    <div class="date-pill">
+                      <strong>30</strong>
+                      <span>APR</span>
+                    </div>
+                    <div class="deadline-main">
+                      <strong>Franchise Tax Notice · Sierra Wholesale Inc.</strong>
+                      <span>TX · source updated today · cross-state impact possible</span>
+                    </div>
+                    <span class="badge badge-watch">Signal</span>
+                  </div>
+                </div>
+              </section>
+
+              <section class="panel">
+                <div class="panel-head">
+                  <h3>Clients At Highest Risk</h3>
+                  <span>Helps users think in portfolio slices, not isolated tasks</span>
+                </div>
+                <div class="client-list">
+                  <div class="client-row">
+                    <div class="client-main">
+                      <strong>Sunset Retail Group</strong>
+                      <span>CA, NY, TX · Partnership · 6 active deadlines · 2 notices</span>
+                    </div>
+                    <div class="client-risk">
+                      <strong>High</strong>
+                      <span>2 this week</span>
+                    </div>
+                  </div>
+                  <div class="client-row">
+                    <div class="client-main">
+                      <strong>Harbor Studio Partners</strong>
+                      <span>NY · Multi-owner PTE election · source verified</span>
+                    </div>
+                    <div class="client-risk">
+                      <strong>Watch</strong>
+                      <span>Owner delay</span>
+                    </div>
+                  </div>
+                  <div class="client-row">
+                    <div class="client-main">
+                      <strong>Northwind Services LLC</strong>
+                      <span>CA · Payroll docs pending · 4-day window</span>
+                    </div>
+                    <div class="client-risk">
+                      <strong>High</strong>
+                      <span>Docs needed</span>
+                    </div>
+                  </div>
+                </div>
+              </section>
+            </div>
+
+            <section class="panel">
+              <div class="panel-head">
+                <h3>Official Notice Review Pattern</h3>
+                <span>公告卡必须同时展示来源、结论、影响范围和下一步动作</span>
+              </div>
+              <div class="signal-card">
+                <div class="signal-top">
+                  <span class="signal-source">California Franchise Tax Board · 04/19/2026</span>
+                  <span class="badge badge-cleared">Source Verified</span>
+                </div>
+                <strong>Wildfire relief extends filing deadlines for Los Angeles County businesses to October 15.</strong>
+                <p>
+                  建议界面结构：先给出结论，再列出受影响客户数、适用县域、相关税种、最近同步时间，最后给 CTA。
+                  这样用户不需要读完整篇政策文再做判断。
+                </p>
+              </div>
+            </section>
+          </main>
+        </div>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="section-head">
+        <div>
+          <div class="section-kicker">06 · Screen Pattern Library</div>
+          <h2 class="section-title">建议后续统一按这三个页面模式扩展</h2>
+        </div>
+        <p class="section-copy">
+          如果你后面要整个项目都按一套设计来做，最稳的是先把页面类型控制住。DueDateHQ 其实主要就会长成这三类页面。
+        </p>
+      </div>
+      <div class="screen-grid">
+        <article class="screen-card">
+          <div class="screen-top">
+            <div class="screen-chip">Pattern 01</div>
+            <div class="screen-title">Triage Dashboard</div>
+            <div class="screen-copy">高优先级队列、公告信号、客户风险和本周动作。所有人登录后的默认入口。</div>
+          </div>
+          <div class="mini-ui">
+            <div class="mini-frame">
+              <div class="mini-strip">
+                <div class="mini-pill" style="width:48%;"></div>
+                <div class="mini-pill" style="width:22%;"></div>
+                <div class="mini-pill" style="width:18%;"></div>
+              </div>
+              <div class="mini-card">
+                <strong>3 critical deadlines</strong>
+                <span>Sorted by time risk</span>
+              </div>
+              <div class="mini-card">
+                <strong>1 official update</strong>
+                <span>8 affected clients</span>
+              </div>
+              <div class="mini-card">
+                <strong>Portfolio health</strong>
+                <span>89% on track</span>
+              </div>
+            </div>
+          </div>
+        </article>
+
+        <article class="screen-card">
+          <div class="screen-top">
+            <div class="screen-chip">Pattern 02</div>
+            <div class="screen-title">Client Portfolio Detail</div>
+            <div class="screen-copy">围绕单个客户看全年截止日、州覆盖、延期状态、资料缺口和历史公告影响。</div>
+          </div>
+          <div class="mini-ui">
+            <div class="mini-frame">
+              <div class="mini-card">
+                <strong>Sunset Retail Group</strong>
+                <span>CA · NY · TX</span>
+              </div>
+              <div class="mini-card">
+                <strong>Upcoming deadlines</strong>
+                <span>PTE, payroll, franchise tax</span>
+              </div>
+              <div class="mini-card">
+                <strong>Source history</strong>
+                <span>2 notices changed this quarter</span>
+              </div>
+            </div>
+          </div>
+        </article>
+
+        <article class="screen-card">
+          <div class="screen-top">
+            <div class="screen-chip">Pattern 03</div>
+            <div class="screen-title">Import & Mapping Wizard</div>
+            <div class="screen-copy">从 TaxDome / QuickBooks 导入客户，突出字段映射、AI 建议和冲突处理。</div>
+          </div>
+          <div class="mini-ui">
+            <div class="mini-frame">
+              <div class="mini-card">
+                <strong>Upload CSV</strong>
+                <span>TaxDome export detected</span>
+              </div>
+              <div class="mini-card">
+                <strong>Field suggestions</strong>
+                <span>Entity type 92% confidence</span>
+              </div>
+              <div class="mini-card">
+                <strong>Conflict review</strong>
+                <span>7 records need confirmation</span>
+              </div>
+            </div>
+          </div>
+        </article>
+      </div>
+    </section>
+
+    <div class="footer-note">
+      这版规范故意把 UI 重点放在“分诊、来源、影响范围、风险等级”上，而不是普通 CRM 卡片和大表格。
+      如果你整套产品都沿用这条路，DueDateHQ 看起来就会像一个真正的税务 deadline intelligence 产品，而不是换了文案的通用后台。
+    </div>
+  </div>
+</body>
+</html>
