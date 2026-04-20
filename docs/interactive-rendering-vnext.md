@@ -1,234 +1,336 @@
 # Interactive Rendering vNext
 
-## Positioning
+## Purpose
 
-The current interaction stack is a strong first step:
+This document reframes the next-step interaction direction around the product-design logic captured in `docs/interaction-design-assessment.md`.
 
-- natural language or button input
-- plan generation
-- deterministic execution
-- structured response rendering
+It is not a pure technical architecture note.
 
-That architecture upgrades DueDateHQ from a raw CLI into a usable interaction layer. But recent agent capabilities suggest a larger opportunity.
+It is a product-facing interaction direction document for answering one question:
 
-Modern LLM agents can already:
+- if the current interaction approach is directionally correct, what should the next version optimize for?
 
-- call tools reliably
-- write small amounts of code on demand
-- compose temporary UI structures at runtime
-- reason across multiple steps before returning a result
+## 1. Starting Point
 
-The next version of interaction should not stop at "translate language into commands." It should move toward "produce working results for the operator."
+The interaction problem is not:
 
-## Product Thesis
+- how to add more AI behavior
+- how to make the interface feel more agentic
+- how to let the system generate more things dynamically
 
-DueDateHQ should evolve from a command translator into a task agent for tax operations.
+The real problem is:
 
-That means the interaction layer should increasingly help Sarah:
+- how to present the right work context fast enough that Sarah can confidently move her work forward
 
-- decide what matters now
-- assemble the right working context
-- prepare draft outputs
-- batch safe work
-- pause only where human judgment is required
+That means vNext should not be framed as "more autonomous agent capability."
 
-The goal is not to make the product feel more like a chatbot. The goal is to make it feel more like a capable operating partner.
+It should be framed as:
 
-## What Changes
+- a better decision surface
+- stronger intent recognition
+- better preparation of working context
+- safer and faster execution of user judgment
 
-### 1. From Answers To Work Products
+## 2. Problem Definition
 
-Today:
+The product is not solving a calendar-display problem.
 
-- "What is due today?"
-- "Show California clients."
-- "What notifications are pending?"
+It is solving a cognitive-burden problem.
 
-Next:
+Sarah's recurring pain is:
 
-- "Rank the five most important things to handle today and explain why."
-- "Build a worklist for deadlines due in 14 days that still need reminders."
-- "Draft reminder messages for these clients and let me confirm send."
+- not knowing whether something important was missed
+- spending too much time reconstructing the week's working context
+- switching between multiple tools just to determine what matters
+- carrying responsibility for deadlines while using systems that do not create enough confidence
 
-The output is no longer just data retrieval. It becomes a work product:
+So the interaction system should be designed around this core question:
 
-- prioritized action list
-- grouped work queue
-- draft communication
-- batch confirmation package
+- what does Sarah need to act on now, and how can the system present that with minimal reconstruction effort?
 
-### 2. From Fixed Cards To Task-Specific Workspaces
+## 3. Value Proposition
 
-The current response model uses a fixed set of cards such as:
+The product promise is not "a better tax calendar."
 
-- `ListCard`
-- `ClientCard`
-- `ConfirmCard`
-- `GuidanceCard`
+The product promise is:
 
-Those remain useful, but vNext should allow the agent to compose a higher-level workspace schema for a task.
+- reduce the time required to determine what matters
+- reduce omission anxiety
+- present the minimum complete context required for action
+- let Sarah spend time advancing work instead of rebuilding context
 
-Examples:
+The strongest concrete version of that promise is:
 
-- a quarterly filing prep board
-- a "needs reminder" action panel
-- a client operations card with timeline, history, and next actions
-- a disaster-extension watch board
+- Sarah should be able to understand the week's actionable deadlines in under 30 seconds
+- the weekly triage should take minutes instead of 45 minutes
 
-The frontend would still render deterministically, but it would render from a richer agent-selected schema rather than only from a small set of static views.
+That is the standard vNext should optimize toward.
 
-### 3. From Single Commands To Managed Flows
+## 4. Why This Interaction Shape Still Makes Sense
 
-The executor today handles multi-step plans. vNext should let the agent use that ability to manage larger flows while preserving confirmation boundaries.
+The current design direction remains fundamentally correct:
 
-Examples:
+- conversational or interactive text
+- dynamic rendering of context-specific views
+- deterministic execution under clear confirmation boundaries
 
-- identify deadlines due this week
-- filter to records with no reminder sent
-- group by channel availability
-- draft reminder messages
-- present one confirmable batch
+This shape works because it matches the real job.
 
-Or:
+Sarah is not opening the product to browse.
 
-- identify suspicious state mismatches
-- classify them
-- propose fixes
-- let the operator confirm only the risky writes
+She is opening the product to respond.
 
-This is the difference between command execution and operational assistance.
+Traditional dashboards assume the user should:
 
-### 4. From State Awareness To Strategy Awareness
+- browse modules
+- inspect many widgets
+- decide what matters
+- navigate into a function area before acting
 
-A stronger interaction layer should not only know the system state. It should also help evaluate:
+That logic is wrong for this workflow. It pushes the sorting burden back onto the user.
+
+The better model is:
+
+- text provides orientation and conclusion
+- dynamic rendering provides a concrete working surface
+
+The goal is not "chat-first."
+
+The goal is:
+
+- task-first
+- decision-first
+- context-compressed
+
+## 5. Core Design Thesis For vNext
+
+vNext should treat the interface as a stage, not a canvas.
+
+That means:
+
+- the center of the interface should be dominated by the single most relevant work surface
+- supporting context should stay available but not compete for attention
+- the system should lead with what currently requires judgment
+
+The key design principle is:
+
+- Sarah should be shown the minimum complete context for the judgment she needs to make now
+
+If the system shows less, she has to search.
+
+If the system shows more, the system is leaking complexity back to her.
+
+## 6. The Missing Piece In The Current Direction
+
+The current interaction model is broadly correct, but it is still too generic.
+
+It supports:
+
+- dynamic views
+- summaries
+- drill-down
+- confirmation flows
+
+What it still lacks is a sufficiently strong default stage.
+
+The opening experience should not feel like:
+
+- a generic conversation shell
+- a freeform agent workspace
+- a plain list with optional commands
+
+It should feel like:
+
+- the system has already prepared this week's decision surface
+
+That is the most important shift vNext should make.
+
+## 7. The Hero Scenario
+
+The hero scenario should anchor the whole interaction model:
+
+- Monday morning weekly triage during filing season
+
+This is where the value proposition becomes concrete and measurable.
+
+The hero scenario should define:
+
+- what appears first
+- how it is grouped
+- what counts as urgent
+- what actions are immediately available
+- what counts as "done for now"
+
+If this scenario is weak, the whole interaction model will feel abstract even if the architecture is sound.
+
+## 8. The Default Decision Surface
+
+The default surface in vNext should be a strong decision surface, not an empty shell.
+
+Its job is to answer, immediately:
+
+- how many things need action this week
+- what is most urgent
+- why it is urgent
+- what Sarah can do next
+
+The default shape should therefore privilege:
+
+- one top-line summary
+- one dominant work surface
+- one clear action hierarchy
+
+Possible supporting regions can exist, but they should remain subordinate:
+
+- history
+- audit trail
+- secondary filters
+- deeper drill-down
+
+The default opening state should feel prepared, not neutral.
+
+## 9. What vNext Should Improve
+
+### 9.1 Stronger intent recognition
+
+LLMs should continue to be used primarily for understanding:
+
+- user requests
+- entity references
+- implied filters
+- exploration versus execution intent
+
+This remains the highest-leverage use of model capability.
+
+### 9.2 Better work preparation
+
+The system should do more setup work before asking the user to judge:
+
+- gather relevant records
+- organize urgency
+- collect available actions
+- prepare drafts where useful
+- group records into meaningful work surfaces
+
+### 9.3 Better stage selection
+
+The system should get better at deciding which view deserves center stage.
+
+This is not the same as "dynamic rendering" in the abstract.
+
+It is:
+
+- choosing the right current work surface
+- suppressing less relevant structure
+- preserving a strong main-stage feeling
+
+### 9.4 Better recommendation signals
+
+The system can help the user judge by surfacing:
 
 - urgency
 - risk
-- importance
-- whether a task can be batched
-- whether a task requires explicit human review
-
-That suggests a strategy layer with scores or labels such as:
-
-- urgency score
-- risk score
-- confidence score
+- confidence
 - confirmation requirement
-- batchability
+- likely next actions
 
-The agent can then justify recommendations instead of just listing records.
+These remain advisory signals, not autonomous decisions.
 
-### 5. From Static Capability To Controlled Self-Extension
+## 10. What vNext Should Not Become
 
-This is the most ambitious direction.
+The product should not evolve into:
 
-If the agent can already write code and compose renderable structures, then some narrow classes of missing capability do not always need to wait for a full product cycle.
+- a general autonomous agent
+- a chat-heavy assistant with weak working context
+- a runtime code-generation product loop
+- a system that substitutes for CPA business judgment
 
-Possible examples:
+The correct boundary remains:
 
-- temporary reporting views
-- one-off filters
-- ad hoc grouped summaries
-- temporary visualizations
-- narrowly scoped data investigation helpers
+- the system recognizes intent
+- the system prepares context
+- the user makes the judgment
+- the system executes that judgment reliably
 
-This should only happen inside strict guardrails. But if done well, it gives the product a controlled path to generate short-lived operator tooling before promoting repeated patterns into permanent features.
+That boundary is not a limitation. It is what makes the product trustworthy.
 
-## Capability Ladder
+## 11. Technical Direction
 
-### Near Term
+The existing technical stack still makes sense:
 
-These are realistic on top of the current architecture:
-
-- LLM-generated plans for read-heavy tasks
-- richer recommendation messages
-- prioritized action lists
-- grouped and ranked work queues
-- reminder draft generation
-- batch confirmation payloads
-
-### Mid Term
-
-These likely require a richer response schema and frontend support:
-
-- task-specific workspaces
-- multi-panel operational dashboards generated from context
-- durable drafts and pending confirmation queues
-- "resume where I left off" interaction state
-
-### Long Term
-
-These are high-upside but require stronger controls:
-
-- generated temporary reports or query helpers
-- agent-authored micro-views for novel questions
-- controlled code or query generation inside a sandbox
-- adaptive operational tooling that can later be promoted into first-class product features
-
-## Required Guardrails
-
-More capability is only useful if the trust boundaries remain clear.
-
-The following constraints should stay firm:
-
-- execution remains deterministic
-- writes remain auditable
-- risky actions require explicit confirmation
-- rendered output is validated against a server-owned schema
-- generated code or queries run only in a sandboxed and observable environment
-- the agent never becomes the final authority on business rules or legal interpretation
-
-The right model is not "let the LLM do everything." The right model is "let the agent do more preparation and orchestration while the system keeps control of execution and safety."
-
-## Architectural Direction
-
-The current stack remains the right base:
-
-- `LLM / planner`
+- `LLM / intent recognition`
+- `Planning`
 - `PlanExecutor`
 - `InteractionBackend`
 - `ResponseGenerator`
 
-vNext extends this with three additional ideas:
+But vNext should evaluate these layers through a more product-centered lens.
 
-1. A strategy layer
+### Intent Layer
 
-- ranking
-- grouping
-- risk labels
-- confirmation policy
+Primary job:
 
-2. A richer workspace schema
+- understand what Sarah means with minimal friction
 
-- task boards
-- grouped action panels
-- draft queues
-- resumable operator context
+### Planning Layer
 
-3. A controlled extension layer
+Primary job:
 
-- temporary query helpers
-- temporary reporting blocks
-- sandboxed generated utilities
+- translate that understanding into safe, deterministic work preparation
 
-## Practical Framing
+### Execution Layer
 
-This vision should not replace the current implementation guide.
+Primary job:
 
-`duedatehq-interaction-dev-guide-v5.md` should remain the execution-focused guide for the current phase.
+- perform confirmed operations reliably and audibly
 
-This document is a product and architecture direction for what comes next after the deterministic interaction backbone is stable.
+### Presentation Layer
 
-## Core Takeaway
+Primary job:
 
-The biggest upgrade is not "better chat."
+- render the most useful decision surface for the current task
 
-The biggest upgrade is a shift from:
+The important shift is that presentation should no longer be treated only as "render the output of execution."
 
-- translating user language into system commands
+It should also be treated as:
 
-to:
+- choose the best stage for the user's current judgment task
 
-- producing structured, confirmable, high-value work on the user's behalf
+## 12. Near-Term Product Direction
 
-That is the path from interactive CLI wrapper to agent-assisted tax operations workspace.
+The most realistic near-term goals are:
+
+- sharpen the default opening surface
+- anchor the experience around weekly triage
+- improve one-line summaries
+- improve grouping and stage selection
+- improve drill-down from summary to client or deadline context
+- keep confirmation and execution deterministic
+
+This is enough to materially improve the product without changing its philosophical boundaries.
+
+## 13. Working Conclusion
+
+vNext should not be driven by the question:
+
+- what else can the agent do?
+
+It should be driven by the question:
+
+- how do we turn the current interaction model into a stronger decision surface for Sarah?
+
+The design logic remains sound:
+
+- interactive text for orientation
+- dynamic rendering for context-specific work surfaces
+- deterministic execution for trust
+
+What changes in vNext is emphasis.
+
+The product should move from:
+
+- flexible interaction system
+
+toward:
+
+- a sharply staged, judgment-support interaction layer centered on Sarah's real working rhythm
