@@ -146,6 +146,21 @@ For the next-step interaction direction, see:
 
 - `docs/interactive-rendering-vnext.md`
 
+## Onboarding Prototype
+
+A static onboarding intake prototype now lives at:
+
+- `frontend/onboarding.html`
+
+It aligns to the current intake-oriented schema split:
+
+- stable client profile on `clients`
+- annual filing profile on `client_tax_profiles`
+- resident and operating jurisdictions on `client_jurisdictions`
+- primary contact on `client_contacts`
+
+The page is intentionally frontend-only for now. It generates a live JSON payload and a code-aligned CLI command so the intake flow can be reviewed before a dedicated HTTP transport is added.
+
 ## Small Demo Data
 
 A minimal demo seed script is available for local testing:

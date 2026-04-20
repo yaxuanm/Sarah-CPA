@@ -1,0 +1,1444 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>DueDateHQ Onboarding Intake</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Fraunces:opsz,wght,SOFT@9..144,500..700,100&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --ink-950: #101826;
+      --ink-900: #192235;
+      --ink-800: #263148;
+      --ink-700: #42506b;
+      --ink-600: #62718d;
+      --ink-500: #8592aa;
+      --paper-50: #fbfaf7;
+      --paper-100: #f4f0e7;
+      --paper-200: #ebe3d4;
+      --line: rgba(27, 39, 58, 0.12);
+      --brand-700: #1544b5;
+      --brand-600: #1f56d8;
+      --brand-500: #3f78f0;
+      --brand-100: #eaf1ff;
+      --teal-700: #0d776c;
+      --teal-500: #14a192;
+      --teal-100: #e7f8f5;
+      --gold-700: #8d6317;
+      --gold-100: #fff4d9;
+      --rose-700: #9f3042;
+      --rose-100: #ffe8ed;
+      --success-700: #276444;
+      --success-100: #e8f6ec;
+      --warn-700: #926519;
+      --warn-100: #fff3d7;
+      --shadow-soft: 0 20px 60px rgba(24, 36, 56, 0.08);
+      --shadow-card: 0 12px 24px rgba(20, 32, 52, 0.08);
+      --radius-md: 18px;
+      --radius-lg: 28px;
+      --radius-xl: 34px;
+      --max-width: 1460px;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html, body {
+      margin: 0;
+      min-height: 100%;
+    }
+
+    body {
+      font-family: "Manrope", -apple-system, BlinkMacSystemFont, sans-serif;
+      color: var(--ink-900);
+      background:
+        radial-gradient(circle at 8% 8%, rgba(63, 120, 240, 0.12), transparent 26%),
+        radial-gradient(circle at 92% 10%, rgba(20, 161, 146, 0.10), transparent 24%),
+        linear-gradient(180deg, #f7f4ed 0%, #fbfaf7 42%, #f2f6fb 100%);
+    }
+
+    body::before {
+      content: "";
+      position: fixed;
+      inset: 0;
+      background-image: radial-gradient(rgba(16, 24, 38, 0.05) 0.5px, transparent 0.5px);
+      background-size: 14px 14px;
+      opacity: 0.16;
+      pointer-events: none;
+    }
+
+    .page {
+      position: relative;
+      z-index: 1;
+      max-width: var(--max-width);
+      margin: 0 auto;
+      padding: 28px;
+    }
+
+    .hero {
+      display: grid;
+      grid-template-columns: minmax(0, 1.15fr) minmax(340px, 0.85fr);
+      gap: 24px;
+      margin-bottom: 24px;
+    }
+
+    .panel,
+    .wizard,
+    .preview,
+    .hero-card,
+    .hero-side {
+      background: rgba(255, 255, 255, 0.82);
+      border: 1px solid rgba(255, 255, 255, 0.78);
+      backdrop-filter: blur(18px);
+      -webkit-backdrop-filter: blur(18px);
+      box-shadow: var(--shadow-soft);
+    }
+
+    .hero-card,
+    .hero-side {
+      border-radius: var(--radius-xl);
+      padding: 30px;
+    }
+
+    .eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      padding: 8px 14px;
+      border-radius: 999px;
+      background: rgba(16, 24, 38, 0.06);
+      color: var(--ink-700);
+      font-family: "IBM Plex Mono", monospace;
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      margin-bottom: 18px;
+    }
+
+    .eyebrow::before {
+      content: "";
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--teal-500);
+      box-shadow: 0 0 0 6px rgba(20, 161, 146, 0.14);
+    }
+
+    h1, h2, h3 {
+      margin: 0;
+      letter-spacing: -0.03em;
+    }
+
+    h1, h2 {
+      font-family: "Fraunces", Georgia, serif;
+      line-height: 1.02;
+    }
+
+    h1 {
+      font-size: clamp(42px, 6vw, 74px);
+      max-width: 680px;
+      margin-bottom: 14px;
+      color: var(--ink-950);
+    }
+
+    h1 em {
+      font-style: normal;
+      color: var(--brand-600);
+    }
+
+    .hero-copy {
+      color: var(--ink-700);
+      font-size: 18px;
+      line-height: 1.6;
+      max-width: 640px;
+      margin-bottom: 24px;
+    }
+
+    .hero-stats {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 12px;
+    }
+
+    .stat {
+      padding: 16px 18px;
+      border-radius: 18px;
+      background: rgba(255, 255, 255, 0.72);
+      border: 1px solid rgba(16, 24, 38, 0.08);
+    }
+
+    .stat-label {
+      font-family: "IBM Plex Mono", monospace;
+      font-size: 11px;
+      color: var(--ink-600);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      margin-bottom: 8px;
+    }
+
+    .stat-value {
+      font-size: 21px;
+      font-weight: 800;
+      color: var(--ink-950);
+    }
+
+    .hero-side {
+      display: grid;
+      gap: 14px;
+      align-content: start;
+      background:
+        linear-gradient(180deg, rgba(16, 24, 38, 0.92), rgba(23, 34, 56, 0.94)),
+        radial-gradient(circle at top right, rgba(63, 120, 240, 0.28), transparent 35%);
+      color: white;
+      border: none;
+    }
+
+    .hero-side h2 {
+      font-size: 30px;
+    }
+
+    .hero-side p {
+      margin: 0;
+      color: rgba(255, 255, 255, 0.78);
+      line-height: 1.6;
+    }
+
+    .hint-list {
+      display: grid;
+      gap: 10px;
+      margin-top: 8px;
+    }
+
+    .hint {
+      padding: 14px 16px;
+      border-radius: 18px;
+      background: rgba(255, 255, 255, 0.08);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+    }
+
+    .hint strong {
+      display: block;
+      margin-bottom: 4px;
+      font-size: 14px;
+      color: white;
+    }
+
+    .layout {
+      display: grid;
+      grid-template-columns: 300px minmax(0, 1fr) 390px;
+      gap: 24px;
+      align-items: start;
+    }
+
+    .panel,
+    .wizard,
+    .preview {
+      border-radius: var(--radius-lg);
+      padding: 22px;
+    }
+
+    .panel {
+      position: sticky;
+      top: 22px;
+    }
+
+    .panel-title {
+      font-size: 14px;
+      font-family: "IBM Plex Mono", monospace;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--ink-600);
+      margin-bottom: 18px;
+    }
+
+    .step-list {
+      display: grid;
+      gap: 12px;
+      margin-bottom: 22px;
+    }
+
+    .step-button {
+      width: 100%;
+      text-align: left;
+      border: 1px solid rgba(16, 24, 38, 0.08);
+      border-radius: 18px;
+      background: rgba(255, 255, 255, 0.72);
+      padding: 16px;
+      cursor: pointer;
+      transition: transform 160ms ease, border-color 160ms ease, box-shadow 160ms ease;
+    }
+
+    .step-button:hover {
+      transform: translateY(-1px);
+      border-color: rgba(31, 86, 216, 0.25);
+    }
+
+    .step-button.active {
+      border-color: rgba(31, 86, 216, 0.35);
+      box-shadow: 0 12px 20px rgba(31, 86, 216, 0.12);
+    }
+
+    .step-meta {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 8px;
+      font-family: "IBM Plex Mono", monospace;
+      font-size: 11px;
+      color: var(--ink-600);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+
+    .step-status {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 5px 10px;
+      border-radius: 999px;
+      background: var(--paper-100);
+      color: var(--ink-700);
+    }
+
+    .step-status.ready {
+      background: var(--success-100);
+      color: var(--success-700);
+    }
+
+    .step-status.active {
+      background: var(--brand-100);
+      color: var(--brand-700);
+    }
+
+    .step-title {
+      font-size: 17px;
+      font-weight: 700;
+      color: var(--ink-950);
+      margin-bottom: 6px;
+    }
+
+    .step-copy {
+      font-size: 14px;
+      color: var(--ink-700);
+      line-height: 1.5;
+    }
+
+    .panel-actions {
+      display: grid;
+      gap: 10px;
+    }
+
+    .wizard-header,
+    .preview-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 16px;
+      margin-bottom: 20px;
+    }
+
+    .wizard-header p,
+    .preview-header p {
+      margin: 8px 0 0;
+      color: var(--ink-700);
+    }
+
+    .section {
+      display: none;
+    }
+
+    .section.active {
+      display: block;
+    }
+
+    .section-card {
+      border: 1px solid rgba(16, 24, 38, 0.08);
+      background: rgba(255, 255, 255, 0.78);
+      border-radius: 22px;
+      padding: 18px;
+      margin-bottom: 14px;
+    }
+
+    .section-card h3 {
+      font-size: 20px;
+      margin-bottom: 6px;
+      color: var(--ink-950);
+    }
+
+    .section-card p {
+      margin: 0 0 16px;
+      color: var(--ink-700);
+      line-height: 1.6;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 14px;
+    }
+
+    .grid.single {
+      grid-template-columns: minmax(0, 1fr);
+    }
+
+    .field {
+      display: grid;
+      gap: 8px;
+    }
+
+    .field label {
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--ink-800);
+    }
+
+    .field small {
+      color: var(--ink-600);
+      font-size: 12px;
+      line-height: 1.45;
+    }
+
+    input,
+    select,
+    textarea {
+      width: 100%;
+      border-radius: 14px;
+      border: 1px solid rgba(16, 24, 38, 0.12);
+      background: rgba(255, 255, 255, 0.92);
+      padding: 14px 15px;
+      font: inherit;
+      color: var(--ink-900);
+      transition: border-color 160ms ease, box-shadow 160ms ease;
+    }
+
+    input:focus,
+    select:focus,
+    textarea:focus {
+      outline: none;
+      border-color: rgba(31, 86, 216, 0.45);
+      box-shadow: 0 0 0 4px rgba(31, 86, 216, 0.12);
+    }
+
+    textarea {
+      min-height: 100px;
+      resize: vertical;
+    }
+
+    .chip-group {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+
+    .chip,
+    .toggle {
+      border: 1px solid rgba(16, 24, 38, 0.1);
+      background: rgba(255, 255, 255, 0.86);
+      color: var(--ink-800);
+      border-radius: 999px;
+      padding: 10px 14px;
+      font-size: 13px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: transform 160ms ease, border-color 160ms ease, background 160ms ease;
+    }
+
+    .chip:hover,
+    .toggle:hover {
+      transform: translateY(-1px);
+      border-color: rgba(31, 86, 216, 0.24);
+    }
+
+    .chip.active,
+    .toggle.active {
+      background: var(--brand-100);
+      color: var(--brand-700);
+      border-color: rgba(31, 86, 216, 0.3);
+    }
+
+    .toggle[data-value="true"].active {
+      background: var(--success-100);
+      color: var(--success-700);
+      border-color: rgba(39, 100, 68, 0.22);
+    }
+
+    .toggle[data-value="false"].active {
+      background: var(--rose-100);
+      color: var(--rose-700);
+      border-color: rgba(159, 48, 66, 0.2);
+    }
+
+    .boolean-grid {
+      display: grid;
+      gap: 12px;
+    }
+
+    .toggle-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 18px;
+      padding: 14px 16px;
+      border-radius: 18px;
+      background: rgba(255, 255, 255, 0.72);
+      border: 1px solid rgba(16, 24, 38, 0.08);
+    }
+
+    .toggle-copy strong {
+      display: block;
+      font-size: 14px;
+      color: var(--ink-950);
+      margin-bottom: 4px;
+    }
+
+    .toggle-copy span {
+      color: var(--ink-700);
+      font-size: 13px;
+      line-height: 1.5;
+    }
+
+    .toggle-options {
+      display: flex;
+      gap: 8px;
+      flex-shrink: 0;
+    }
+
+    .wizard-footer {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 14px;
+      margin-top: 20px;
+    }
+
+    .footer-hint {
+      color: var(--ink-600);
+      font-size: 13px;
+      line-height: 1.5;
+      max-width: 520px;
+    }
+
+    .button-row {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    button {
+      font: inherit;
+    }
+
+    .btn {
+      border: none;
+      border-radius: 999px;
+      padding: 12px 18px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: transform 160ms ease, box-shadow 160ms ease, opacity 160ms ease;
+    }
+
+    .btn:hover {
+      transform: translateY(-1px);
+    }
+
+    .btn.primary {
+      background: linear-gradient(135deg, var(--brand-600), var(--brand-500));
+      color: white;
+      box-shadow: 0 16px 26px rgba(31, 86, 216, 0.22);
+    }
+
+    .btn.secondary {
+      background: rgba(16, 24, 38, 0.06);
+      color: var(--ink-900);
+    }
+
+    .btn.ghost {
+      background: rgba(255, 255, 255, 0.9);
+      color: var(--ink-900);
+      border: 1px solid rgba(16, 24, 38, 0.1);
+    }
+
+    .preview {
+      position: sticky;
+      top: 22px;
+      display: grid;
+      gap: 16px;
+    }
+
+    .preview-card {
+      border-radius: 20px;
+      border: 1px solid rgba(16, 24, 38, 0.08);
+      background: rgba(255, 255, 255, 0.78);
+      padding: 16px;
+    }
+
+    .preview-card h3 {
+      font-size: 16px;
+      margin-bottom: 12px;
+      color: var(--ink-950);
+    }
+
+    .kv-list {
+      display: grid;
+      gap: 10px;
+    }
+
+    .kv {
+      display: flex;
+      justify-content: space-between;
+      gap: 14px;
+      padding-bottom: 10px;
+      border-bottom: 1px solid rgba(16, 24, 38, 0.06);
+    }
+
+    .kv:last-child {
+      border-bottom: none;
+      padding-bottom: 0;
+    }
+
+    .kv-label {
+      color: var(--ink-600);
+      font-size: 13px;
+    }
+
+    .kv-value {
+      color: var(--ink-950);
+      font-size: 13px;
+      font-weight: 700;
+      text-align: right;
+    }
+
+    .state-pills,
+    .flag-pills {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      border-radius: 999px;
+      padding: 8px 12px;
+      font-size: 12px;
+      font-weight: 700;
+      background: var(--paper-100);
+      color: var(--ink-800);
+    }
+
+    .pill.resident {
+      background: var(--gold-100);
+      color: var(--gold-700);
+    }
+
+    .pill.operating {
+      background: var(--teal-100);
+      color: var(--teal-700);
+    }
+
+    .pill.flag-true {
+      background: var(--success-100);
+      color: var(--success-700);
+    }
+
+    .pill.flag-false {
+      background: var(--rose-100);
+      color: var(--rose-700);
+    }
+
+    pre {
+      margin: 0;
+      white-space: pre-wrap;
+      word-break: break-word;
+      font-family: "IBM Plex Mono", monospace;
+      font-size: 12px;
+      line-height: 1.6;
+      color: var(--ink-900);
+      background: rgba(16, 24, 38, 0.03);
+      border-radius: 16px;
+      padding: 14px;
+      overflow: auto;
+      max-height: 260px;
+    }
+
+    .meta-note {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      margin-top: 12px;
+      color: var(--ink-600);
+      font-size: 12px;
+    }
+
+    .toast {
+      position: fixed;
+      right: 22px;
+      bottom: 22px;
+      padding: 12px 16px;
+      border-radius: 16px;
+      background: rgba(16, 24, 38, 0.92);
+      color: white;
+      font-size: 13px;
+      opacity: 0;
+      transform: translateY(8px);
+      transition: opacity 160ms ease, transform 160ms ease;
+      pointer-events: none;
+      z-index: 20;
+    }
+
+    .toast.visible {
+      opacity: 1;
+      transform: translateY(0);
+    }
+
+    @media (max-width: 1220px) {
+      .layout {
+        grid-template-columns: 1fr;
+      }
+
+      .panel,
+      .preview {
+        position: static;
+      }
+    }
+
+    @media (max-width: 980px) {
+      .hero {
+        grid-template-columns: 1fr;
+      }
+
+      .hero-stats,
+      .grid {
+        grid-template-columns: 1fr;
+      }
+
+      .wizard-footer {
+        flex-direction: column;
+        align-items: stretch;
+      }
+
+      .button-row {
+        width: 100%;
+      }
+
+      .button-row .btn {
+        flex: 1 1 0;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <section class="hero">
+      <div class="hero-card">
+        <div class="eyebrow">Deadline Profile Intake</div>
+        <h1>Onboard the client with the <em>minimum complete tax profile</em>.</h1>
+        <p class="hero-copy">
+          This intake flow is designed around DueDateHQ's schema, not a full tax organizer.
+          It captures the stable profile, the annual filing context, and the exact fields that
+          drive deadline generation, routing, and follow-up.
+        </p>
+        <div class="hero-stats">
+          <div class="stat">
+            <div class="stat-label">Tables Seeded</div>
+            <div class="stat-value">4 tables</div>
+          </div>
+          <div class="stat">
+            <div class="stat-label">Primary Goal</div>
+            <div class="stat-value">Generate deadlines</div>
+          </div>
+          <div class="stat">
+            <div class="stat-label">Collection Style</div>
+            <div class="stat-value">Stable + annual delta</div>
+          </div>
+        </div>
+      </div>
+      <aside class="hero-side">
+        <h2>What this prototype already aligns to</h2>
+        <p>Every field below maps to the new schema and CLI contract we just added on the backend.</p>
+        <div class="hint-list">
+          <div class="hint">
+            <strong>Stable profile</strong>
+            Client identity, home jurisdiction, primary contact, communication preference, responsible CPA.
+          </div>
+          <div class="hint">
+            <strong>Annual profile</strong>
+            Tax year, entity election, extension posture, payroll, contractor reporting, notices, intake status.
+          </div>
+          <div class="hint">
+            <strong>Jurisdiction footprint</strong>
+            Resident and operating states are surfaced separately so notice matching can evolve cleanly.
+          </div>
+        </div>
+      </aside>
+    </section>
+
+    <main class="layout">
+      <aside class="panel">
+        <div class="panel-title">Onboarding Flow</div>
+        <div class="step-list" id="stepList"></div>
+        <div class="panel-actions">
+          <button class="btn primary" id="loadExample" type="button">Load Demo Intake</button>
+          <button class="btn ghost" id="resetForm" type="button">Reset Form</button>
+        </div>
+      </aside>
+
+      <section class="wizard">
+        <div class="wizard-header">
+          <div>
+            <h2 id="sectionTitle">Scope</h2>
+            <p id="sectionCopy">Start with the tenant, client identity, and the jurisdictions that directly shape the filing calendar.</p>
+          </div>
+          <div class="step-status active" id="activeStatus">Step 1 of 4</div>
+        </div>
+
+        <div class="section active" data-step="0">
+          <div class="section-card">
+            <h3>Workspace scope</h3>
+            <p>These are the minimum fields needed to route the intake to the correct tenant and establish the filing frame.</p>
+            <div class="grid">
+              <div class="field">
+                <label for="tenantId">Tenant ID</label>
+                <input id="tenantId" name="tenantId" placeholder="tenant_1234">
+                <small>Required for the CLI command and the eventual API write.</small>
+              </div>
+              <div class="field">
+                <label for="taxYear">Tax year</label>
+                <input id="taxYear" name="taxYear" type="number" min="2024" max="2035" step="1">
+                <small>Stored in <code>client_tax_profiles.tax_year</code>.</small>
+              </div>
+              <div class="field">
+                <label for="clientName">Display name</label>
+                <input id="clientName" name="clientName" placeholder="Acme Holdings LLC">
+                <small>Used across work surfaces, reminders, and client cards.</small>
+              </div>
+              <div class="field">
+                <label for="legalName">Legal name</label>
+                <input id="legalName" name="legalName" placeholder="Acme Holdings Legal LLC">
+                <small>Optional, but helpful when display and legal naming differ.</small>
+              </div>
+              <div class="field">
+                <label for="clientType">Client type</label>
+                <select id="clientType" name="clientType">
+                  <option value="business">Business</option>
+                  <option value="individual">Individual</option>
+                </select>
+              </div>
+              <div class="field">
+                <label for="entityType">Entity type</label>
+                <select id="entityType" name="entityType">
+                  <option value="llc">LLC</option>
+                  <option value="s-corp">S-Corp</option>
+                  <option value="partnership">Partnership</option>
+                  <option value="c-corp">C-Corp</option>
+                  <option value="sole-prop">Sole Prop</option>
+                  <option value="individual">Individual</option>
+                </select>
+              </div>
+              <div class="field">
+                <label for="homeJurisdiction">Home jurisdiction</label>
+                <select id="homeJurisdiction" name="homeJurisdiction"></select>
+              </div>
+            </div>
+          </div>
+
+          <div class="section-card">
+            <h3>Operating jurisdictions</h3>
+            <p>Select the states that currently drive filing obligations. These will seed <code>client_jurisdictions</code> as operating states and feed rule matching.</p>
+            <div class="chip-group" id="stateChips"></div>
+          </div>
+        </div>
+
+        <div class="section" data-step="1">
+          <div class="section-card">
+            <h3>Primary contact and routing</h3>
+            <p>This block mirrors the stable client profile. It is enough to know who gets chased, who gets notified, and who owns the relationship.</p>
+            <div class="grid">
+              <div class="field">
+                <label for="contactName">Primary contact name</label>
+                <input id="contactName" name="contactName" placeholder="Jamie Doe">
+              </div>
+              <div class="field">
+                <label for="contactEmail">Primary contact email</label>
+                <input id="contactEmail" name="contactEmail" placeholder="jamie@example.com" type="email">
+              </div>
+              <div class="field">
+                <label for="contactPhone">Primary contact phone</label>
+                <input id="contactPhone" name="contactPhone" placeholder="(415) 555-0142">
+              </div>
+              <div class="field">
+                <label for="preferredChannel">Preferred channel</label>
+                <select id="preferredChannel" name="preferredChannel">
+                  <option value="">Not set</option>
+                  <option value="email">Email</option>
+                  <option value="sms">SMS</option>
+                  <option value="slack">Slack</option>
+                </select>
+              </div>
+              <div class="field">
+                <label for="responsibleCpa">Responsible CPA</label>
+                <input id="responsibleCpa" name="responsibleCpa" placeholder="Scarlett Mao">
+              </div>
+              <div class="field">
+                <label for="profileSource">Profile source</label>
+                <select id="profileSource" name="profileSource">
+                  <option value="manual">Manual</option>
+                  <option value="import">Import</option>
+                  <option value="inferred">Inferred</option>
+                </select>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="section" data-step="2">
+          <div class="section-card">
+            <h3>Annual filing profile</h3>
+            <p>These are the yearly flags that shape what DueDateHQ should generate, watch, or follow up on this season.</p>
+            <div class="grid">
+              <div class="field">
+                <label for="entityElection">Entity election</label>
+                <input id="entityElection" name="entityElection" placeholder="s-corp election">
+              </div>
+              <div class="field">
+                <label for="intakeStatus">Intake status</label>
+                <select id="intakeStatus" name="intakeStatus">
+                  <option value="draft">Draft</option>
+                  <option value="in_progress">In progress</option>
+                  <option value="ready">Ready</option>
+                  <option value="needs_followup">Needs follow-up</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <div class="section-card">
+            <h3>Annual delta flags</h3>
+            <p>Keep these lightweight. The goal is to know whether the filing calendar, chasing logic, or risk posture changed this year.</p>
+            <div class="boolean-grid" id="booleanGrid"></div>
+          </div>
+        </div>
+
+        <div class="section" data-step="3">
+          <div class="section-card">
+            <h3>Review and export</h3>
+            <p>The page below creates both a JSON payload and a CLI command so the frontend can stay useful before a dedicated HTTP transport exists.</p>
+            <div class="grid single">
+              <div class="field">
+                <label for="internalNotes">Internal notes</label>
+                <textarea id="internalNotes" name="internalNotes" placeholder="Optional implementation note for the team. Not written by the current CLI, but helpful for handoff."></textarea>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="wizard-footer">
+          <div class="footer-hint">
+            This prototype is intentionally deadline-oriented: it captures the minimum complete context needed to generate obligations, notifications, and follow-up without turning onboarding into a full tax organizer.
+          </div>
+          <div class="button-row">
+            <button class="btn secondary" id="prevStep" type="button">Previous</button>
+            <button class="btn primary" id="nextStep" type="button">Next</button>
+          </div>
+        </div>
+      </section>
+
+      <aside class="preview">
+        <div class="preview-header">
+          <div>
+            <h2>Live Intake Payload</h2>
+            <p>Matches the new stable profile and annual profile split.</p>
+          </div>
+          <button class="btn ghost" id="copyJson" type="button">Copy JSON</button>
+        </div>
+
+        <div class="preview-card">
+          <h3>Stable profile</h3>
+          <div class="kv-list" id="stableProfile"></div>
+        </div>
+
+        <div class="preview-card">
+          <h3>Jurisdictions</h3>
+          <div class="state-pills" id="jurisdictionPills"></div>
+        </div>
+
+        <div class="preview-card">
+          <h3>Annual flags</h3>
+          <div class="flag-pills" id="annualFlags"></div>
+        </div>
+
+        <div class="preview-card">
+          <div class="wizard-header">
+            <div>
+              <h3>CLI handoff</h3>
+            </div>
+            <button class="btn ghost" id="copyCli" type="button">Copy CLI</button>
+          </div>
+          <pre id="cliOutput"></pre>
+        </div>
+
+        <div class="preview-card">
+          <h3>JSON payload</h3>
+          <pre id="jsonOutput"></pre>
+          <div class="meta-note">
+            <span>Ready to wire into a future create-client endpoint.</span>
+            <span id="completionHint">Waiting for required fields.</span>
+          </div>
+        </div>
+      </aside>
+    </main>
+  </div>
+
+  <div class="toast" id="toast">Copied</div>
+
+  <script>
+    const STATES = [
+      "AL","AK","AZ","AR","CA","CO","CT","DE","FL","GA",
+      "HI","ID","IL","IN","IA","KS","KY","LA","ME","MD",
+      "MA","MI","MN","MS","MO","MT","NE","NV","NH","NJ",
+      "NM","NY","NC","ND","OH","OK","OR","PA","RI","SC",
+      "SD","TN","TX","UT","VT","VA","WA","WV","WI","WY"
+    ];
+
+    const BOOLEAN_FIELDS = [
+      ["firstYearFiling", "First-year filing", "Useful when this is a new entity or the first filing season in scope."],
+      ["finalYearFiling", "Final-year filing", "Flags wind-down and final-return handling."],
+      ["extensionRequested", "Extension requested", "Capture the client's intent even before it is formally filed."],
+      ["extensionFiled", "Extension filed", "Separates filed status from requested status."],
+      ["estimatedTaxRequired", "Estimated tax required", "Helps the engine know whether estimate reminders belong in the mix."],
+      ["payrollPresent", "Payroll present", "Signals payroll-related deadlines and state sensitivity."],
+      ["contractorReportingRequired", "Contractor reporting required", "Captures 1099-related follow-up and due-date risk."],
+      ["noticeReceived", "Notice received", "Useful for routing review and urgency when there is already a notice in play."]
+    ];
+
+    const STEPS = [
+      {
+        title: "Scope",
+        copy: "Tenant, client identity, and the jurisdictions that directly shape the filing calendar."
+      },
+      {
+        title: "Contacts",
+        copy: "Primary routing information and ownership for reminders, follow-up, and client communication."
+      },
+      {
+        title: "Annual profile",
+        copy: "The year-specific filing posture and delta flags that affect deadlines and risk."
+      },
+      {
+        title: "Review",
+        copy: "Export the exact payload and CLI command the current backend understands."
+      }
+    ];
+
+    const exampleState = {
+      tenantId: "tenant_acme",
+      clientName: "Acme Holdings LLC",
+      legalName: "Acme Holdings Legal LLC",
+      clientType: "business",
+      entityType: "llc",
+      taxYear: "2026",
+      homeJurisdiction: "CA",
+      operatingStates: ["CA", "TX", "NY"],
+      contactName: "Jamie Doe",
+      contactEmail: "jamie@example.com",
+      contactPhone: "(415) 555-0142",
+      preferredChannel: "email",
+      responsibleCpa: "Scarlett Mao",
+      profileSource: "manual",
+      entityElection: "s-corp election pending confirmation",
+      intakeStatus: "in_progress",
+      internalNotes: "Imported from prior spreadsheet. Payroll footprint needs confirmation in Texas.",
+      firstYearFiling: false,
+      finalYearFiling: false,
+      extensionRequested: true,
+      extensionFiled: false,
+      estimatedTaxRequired: true,
+      payrollPresent: true,
+      contractorReportingRequired: true,
+      noticeReceived: false
+    };
+
+    const defaultState = {
+      tenantId: "",
+      clientName: "",
+      legalName: "",
+      clientType: "business",
+      entityType: "llc",
+      taxYear: String(new Date().getFullYear()),
+      homeJurisdiction: "CA",
+      operatingStates: ["CA"],
+      contactName: "",
+      contactEmail: "",
+      contactPhone: "",
+      preferredChannel: "",
+      responsibleCpa: "",
+      profileSource: "manual",
+      entityElection: "",
+      intakeStatus: "draft",
+      internalNotes: "",
+      firstYearFiling: null,
+      finalYearFiling: null,
+      extensionRequested: null,
+      extensionFiled: null,
+      estimatedTaxRequired: null,
+      payrollPresent: null,
+      contractorReportingRequired: null,
+      noticeReceived: null
+    };
+
+    let currentStep = 0;
+    let state = structuredClone(defaultState);
+
+    const stepList = document.getElementById("stepList");
+    const sections = Array.from(document.querySelectorAll(".section"));
+    const sectionTitle = document.getElementById("sectionTitle");
+    const sectionCopy = document.getElementById("sectionCopy");
+    const activeStatus = document.getElementById("activeStatus");
+    const stableProfile = document.getElementById("stableProfile");
+    const jurisdictionPills = document.getElementById("jurisdictionPills");
+    const annualFlags = document.getElementById("annualFlags");
+    const jsonOutput = document.getElementById("jsonOutput");
+    const cliOutput = document.getElementById("cliOutput");
+    const completionHint = document.getElementById("completionHint");
+    const toast = document.getElementById("toast");
+    const INPUT_IDS = [
+      "tenantId",
+      "clientName",
+      "legalName",
+      "clientType",
+      "entityType",
+      "taxYear",
+      "homeJurisdiction",
+      "contactName",
+      "contactEmail",
+      "contactPhone",
+      "preferredChannel",
+      "responsibleCpa",
+      "profileSource",
+      "entityElection",
+      "intakeStatus",
+      "internalNotes"
+    ];
+
+    function escapeShell(value) {
+      if (!value) return "''";
+      return `'${String(value).replace(/'/g, `'\"'\"'`)}'`;
+    }
+
+    function requiredComplete() {
+      return Boolean(state.tenantId && state.clientName && state.entityType && state.taxYear && state.operatingStates.length);
+    }
+
+    function buildPayload() {
+      return {
+        stable_profile: {
+          tenant_id: state.tenantId || null,
+          name: state.clientName || null,
+          legal_name: state.legalName || null,
+          client_type: state.clientType,
+          entity_type: state.entityType,
+          home_jurisdiction: state.homeJurisdiction || null,
+          primary_contact_name: state.contactName || null,
+          primary_contact_email: state.contactEmail || null,
+          primary_contact_phone: state.contactPhone || null,
+          preferred_communication_channel: state.preferredChannel || null,
+          responsible_cpa: state.responsibleCpa || null
+        },
+        client_tax_profile: {
+          tax_year: Number(state.taxYear || new Date().getFullYear()),
+          entity_election: state.entityElection || null,
+          intake_status: state.intakeStatus,
+          source: state.profileSource,
+          first_year_filing: state.firstYearFiling,
+          final_year_filing: state.finalYearFiling,
+          extension_requested: state.extensionRequested,
+          extension_filed: state.extensionFiled,
+          estimated_tax_required: state.estimatedTaxRequired,
+          payroll_present: state.payrollPresent,
+          contractor_reporting_required: state.contractorReportingRequired,
+          notice_received: state.noticeReceived
+        },
+        client_jurisdictions: [
+          ...(state.homeJurisdiction ? [{jurisdiction: state.homeJurisdiction, jurisdiction_type: "resident"}] : []),
+          ...state.operatingStates.map((jurisdiction) => ({jurisdiction, jurisdiction_type: "operating"}))
+        ],
+        client_contact: state.contactName || state.contactEmail || state.contactPhone ? {
+          name: state.contactName || state.clientName || null,
+          email: state.contactEmail || null,
+          phone: state.contactPhone || null,
+          preferred_channel: state.preferredChannel || null,
+          role: "primary"
+        } : null,
+        internal_notes: state.internalNotes || null
+      };
+    }
+
+    function buildCliCommand() {
+      const parts = [
+        "python -m duedatehq.cli client add",
+        escapeShell(state.tenantId || "<tenant_id>"),
+        escapeShell(state.clientName || "<client_name>"),
+        "--entity", escapeShell(state.entityType),
+        "--states", escapeShell(state.operatingStates.join(",")),
+        "--tax-year", escapeShell(state.taxYear || String(new Date().getFullYear()))
+      ];
+
+      if (state.clientType) parts.push("--client-type", escapeShell(state.clientType));
+      if (state.legalName) parts.push("--legal-name", escapeShell(state.legalName));
+      if (state.homeJurisdiction) parts.push("--home-jurisdiction", escapeShell(state.homeJurisdiction));
+      if (state.contactName) parts.push("--contact-name", escapeShell(state.contactName));
+      if (state.contactEmail) parts.push("--contact-email", escapeShell(state.contactEmail));
+      if (state.contactPhone) parts.push("--contact-phone", escapeShell(state.contactPhone));
+      if (state.preferredChannel) parts.push("--preferred-channel", escapeShell(state.preferredChannel));
+      if (state.responsibleCpa) parts.push("--responsible-cpa", escapeShell(state.responsibleCpa));
+      if (state.entityElection) parts.push("--entity-election", escapeShell(state.entityElection));
+      if (state.intakeStatus) parts.push("--intake-status", escapeShell(state.intakeStatus));
+      if (state.profileSource) parts.push("--profile-source", escapeShell(state.profileSource));
+
+      BOOLEAN_FIELDS.forEach(([key]) => {
+        if (state[key] === true) parts.push(`--${camelToKebab(key)}`);
+        if (state[key] === false) parts.push(`--no-${camelToKebab(key)}`);
+      });
+
+      return parts.join(" ");
+    }
+
+    function camelToKebab(value) {
+      return value.replace(/[A-Z]/g, (match) => `-${match.toLowerCase()}`);
+    }
+
+    function showToast(message) {
+      toast.textContent = message;
+      toast.classList.add("visible");
+      window.clearTimeout(showToast.timer);
+      showToast.timer = window.setTimeout(() => toast.classList.remove("visible"), 1400);
+    }
+
+    function fallbackCopyText(value, label) {
+      const textarea = document.createElement("textarea");
+      textarea.value = value;
+      textarea.setAttribute("readonly", "true");
+      textarea.style.position = "absolute";
+      textarea.style.left = "-9999px";
+      document.body.appendChild(textarea);
+      textarea.select();
+      document.execCommand("copy");
+      document.body.removeChild(textarea);
+      showToast(`${label} copied`);
+    }
+
+    function copyText(value, label) {
+      if (navigator.clipboard && window.isSecureContext) {
+        navigator.clipboard.writeText(value).then(
+          () => showToast(`${label} copied`),
+          () => fallbackCopyText(value, label)
+        );
+        return;
+      }
+      fallbackCopyText(value, label);
+    }
+
+    function setStep(index) {
+      currentStep = Math.max(0, Math.min(index, STEPS.length - 1));
+      sections.forEach((section, sectionIndex) => {
+        section.classList.toggle("active", sectionIndex === currentStep);
+      });
+      sectionTitle.textContent = STEPS[currentStep].title;
+      sectionCopy.textContent = STEPS[currentStep].copy;
+      activeStatus.textContent = `Step ${currentStep + 1} of ${STEPS.length}`;
+      activeStatus.className = "step-status active";
+      renderStepList();
+      document.getElementById("prevStep").disabled = currentStep === 0;
+      document.getElementById("nextStep").textContent = currentStep === STEPS.length - 1 ? "Stay on review" : "Next";
+    }
+
+    function stepIsReady(index) {
+      if (index === 0) return Boolean(state.tenantId && state.clientName && state.taxYear && state.operatingStates.length);
+      if (index === 1) return Boolean(state.contactName || state.contactEmail || state.responsibleCpa);
+      if (index === 2) return Boolean(state.intakeStatus);
+      return requiredComplete();
+    }
+
+    function renderStepList() {
+      stepList.innerHTML = "";
+      STEPS.forEach((step, index) => {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = `step-button${index === currentStep ? " active" : ""}`;
+        button.innerHTML = `
+          <div class="step-meta">
+            <span>Step ${index + 1}</span>
+            <span class="step-status ${index === currentStep ? "active" : stepIsReady(index) ? "ready" : ""}">
+              ${index === currentStep ? "Open" : stepIsReady(index) ? "Ready" : "Pending"}
+            </span>
+          </div>
+          <div class="step-title">${step.title}</div>
+          <div class="step-copy">${step.copy}</div>
+        `;
+        button.addEventListener("click", () => setStep(index));
+        stepList.appendChild(button);
+      });
+    }
+
+    function renderHomeJurisdictions() {
+      const select = document.getElementById("homeJurisdiction");
+      select.innerHTML = STATES.map((stateCode) => `<option value="${stateCode}">${stateCode}</option>`).join("");
+      select.value = state.homeJurisdiction;
+    }
+
+    function renderStateChips() {
+      const container = document.getElementById("stateChips");
+      container.innerHTML = "";
+      STATES.forEach((stateCode) => {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = `chip${state.operatingStates.includes(stateCode) ? " active" : ""}`;
+        button.textContent = stateCode;
+        button.addEventListener("click", () => {
+          if (state.operatingStates.includes(stateCode)) {
+            state.operatingStates = state.operatingStates.filter((value) => value !== stateCode);
+          } else {
+            state.operatingStates = [...state.operatingStates, stateCode].sort();
+          }
+          renderStateChips();
+          renderPreview();
+        });
+        container.appendChild(button);
+      });
+    }
+
+    function renderBooleanGrid() {
+      const container = document.getElementById("booleanGrid");
+      container.innerHTML = "";
+      BOOLEAN_FIELDS.forEach(([key, label, copy]) => {
+        const row = document.createElement("div");
+        row.className = "toggle-row";
+        row.innerHTML = `
+          <div class="toggle-copy">
+            <strong>${label}</strong>
+            <span>${copy}</span>
+          </div>
+          <div class="toggle-options">
+            <button type="button" class="toggle ${state[key] === true ? "active" : ""}" data-key="${key}" data-value="true">Yes</button>
+            <button type="button" class="toggle ${state[key] === false ? "active" : ""}" data-key="${key}" data-value="false">No</button>
+            <button type="button" class="toggle ${state[key] === null ? "active" : ""}" data-key="${key}" data-value="null">Unset</button>
+          </div>
+        `;
+        row.querySelectorAll(".toggle").forEach((button) => {
+          button.addEventListener("click", () => {
+            const value = button.dataset.value;
+            state[key] = value === "true" ? true : value === "false" ? false : null;
+            renderBooleanGrid();
+            renderPreview();
+          });
+        });
+        container.appendChild(row);
+      });
+    }
+
+    function renderPreview() {
+      const payload = buildPayload();
+      const stableRows = [
+        ["Tenant", payload.stable_profile.tenant_id || "Not set"],
+        ["Client", payload.stable_profile.name || "Not set"],
+        ["Legal name", payload.stable_profile.legal_name || "Not set"],
+        ["Type", `${payload.stable_profile.client_type} / ${payload.stable_profile.entity_type}`],
+        ["Home jurisdiction", payload.stable_profile.home_jurisdiction || "Not set"],
+        ["Primary contact", payload.client_contact ? payload.client_contact.name : "Not set"],
+        ["Preferred channel", payload.stable_profile.preferred_communication_channel || "Not set"],
+        ["Responsible CPA", payload.stable_profile.responsible_cpa || "Not set"]
+      ];
+      stableProfile.innerHTML = stableRows.map(([label, value]) => `
+        <div class="kv">
+          <div class="kv-label">${label}</div>
+          <div class="kv-value">${value}</div>
+        </div>
+      `).join("");
+
+      jurisdictionPills.innerHTML = "";
+      payload.client_jurisdictions.forEach((item) => {
+        const pill = document.createElement("span");
+        pill.className = `pill ${item.jurisdiction_type}`;
+        pill.textContent = `${item.jurisdiction_type === "resident" ? "Resident" : "Operating"} · ${item.jurisdiction}`;
+        jurisdictionPills.appendChild(pill);
+      });
+      if (!payload.client_jurisdictions.length) {
+        jurisdictionPills.innerHTML = '<span class="pill">No jurisdictions selected</span>';
+      }
+
+      annualFlags.innerHTML = "";
+      BOOLEAN_FIELDS.forEach(([key, label]) => {
+        const value = payload.client_tax_profile[camelToKebab(key).replace(/-/g, "_")] ?? payload.client_tax_profile[key];
+        const pill = document.createElement("span");
+        pill.className = `pill ${value === true ? "flag-true" : value === false ? "flag-false" : ""}`;
+        pill.textContent = `${label}: ${value === true ? "Yes" : value === false ? "No" : "Unset"}`;
+        annualFlags.appendChild(pill);
+      });
+
+      jsonOutput.textContent = JSON.stringify(payload, null, 2);
+      cliOutput.textContent = buildCliCommand();
+      completionHint.textContent = requiredComplete()
+        ? "Required fields complete. Ready for a create-client API."
+        : "Tenant, client name, tax year, entity type, and at least one operating state are still required.";
+
+      renderStepList();
+    }
+
+    function wireInputs() {
+      INPUT_IDS.forEach((id) => {
+        const input = document.getElementById(id);
+        if (input.dataset.wired === "true") return;
+        input.addEventListener("input", () => {
+          state[id] = input.value;
+          renderPreview();
+        });
+        input.addEventListener("change", () => {
+          state[id] = input.value;
+          renderPreview();
+        });
+        input.dataset.wired = "true";
+      });
+    }
+
+    function syncInputsFromState() {
+      INPUT_IDS.forEach((id) => {
+        document.getElementById(id).value = state[id];
+      });
+    }
+
+    function hydrateForm() {
+      syncInputsFromState();
+      renderHomeJurisdictions();
+      renderStateChips();
+      renderBooleanGrid();
+      renderPreview();
+      setStep(currentStep);
+    }
+
+    function applyState(nextState) {
+      state = Object.assign(structuredClone(defaultState), nextState);
+      hydrateForm();
+    }
+
+    document.getElementById("prevStep").addEventListener("click", () => setStep(currentStep - 1));
+    document.getElementById("nextStep").addEventListener("click", () => setStep(currentStep + 1));
+    document.getElementById("loadExample").addEventListener("click", () => {
+      applyState(exampleState);
+      showToast("Demo intake loaded");
+    });
+    document.getElementById("resetForm").addEventListener("click", () => {
+      applyState(defaultState);
+      showToast("Form reset");
+    });
+    document.getElementById("copyJson").addEventListener("click", () => copyText(jsonOutput.textContent, "JSON"));
+    document.getElementById("copyCli").addEventListener("click", () => copyText(cliOutput.textContent, "CLI"));
+
+    wireInputs();
+    hydrateForm();
+  </script>
+</body>
+</html>
