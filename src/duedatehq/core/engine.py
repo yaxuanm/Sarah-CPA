@@ -428,13 +428,43 @@ class InfrastructureEngine:
             rows = conn.execute("SELECT * FROM rules ORDER BY created_at DESC").fetchall()
         return [self._rule_from_row(dict(row)) for row in rows]
 
-    def list_deadlines(self, tenant_id: str, client_id: str | None = None) -> list[Deadline]:
+    def list_deadlines(
+        self,
+        tenant_id: str,
+        client_id: str | None = None,
+        *,
+        within_days: int | None = None,
+        status: DeadlineStatus | None = None,
+        jurisdiction: str | None = None,
+        limit: int | None = None,
+        offset: int = 0,
+    ) -> list[Deadline]:
         query = "SELECT * FROM deadlines WHERE tenant_id = ?"
         params: list[object] = [tenant_id]
         if client_id:
             query += " AND client_id = ?"
             params.append(client_id)
+        if within_days is not None:
+            today = self.clock.now().date().isoformat()
+            cutoff = (self.clock.now().date() + timedelta(days=within_days)).isoformat()
+            query += " AND due_date >= ? AND due_date <= ?"
+            params.extend([today, cutoff])
+        if status:
+            query += " AND status = ?"
+            params.append(status.value)
+        if jurisdiction:
+            query += " AND jurisdiction = ?"
+            params.append(jurisdiction.upper())
         query += " ORDER BY due_date, created_at"
+        if limit is not None:
+            query += " LIMIT ?"
+            params.append(limit)
+            if offset:
+                query += " OFFSET ?"
+                params.append(offset)
+        elif offset:
+            query += " LIMIT -1 OFFSET ?"
+            params.append(offset)
         with self._connect(tenant_id=tenant_id) as conn:
             rows = conn.execute(query, params).fetchall()
         return [self._deadline_from_row(dict(row)) for row in rows]
@@ -547,6 +577,15 @@ class InfrastructureEngine:
             "actor": actor,
             "timestamp": now.isoformat(),
             "metadata": metadata,
+        }
+
+    def available_deadline_actions(self, tenant_id: str, deadline_id: str) -> dict[str, object]:
+        deadline = self.get_deadline(tenant_id, deadline_id)
+        actions = [action.value for action in self.state_machine.available_actions(deadline.status) if action is not DeadlineAction.RESUME]
+        return {
+            "deadline_id": deadline.deadline_id,
+            "current_status": deadline.status.value,
+            "available_actions": actions,
         }
 
     def resume_due_snoozes(self, now: datetime | None = None) -> int:
@@ -749,8 +788,14 @@ class InfrastructureEngine:
                 sent += 1
         return sent
 
-    def export_deadlines(self, tenant_id: str, actor: str, actor_ip: str = "127.0.0.1") -> list[dict[str, object]]:
-        deadlines = self.list_deadlines(tenant_id)
+    def export_deadlines(
+        self,
+        tenant_id: str,
+        actor: str,
+        actor_ip: str = "127.0.0.1",
+        client_id: str | None = None,
+    ) -> list[dict[str, object]]:
+        deadlines = self.list_deadlines(tenant_id, client_id=client_id)
         payload = [
             {
                 "deadline_id": deadline.deadline_id,
@@ -770,9 +815,9 @@ class InfrastructureEngine:
                 actor_ip=actor_ip,
                 action_type="export",
                 object_type="deadline",
-                object_id=tenant_id,
+                object_id=client_id or tenant_id,
                 before={},
-                after={"count": len(payload)},
+                after={"count": len(payload), "client_id": client_id},
                 correlation_id=str(uuid4()),
             )
         return payload
@@ -866,6 +911,24 @@ class InfrastructureEngine:
         ]
         deadlines.sort(key=lambda item: (item.due_date, item.created_at))
         return deadlines[:limit]
+
+    def today_enriched(self, tenant_id: str, limit: int = 5) -> list[dict[str, object]]:
+        today_items = self.today(tenant_id, limit=limit)
+        clients = {client.client_id: client for client in self.list_clients(tenant_id)}
+        today_date = self.clock.now().date()
+        return [
+            {
+                "deadline_id": item.deadline_id,
+                "client_id": item.client_id,
+                "client_name": clients[item.client_id].name if item.client_id in clients else None,
+                "tax_type": item.tax_type,
+                "jurisdiction": item.jurisdiction,
+                "due_date": item.due_date,
+                "days_remaining": (datetime.fromisoformat(item.due_date).date() - today_date).days,
+                "status": item.status.value,
+            }
+            for item in today_items
+        ]
 
     def notify_preview(self, tenant_id: str, within_days: int = 7) -> list[Reminder]:
         now = self.clock.now()

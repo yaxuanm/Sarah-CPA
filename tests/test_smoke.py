@@ -1,4 +1,5 @@
 import email.message
+import json
 import os
 from pathlib import Path
 import sqlite3
@@ -8,7 +9,10 @@ import types
 
 import pytest
 
+from duedatehq.api import chat as api_chat
 from duedatehq.app import build_storage, create_app
+from duedatehq.cli import main as cli_main
+from duedatehq.core.conversation import InteractionMode
 from duedatehq.core.dispatchers import CeleryDispatcher
 from duedatehq.core.fetchers import FileFetcher, HttpTextFetcher, RssEntryFetcher, fetcher_for_source
 from duedatehq.core.models import DeadlineAction, DeadlineStatus, NotificationChannel, NotificationStatus, ReminderStatus, RuleReviewItem, RuleStatus
@@ -335,6 +339,137 @@ def test_today_and_notify_views(app):
     assert history
 
 
+def test_cli_gap_features_in_engine(app):
+    tenant = app.engine.create_tenant("Tenant A")
+    today = datetime.now(timezone.utc).date()
+    app.engine.create_rule(
+        tax_type="franchise_tax",
+        jurisdiction="CA",
+        entity_types=["s-corp"],
+        deadline_date=(today + timedelta(days=3)).isoformat(),
+        effective_from=today.isoformat(),
+        source_url="https://ftb.ca.gov/r1",
+        confidence_score=0.99,
+    )
+    app.engine.create_rule(
+        tax_type="federal_income",
+        jurisdiction="FEDERAL",
+        entity_types=["s-corp"],
+        deadline_date=(today + timedelta(days=12)).isoformat(),
+        effective_from=today.isoformat(),
+        source_url="https://irs.gov/r1",
+        confidence_score=0.99,
+    )
+    app.engine.create_rule(
+        tax_type="annual_report",
+        jurisdiction="DE",
+        entity_types=["s-corp"],
+        deadline_date=(today + timedelta(days=20)).isoformat(),
+        effective_from=today.isoformat(),
+        source_url="https://de.gov/r1",
+        confidence_score=0.99,
+    )
+    client_a = app.engine.register_client(
+        tenant_id=tenant.tenant_id,
+        name="Acme LLC",
+        entity_type="s-corp",
+        registered_states=["CA", "DE"],
+        tax_year=today.year,
+    )
+    client_b = app.engine.register_client(
+        tenant_id=tenant.tenant_id,
+        name="Beta LLC",
+        entity_type="s-corp",
+        registered_states=["CA"],
+        tax_year=today.year,
+    )
+
+    acme_deadlines = app.engine.list_deadlines(tenant.tenant_id, client_a.client_id)
+    beta_deadlines = app.engine.list_deadlines(tenant.tenant_id, client_b.client_id)
+    app.engine.apply_deadline_action(tenant.tenant_id, acme_deadlines[0].deadline_id, DeadlineAction.COMPLETE, actor="user-1")
+
+    pending_deadlines = app.engine.list_deadlines(tenant.tenant_id, status=DeadlineStatus.PENDING)
+    assert all(item.status == DeadlineStatus.PENDING for item in pending_deadlines)
+    assert all(item.deadline_id != acme_deadlines[0].deadline_id for item in pending_deadlines)
+
+    upcoming = app.engine.list_deadlines(tenant.tenant_id, within_days=7)
+    assert upcoming
+    assert all(datetime.fromisoformat(item.due_date).date() <= today + timedelta(days=7) for item in upcoming)
+
+    ca_deadlines = app.engine.list_deadlines(tenant.tenant_id, jurisdiction="ca")
+    assert ca_deadlines
+    assert all(item.jurisdiction == "CA" for item in ca_deadlines)
+
+    paged = app.engine.list_deadlines(tenant.tenant_id, limit=2, offset=1)
+    expected = app.engine.list_deadlines(tenant.tenant_id)[1:3]
+    assert [item.deadline_id for item in paged] == [item.deadline_id for item in expected]
+
+    enriched = app.engine.today_enriched(tenant.tenant_id, limit=10)
+    assert enriched
+    assert {"client_name", "days_remaining"} <= set(enriched[0].keys())
+    assert any(item["client_name"] == "Beta LLC" for item in enriched)
+
+    actions = app.engine.available_deadline_actions(tenant.tenant_id, beta_deadlines[0].deadline_id)
+    assert actions["current_status"] == DeadlineStatus.PENDING.value
+    assert actions["available_actions"] == ["complete", "snooze", "waive", "override"]
+
+    exported = app.engine.export_deadlines(tenant.tenant_id, actor="cli", client_id=client_b.client_id)
+    assert exported
+    assert {item["client_id"] for item in exported} == {client_b.client_id}
+
+
+def test_cli_routes_new_deadline_and_today_features(tmp_path, monkeypatch, capsys):
+    db_path = str(tmp_path / "cli-features.sqlite3")
+    app = create_app(db_path)
+    tenant = app.engine.create_tenant("Tenant A")
+    today = datetime.now(timezone.utc).date()
+    app.engine.create_rule(
+        tax_type="franchise_tax",
+        jurisdiction="CA",
+        entity_types=["s-corp"],
+        deadline_date=(today + timedelta(days=2)).isoformat(),
+        effective_from=today.isoformat(),
+        source_url="https://ftb.ca.gov/r1",
+        confidence_score=0.99,
+    )
+    client = app.engine.register_client(
+        tenant_id=tenant.tenant_id,
+        name="Acme LLC",
+        entity_type="s-corp",
+        registered_states=["CA"],
+        tax_year=today.year,
+    )
+    deadline = app.engine.list_deadlines(tenant.tenant_id, client.client_id)[0]
+
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["duedatehq", "--db", db_path, "today", tenant.tenant_id, "--limit", "5", "--enrich"],
+    )
+    assert cli_main() == 0
+    today_payload = json.loads(capsys.readouterr().out)
+    assert today_payload[0]["client_name"] == "Acme LLC"
+    assert "days_remaining" in today_payload[0]
+
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["duedatehq", "--db", db_path, "deadline", "available-actions", tenant.tenant_id, deadline.deadline_id],
+    )
+    assert cli_main() == 0
+    actions_payload = json.loads(capsys.readouterr().out)
+    assert actions_payload["available_actions"] == ["complete", "snooze", "waive", "override"]
+
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["duedatehq", "--db", db_path, "export", tenant.tenant_id, "--client", client.client_id],
+    )
+    assert cli_main() == 0
+    export_payload = json.loads(capsys.readouterr().out)
+    assert {item["client_id"] for item in export_payload} == {client.client_id}
+
+
 def test_notification_routes_and_deliveries(app):
     tenant = app.engine.create_tenant("Tenant A")
     app.engine.create_rule(
@@ -481,6 +616,62 @@ def test_celery_dispatcher_and_app(monkeypatch):
 
     assert task_id == "task-1"
     assert calls[0][0] == "duedatehq.schedule_reminders"
+
+
+def test_conversation_service_renders_today_view(app):
+    tenant = app.engine.create_tenant("Tenant A")
+    app.engine.create_rule(
+        tax_type="federal_income",
+        jurisdiction="FEDERAL",
+        entity_types=["s-corp"],
+        deadline_date="2026-04-25",
+        effective_from="2026-01-01",
+        source_url="https://irs.gov/r1",
+        confidence_score=0.99,
+    )
+    app.engine.register_client(
+        tenant_id=tenant.tenant_id,
+        name="Acme LLC",
+        entity_type="s-corp",
+        registered_states=["CA"],
+        tax_year=2026,
+    )
+
+    session = app.conversation.start_session(tenant.tenant_id, mode=InteractionMode.TEXT)
+    response = app.conversation.respond(session, "show me today", mode=InteractionMode.TEXT)
+
+    assert response.intent.value == "today"
+    assert "deadline" in response.reply.lower()
+    assert response.render_blocks[0].block_type == "today"
+    assert response.render_blocks[0].items
+
+
+def test_api_chat_returns_reply_and_render_block(tmp_path):
+    db_path = str(tmp_path / "chat.sqlite3")
+    app = create_app(db_path)
+    tenant = app.engine.create_tenant("Tenant A")
+    app.engine.create_rule(
+        tax_type="federal_income",
+        jurisdiction="FEDERAL",
+        entity_types=["s-corp"],
+        deadline_date="2026-04-25",
+        effective_from="2026-01-01",
+        source_url="https://irs.gov/r1",
+        confidence_score=0.99,
+    )
+    app.engine.register_client(
+        tenant_id=tenant.tenant_id,
+        name="Acme LLC",
+        entity_type="s-corp",
+        registered_states=["CA"],
+        tax_year=2026,
+    )
+
+    response = api_chat("deadlines", tenant_id=tenant.tenant_id, db_path=db_path)
+
+    assert response["intent"] == "deadlines"
+    assert response["render_blocks"][0]["block_type"] == "deadlines"
+    assert response["render_blocks"][0]["items"]
 
 
 def test_state_machine_and_audit_protections(app):

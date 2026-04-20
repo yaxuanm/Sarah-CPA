@@ -37,9 +37,11 @@ ACTION_TRANSITIONS: dict[DeadlineStatus, dict[DeadlineAction, DeadlineStatus]] =
 
 @dataclass(slots=True)
 class DeadlineStateMachine:
+    def available_actions(self, current: DeadlineStatus) -> list[DeadlineAction]:
+        return list(ACTION_TRANSITIONS.get(current, {}).keys())
+
     def transition(self, current: DeadlineStatus, action: DeadlineAction) -> DeadlineStatus:
         try:
             return ACTION_TRANSITIONS[current][action]
         except KeyError as exc:
             raise InvalidTransitionError(f"{current.value} -> {action.value} is not allowed") from exc
-

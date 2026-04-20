@@ -7,10 +7,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from .app import build_storage, create_app
+from .core.conversation import InteractionMode
 from .core.dispatchers import CeleryDispatcher
 from .core.postgres import PostgresStorage
 from .core.fetchers import FileFetcher, HtmlFetcher, HttpTextFetcher, PdfFetcher, RssEntryFetcher, fetcher_for_source
-from .core.models import DeadlineAction, NotificationChannel
+from .core.models import DeadlineAction, DeadlineStatus, NotificationChannel
 from .core.notifiers import ConsoleNotifier, JsonWebhookNotifier, NotifierRegistry, SMTPEmailNotifier
 from .core.workers import FetchWorker, PersistentJobQueue, ReminderScheduler, ReminderWorker
 
@@ -72,6 +73,11 @@ def build_parser() -> argparse.ArgumentParser:
     deadline_list = deadline_subparsers.add_parser("list")
     deadline_list.add_argument("tenant_id")
     deadline_list.add_argument("--client", dest="client_id")
+    deadline_list.add_argument("--within-days", type=int)
+    deadline_list.add_argument("--status", choices=[item.value for item in DeadlineStatus])
+    deadline_list.add_argument("--jurisdiction")
+    deadline_list.add_argument("--limit", type=int)
+    deadline_list.add_argument("--offset", type=int, default=0)
     deadline_list.add_argument("--show-reminders", action="store_true")
     deadline_action = deadline_subparsers.add_parser("action")
     deadline_action.add_argument("tenant_id")
@@ -86,6 +92,9 @@ def build_parser() -> argparse.ArgumentParser:
     deadline_transitions = deadline_subparsers.add_parser("transitions")
     deadline_transitions.add_argument("tenant_id")
     deadline_transitions.add_argument("deadline_id")
+    deadline_available_actions = deadline_subparsers.add_parser("available-actions")
+    deadline_available_actions.add_argument("tenant_id")
+    deadline_available_actions.add_argument("deadline_id")
 
     log_parser = subparsers.add_parser("log")
     log_parser.add_argument("--tenant-id")
@@ -93,11 +102,19 @@ def build_parser() -> argparse.ArgumentParser:
 
     export_parser = subparsers.add_parser("export")
     export_parser.add_argument("tenant_id")
+    export_parser.add_argument("--client", dest="client_id")
     export_parser.add_argument("--actor", default="cli")
 
     today_parser = subparsers.add_parser("today")
     today_parser.add_argument("tenant_id")
     today_parser.add_argument("--limit", type=int, default=5)
+    today_parser.add_argument("--enrich", action="store_true")
+
+    chat_parser = subparsers.add_parser("chat")
+    chat_parser.add_argument("--tenant-id")
+    chat_parser.add_argument("--mode", choices=[item.value for item in InteractionMode], default=InteractionMode.TEXT.value)
+    chat_parser.add_argument("--prompt")
+    chat_parser.add_argument("--transcript-file")
 
     notify_parser = subparsers.add_parser("notify")
     notify_subparsers = notify_parser.add_subparsers(dest="notify_command", required=True)
@@ -272,7 +289,15 @@ def main() -> int:
 
     if args.command == "deadline":
         if args.deadline_command == "list":
-            deadlines = engine.list_deadlines(args.tenant_id, args.client_id)
+            deadlines = engine.list_deadlines(
+                args.tenant_id,
+                args.client_id,
+                within_days=args.within_days,
+                status=DeadlineStatus(args.status) if args.status else None,
+                jurisdiction=args.jurisdiction,
+                limit=args.limit,
+                offset=args.offset,
+            )
             payload = []
             for deadline in deadlines:
                 item = serialize(deadline)
@@ -304,18 +329,35 @@ def main() -> int:
         if args.deadline_command == "transitions":
             print_json([serialize(item) for item in engine.list_transitions(args.deadline_id, args.tenant_id)], default=str)
             return 0
+        if args.deadline_command == "available-actions":
+            print_json(engine.available_deadline_actions(args.tenant_id, args.deadline_id), default=str)
+            return 0
 
     if args.command == "log":
         print_json([serialize(item) for item in engine.list_audit_logs(args.tenant_id, args.object_id)], default=str)
         return 0
 
     if args.command == "export":
-        print_json(engine.export_deadlines(args.tenant_id, args.actor), default=str)
+        print_json(engine.export_deadlines(args.tenant_id, args.actor, client_id=args.client_id), default=str)
         return 0
 
     if args.command == "today":
+        if args.enrich:
+            print_json(engine.today_enriched(args.tenant_id, args.limit), default=str)
+            return 0
         print_json([serialize(item) for item in engine.today(args.tenant_id, args.limit)], default=str)
         return 0
+
+    if args.command == "chat":
+        mode = InteractionMode(args.mode)
+        conversation = app.conversation
+        session = conversation.start_session(args.tenant_id, mode=mode)
+        if args.prompt or args.transcript_file:
+            prompt = args.prompt or Path(args.transcript_file).read_text(encoding="utf-8")
+            response = conversation.respond(session, prompt, mode=mode)
+            print_chat_response(response)
+            return 0
+        return run_chat_loop(conversation, session, mode)
 
     if args.command == "notify":
         if args.notify_command == "config":
@@ -432,6 +474,37 @@ def serialize(value):
     if is_dataclass(value):
         return asdict(value)
     return value
+
+
+def print_chat_response(response) -> None:
+    print(response.reply)
+    print("")
+    for block in response.render_blocks:
+        print(f"[{block.title}]")
+        if not block.items:
+            print("  (empty)")
+            print("")
+            continue
+        for item in block.items:
+            print(f"  - {json.dumps(item, ensure_ascii=True, sort_keys=True)}")
+        print("")
+
+
+def run_chat_loop(conversation, session, mode: InteractionMode) -> int:
+    print("DueDateHQ interactive mode. Type 'exit' to leave.")
+    print("")
+    while True:
+        try:
+            prompt = input(f"{mode.value}> ").strip()
+        except EOFError:
+            print("")
+            return 0
+        if not prompt:
+            continue
+        if prompt.lower() in {"exit", "quit"}:
+            return 0
+        response = conversation.respond(session, prompt, mode=mode)
+        print_chat_response(response)
 
 
 def build_notifier_registry(args) -> NotifierRegistry:

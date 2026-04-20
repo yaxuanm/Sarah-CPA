@@ -14,6 +14,7 @@ DueDateHQ first-phase infrastructure, validated without any frontend.
 - Official-source fetchers for HTML, RSS, and PDF inputs
 - Notification delivery routing for email, SMS, and Slack
 - Celery dispatch hooks for fetch, reminder scheduling, and notification delivery
+- Interactive chat mode with text-first realtime view rendering and a voice-ready input mode
 - CLI commands for create/list/update/export/worker flows
 
 ## Database
@@ -66,6 +67,8 @@ python -m duedatehq.cli deadline list <tenant_id> --client <client_id> --show-re
 python -m duedatehq.cli deadline action <tenant_id> <deadline_id> complete --actor user-1
 python -m duedatehq.cli deadline trigger-reminders --tenant-id <tenant_id> --at 2026-04-19T09:00:00+00:00
 python -m duedatehq.cli today <tenant_id>
+python -m duedatehq.cli chat --tenant-id <tenant_id> --prompt "show me today"
+python -m duedatehq.cli chat --tenant-id <tenant_id> --mode voice --transcript-file sample_transcript.txt
 python -m duedatehq.cli notify config add <tenant_id> --channel email --destination owner@example.com
 python -m duedatehq.cli notify config add <tenant_id> --channel slack --destination https://hooks.slack.com/services/...
 python -m duedatehq.cli notify preview <tenant_id> --within-days 14
@@ -110,6 +113,17 @@ python -m duedatehq.cli celery ping
 ```
 
 Reminder reads now default to the current active queue. Historical cancelled reminders remain in the database and surface through history-oriented views such as `notify history`.
+
+## Conversational Mode
+
+- `chat --prompt "...":` one-shot interaction that returns a language reply and one or more rendered blocks
+- `chat` with no `--prompt`: interactive text loop
+- `chat --mode voice`: voice-equivalent path for transcript input; this currently accepts transcript text and routes it through the same intent/render pipeline as typed input
+
+The current render contract is:
+
+- one short language conclusion
+- one or more structured render blocks such as `Today`, `Deadlines`, `Rule Review Queue`, or `Pending Notifications`
 
 ## Verification
 
