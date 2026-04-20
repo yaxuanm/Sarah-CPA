@@ -6,6 +6,7 @@ from pathlib import Path
 
 from .core.bus import InMemoryEventBus
 from .core.clock import SystemClock
+from .core.conversation import ConversationService
 from .core.engine import InfrastructureEngine
 from .core.postgres import PostgresStorage
 from .core.repositories import Repositories
@@ -15,6 +16,7 @@ from .core.storage import SQLiteStorage
 @dataclass(slots=True)
 class App:
     engine: InfrastructureEngine
+    conversation: ConversationService
 
 
 def create_app(db_path: str | None = None) -> App:
@@ -26,7 +28,8 @@ def create_app(db_path: str | None = None) -> App:
         event_bus=event_bus,
         clock=clock,
     )
-    return App(engine=engine)
+    conversation = ConversationService(engine)
+    return App(engine=engine, conversation=conversation)
 
 
 def build_storage(db_path: str | None = None):
