@@ -97,6 +97,32 @@ CREATE TABLE IF NOT EXISTS duedatehq.job_queue (
     completed_at timestamptz
 );
 
+CREATE TABLE IF NOT EXISTS duedatehq.notification_routes (
+    route_id text PRIMARY KEY,
+    tenant_id text NOT NULL REFERENCES duedatehq.tenants(tenant_id),
+    channel text NOT NULL,
+    destination text NOT NULL,
+    enabled boolean NOT NULL,
+    created_at timestamptz NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS duedatehq.notification_deliveries (
+    delivery_id text PRIMARY KEY,
+    tenant_id text NOT NULL REFERENCES duedatehq.tenants(tenant_id),
+    client_id text NOT NULL REFERENCES duedatehq.clients(client_id),
+    deadline_id text NOT NULL REFERENCES duedatehq.deadlines(deadline_id),
+    reminder_id text NOT NULL REFERENCES duedatehq.reminders(reminder_id),
+    channel text NOT NULL,
+    destination text NOT NULL,
+    subject text NOT NULL,
+    body text NOT NULL,
+    status text NOT NULL,
+    provider_message_id text,
+    error_message text,
+    created_at timestamptz NOT NULL,
+    sent_at timestamptz
+);
+
 CREATE TABLE IF NOT EXISTS duedatehq.deadlines (
     deadline_id text PRIMARY KEY,
     client_id text NOT NULL REFERENCES duedatehq.clients(client_id),
@@ -180,6 +206,8 @@ ALTER TABLE duedatehq.deadlines ENABLE ROW LEVEL SECURITY;
 ALTER TABLE duedatehq.deadline_transitions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE duedatehq.reminders ENABLE ROW LEVEL SECURITY;
 ALTER TABLE duedatehq.audit_log ENABLE ROW LEVEL SECURITY;
+ALTER TABLE duedatehq.notification_routes ENABLE ROW LEVEL SECURITY;
+ALTER TABLE duedatehq.notification_deliveries ENABLE ROW LEVEL SECURITY;
 
 DROP POLICY IF EXISTS clients_tenant_isolation ON duedatehq.clients;
 CREATE POLICY clients_tenant_isolation ON duedatehq.clients
@@ -203,5 +231,15 @@ WITH CHECK (tenant_id = duedatehq.require_tenant_id());
 
 DROP POLICY IF EXISTS audit_log_tenant_isolation ON duedatehq.audit_log;
 CREATE POLICY audit_log_tenant_isolation ON duedatehq.audit_log
+USING (tenant_id = duedatehq.require_tenant_id())
+WITH CHECK (tenant_id = duedatehq.require_tenant_id());
+
+DROP POLICY IF EXISTS notification_routes_tenant_isolation ON duedatehq.notification_routes;
+CREATE POLICY notification_routes_tenant_isolation ON duedatehq.notification_routes
+USING (tenant_id = duedatehq.require_tenant_id())
+WITH CHECK (tenant_id = duedatehq.require_tenant_id());
+
+DROP POLICY IF EXISTS notification_deliveries_tenant_isolation ON duedatehq.notification_deliveries;
+CREATE POLICY notification_deliveries_tenant_isolation ON duedatehq.notification_deliveries
 USING (tenant_id = duedatehq.require_tenant_id())
 WITH CHECK (tenant_id = duedatehq.require_tenant_id());

@@ -8,9 +8,13 @@ DueDateHQ first-phase infrastructure, validated without any frontend.
 - Low-confidence rule routing into a manual review queue
 - Client-to-rule mapping into concrete deadlines
 - Reminder queue generation and rebuild on deadline changes
+- Tenant-scoped reminder triggering for PostgreSQL RLS compatibility
 - Deadline state machine with transition history
 - Append-only audit log enforced by database triggers
-- CLI commands for create/list/update/export flows
+- Official-source fetchers for HTML, RSS, and PDF inputs
+- Notification delivery routing for email, SMS, and Slack
+- Celery dispatch hooks for fetch, reminder scheduling, and notification delivery
+- CLI commands for create/list/update/export/worker flows
 
 ## Database
 
@@ -53,17 +57,26 @@ python -m duedatehq.cli tenant add "Acme Tenant"
 python -m duedatehq.cli fetch --list-sources --all
 python -m duedatehq.cli fetch --source irs --text-file notice.txt --source-url https://irs.gov/example
 python -m duedatehq.cli worker fetch --source irs --text-file notice.txt --source-url https://irs.gov/example
-python -m duedatehq.cli worker fetch --source irs --url https://irs.gov/newsroom/example
+python -m duedatehq.cli worker fetch --source irs --url https://irs.gov/newsroom/example --format html
+python -m duedatehq.cli worker fetch --source irs --url https://irs.gov/pub/irs-drop/n-26-01.pdf --format pdf
 python -m duedatehq.cli worker fetch --source federal_register --rss-url https://example.com/feed.xml --entry-title-contains deadline
 python -m duedatehq.cli rule add --tax-type franchise_tax --jurisdiction CA --entity-types s-corp --deadline-date 2026-04-20 --effective-from 2026-01-01 --source-url https://ftb.ca.gov/rule
 python -m duedatehq.cli client add <tenant_id> "Acme LLC" --entity s-corp --states TX,CA,DE --tax-year 2026
 python -m duedatehq.cli deadline list <tenant_id> --client <client_id> --show-reminders
 python -m duedatehq.cli deadline action <tenant_id> <deadline_id> complete --actor user-1
+python -m duedatehq.cli deadline trigger-reminders --tenant-id <tenant_id> --at 2026-04-19T09:00:00+00:00
 python -m duedatehq.cli today <tenant_id>
+python -m duedatehq.cli notify config add <tenant_id> --channel email --destination owner@example.com
+python -m duedatehq.cli notify config add <tenant_id> --channel slack --destination https://hooks.slack.com/services/...
 python -m duedatehq.cli notify preview <tenant_id> --within-days 14
 python -m duedatehq.cli notify history <tenant_id>
+python -m duedatehq.cli notify send-pending <tenant_id> --smtp-host localhost --smtp-sender noreply@example.com
 python -m duedatehq.cli worker schedule-reminders <tenant_id> --hours 24
 python -m duedatehq.cli worker jobs --tenant-id <tenant_id>
+python -m duedatehq.cli celery ping
+python -m duedatehq.cli celery dispatch-fetch --source irs
+python -m duedatehq.cli celery dispatch-reminders <tenant_id>
+python -m duedatehq.cli celery dispatch-notifications <tenant_id>
 python -m duedatehq.cli log --tenant-id <tenant_id>
 ```
 
@@ -78,8 +91,23 @@ python -m duedatehq.cli rule review-queue
 
 - `FetchWorker`: wraps a fetcher and pushes documents through rule ingestion
 - `ReminderScheduler`: batches the next time window of reminder jobs into a queue
-- `ReminderWorker`: drains queued reminder jobs and marks due reminders as triggered
+- `ReminderWorker`: drains queued reminder jobs and triggers reminders per tenant, which keeps PostgreSQL RLS intact
 - `PersistentJobQueue`: stores worker jobs in the database instead of process memory
+
+## Notifications
+
+- `notify config add`: persist an enabled route for `email`, `sms`, or `slack`
+- `notify send-pending`: deliver pending notifications using SMTP, JSON webhooks, or console notifiers
+- notification deliveries are written to the database before send, then marked `sent` or `failed`
+
+## Celery
+
+Set `DUEDATEHQ_BROKER_URL` or pass `--broker-url` to the `celery` commands:
+
+```bash
+$env:DUEDATEHQ_BROKER_URL="redis://localhost:6379/0"
+python -m duedatehq.cli celery ping
+```
 
 Reminder reads now default to the current active queue. Historical cancelled reminders remain in the database and surface through history-oriented views such as `notify history`.
 

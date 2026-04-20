@@ -21,6 +21,8 @@ def official_source_registry() -> dict[str, SourceDefinition]:
             official=True,
             poll_frequency_minutes=15,
             display_name="IRS.gov",
+            default_url="https://www.irs.gov/newsroom",
+            fetch_format="html",
         ),
         "fema": SourceDefinition(
             source_key="fema",
@@ -29,6 +31,8 @@ def official_source_registry() -> dict[str, SourceDefinition]:
             official=True,
             poll_frequency_minutes=15,
             display_name="FEMA Disaster Declarations",
+            default_url="https://www.fema.gov/openfema-data-page/disaster-declarations-summaries-v2",
+            fetch_format="rss",
         ),
         "federal_register": SourceDefinition(
             source_key="federal_register",
@@ -37,6 +41,8 @@ def official_source_registry() -> dict[str, SourceDefinition]:
             official=True,
             poll_frequency_minutes=60,
             display_name="Federal Register",
+            default_url="https://www.federalregister.gov/api/v1/documents.rss",
+            fetch_format="rss",
         ),
     }
     for state in STATE_CODES:
@@ -47,6 +53,8 @@ def official_source_registry() -> dict[str, SourceDefinition]:
             official=True,
             poll_frequency_minutes=60,
             display_name=f"{state} Department of Revenue",
+            default_url=f"https://www.{state.lower()}.gov/tax",
+            fetch_format="html",
         )
     return registry
 
