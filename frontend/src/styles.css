@@ -244,11 +244,6 @@ a {
   color: var(--ink-700);
 }
 
-.workflow-guide {
-  background: linear-gradient(180deg, #fbfcff 0%, #f4f8ff 100%);
-  border-color: rgba(29, 78, 216, 0.12);
-}
-
 .journey-banner {
   background: linear-gradient(180deg, #fffef9 0%, #fff8ea 100%);
   border-color: rgba(139, 100, 29, 0.14);
@@ -266,31 +261,70 @@ a {
   color: var(--ink-700);
 }
 
-.workflow-guide.compact {
-  padding: 18px 20px;
+.help-menu {
+  position: relative;
 }
 
-.workflow-steps {
+.help-menu:hover .help-panel,
+.help-menu:focus-within .help-panel {
+  opacity: 1;
+  transform: translateY(0);
+  pointer-events: auto;
+}
+
+.help-trigger {
+  min-width: 92px;
+}
+
+.help-panel {
+  position: absolute;
+  top: calc(100% + 10px);
+  right: 0;
+  width: min(420px, 80vw);
+  padding: 16px;
+  border-radius: var(--radius-md);
+  border: 1px solid rgba(29, 78, 216, 0.14);
+  background: linear-gradient(180deg, #fbfcff 0%, #f4f8ff 100%);
+  box-shadow: 0 14px 28px rgba(18, 32, 52, 0.12);
+  opacity: 0;
+  transform: translateY(6px);
+  pointer-events: none;
+  transition: opacity 140ms ease, transform 140ms ease;
+  z-index: 8;
+}
+
+.help-panel h3 {
+  margin: 0;
+  font-size: 22px;
+  line-height: 1.1;
+  letter-spacing: -0.03em;
+}
+
+.help-panel p {
+  margin: 8px 0 0;
+  color: var(--ink-700);
+}
+
+.help-step-list {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 12px;
-  margin-top: 16px;
+  gap: 10px;
+  margin-top: 14px;
 }
 
-.workflow-step {
-  padding: 14px 16px;
+.help-step {
+  padding: 12px 14px;
   border-radius: var(--radius-sm);
   border: 1px solid rgba(29, 78, 216, 0.12);
   background: rgba(255, 255, 255, 0.78);
 }
 
-.workflow-step strong {
+.help-step strong {
   display: block;
   margin-bottom: 6px;
   font-size: 14px;
 }
 
-.workflow-step p {
+.help-step p {
   margin: 0;
   color: var(--ink-700);
   font-size: 14px;
@@ -831,7 +865,6 @@ button.table-row:hover {
   .dashboard-lanes,
   .calendar-grid,
   .detail-grid,
-  .workflow-steps,
   .assistant-panel {
     grid-template-columns: 1fr;
   }

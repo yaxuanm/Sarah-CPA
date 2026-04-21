@@ -128,6 +128,7 @@ function App() {
   const selectedNotice = useMemo(() => getNoticeById(selectedNoticeId), [selectedNoticeId]);
   const pageKey = activePage === "client" ? "client" : activePage;
   const meta = PAGE_META[pageKey];
+  const currentGuide = WORKFLOW_GUIDES[pageKey];
   const prompts = pagePrompts[pageKey] || pagePrompts.dashboard;
 
   function pushMessage(role, text) {
@@ -306,6 +307,7 @@ function App() {
             <p>{meta.description}</p>
           </div>
           <div className="topbar-actions">
+            {currentGuide ? <HelpMenu guide={currentGuide} /> : null}
             <button type="button" className="button button-secondary" onClick={() => goToPage("import")}>
               Open import
             </button>
@@ -817,8 +819,6 @@ function DashboardPage({ onOpenClient, onOpenNotice, onJourneyEvent }) {
 
   return (
     <div className="stack">
-      <WorkflowGuide guide={WORKFLOW_GUIDES.dashboard} />
-
       <section className="card">
         <div className="stats-grid">
           {dashboardStats.map((stat) => (
@@ -1021,8 +1021,6 @@ function ClientDetailPage({ client, onDeadlineUpdate, onJourneyEvent }) {
 
   return (
     <div className="stack">
-      <WorkflowGuide guide={WORKFLOW_GUIDES.client} compact />
-
       <section className="card hero-card">
         <div>
           <div className="panel-label">Client record</div>
@@ -1173,8 +1171,6 @@ function ImportPage({ onGenerateDashboard, onJourneyEvent }) {
 
   return (
     <div className="stack">
-      <WorkflowGuide guide={WORKFLOW_GUIDES.import} />
-
       <section className="card import-status-card">
         <div>
           <div className="panel-label">Import readiness</div>
@@ -1378,8 +1374,6 @@ function NoticesPage({ selectedNotice, onOpenClient, onOpenNotice, onJourneyEven
 
   return (
     <div className="stack">
-      <WorkflowGuide guide={WORKFLOW_GUIDES.notice} />
-
       <div className="split-grid notice-grid">
         <section className="card">
           <div className="section-head">
@@ -1481,25 +1475,26 @@ function EmptyState({ title, body }) {
   );
 }
 
-function WorkflowGuide({ guide, compact = false }) {
+function HelpMenu({ guide }) {
   return (
-    <section className={`card workflow-guide ${compact ? "compact" : ""}`}>
-      <div className="section-head">
-        <div>
-          <div className="panel-label">{guide.eyebrow}</div>
-          <h3>{guide.title}</h3>
+    <div className="help-menu">
+      <button type="button" className="button button-secondary help-trigger">
+        Help
+      </button>
+      <div className="help-panel">
+        <div className="panel-label">{guide.eyebrow}</div>
+        <h3>{guide.title}</h3>
+        <p>{guide.tip}</p>
+        <div className="help-step-list">
+          {guide.steps.map((step) => (
+            <article key={step.label} className="help-step">
+              <strong>{step.label}</strong>
+              <p>{step.description}</p>
+            </article>
+          ))}
         </div>
       </div>
-      <p className="body-copy">{guide.tip}</p>
-      <div className="workflow-steps">
-        {guide.steps.map((step) => (
-          <article key={step.label} className="workflow-step">
-            <strong>{step.label}</strong>
-            <p>{step.description}</p>
-          </article>
-        ))}
-      </div>
-    </section>
+    </div>
   );
 }
 
