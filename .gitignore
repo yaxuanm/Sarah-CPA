@@ -6,3 +6,10 @@
 __pycache__/
 *.pyc
 .pytest_cache/
+.DS_Store
+uv.lock
+src/duedatehq.egg-info/
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+frontend/.onboarding.html.swp
