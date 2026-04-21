@@ -140,6 +140,38 @@ Behavior:
 - Updates a client's registered states.
 - Recomputes matching deadlines.
 
+### client show
+
+```bash
+duedatehq client show <tenant_id> <client_id>
+```
+
+Returns:
+
+- One aggregate JSON payload containing:
+  - `client`
+  - `tax_profiles`
+  - `jurisdictions`
+  - `contacts`
+  - `deadlines`
+
+Behavior:
+
+- This is the main read command for the new intake-oriented schema.
+- It gives one client-centered payload instead of forcing callers to reconstruct the profile from multiple tables.
+
+### client update-profile
+
+```bash
+duedatehq client update-profile <tenant_id> <client_id> --tax-year <year> [--entity-election <value>] [--intake-status <draft|in_progress|ready|needs_followup>] [--profile-source <manual|import|inferred>] [--first-year-filing | --no-first-year-filing] [--final-year-filing | --no-final-year-filing] [--extension-requested | --no-extension-requested] [--extension-filed | --no-extension-filed] [--estimated-tax-required | --no-estimated-tax-required] [--payroll-present | --no-payroll-present] [--contractor-reporting-required | --no-contractor-reporting-required] [--notice-received | --no-notice-received]
+```
+
+Behavior:
+
+- Upserts the annual `client_tax_profiles` row for the requested tax year.
+- Intended for the annual filing-profile layer, not the stable client record.
+- Returns the updated `ClientTaxProfile` object.
+
 ### client list
 
 ```bash

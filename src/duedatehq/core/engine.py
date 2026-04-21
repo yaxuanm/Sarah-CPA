@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import re
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, is_dataclass
 from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
@@ -984,6 +984,133 @@ class InfrastructureEngine:
             rows = conn.execute("SELECT * FROM clients WHERE tenant_id = ? ORDER BY created_at", (tenant_id,)).fetchall()
         return [self._client_from_row(dict(row)) for row in rows]
 
+    def get_client(self, tenant_id: str, client_id: str) -> Client:
+        with self._connect(tenant_id=tenant_id) as conn:
+            row = conn.execute(
+                "SELECT * FROM clients WHERE tenant_id = ? AND client_id = ?",
+                (tenant_id, client_id),
+            ).fetchone()
+        if row is None:
+            raise KeyError(client_id)
+        return self._client_from_row(dict(row))
+
+    def get_client_bundle(self, tenant_id: str, client_id: str) -> dict[str, object]:
+        with self._connect(tenant_id=tenant_id) as conn:
+            client_row = conn.execute(
+                "SELECT * FROM clients WHERE tenant_id = ? AND client_id = ?",
+                (tenant_id, client_id),
+            ).fetchone()
+            if client_row is None:
+                raise KeyError(client_id)
+            profile_rows = conn.execute(
+                """
+                SELECT * FROM client_tax_profiles
+                WHERE tenant_id = ? AND client_id = ?
+                ORDER BY tax_year DESC, created_at DESC
+                """,
+                (tenant_id, client_id),
+            ).fetchall()
+            jurisdiction_rows = conn.execute(
+                """
+                SELECT * FROM client_jurisdictions
+                WHERE tenant_id = ? AND client_id = ?
+                ORDER BY tax_year DESC, jurisdiction_type, jurisdiction
+                """,
+                (tenant_id, client_id),
+            ).fetchall()
+            contact_rows = conn.execute(
+                """
+                SELECT * FROM client_contacts
+                WHERE tenant_id = ? AND client_id = ?
+                ORDER BY is_primary DESC, created_at
+                """,
+                (tenant_id, client_id),
+            ).fetchall()
+
+        return {
+            "client": self.get_client(tenant_id, client_id),
+            "tax_profiles": [self._client_tax_profile_from_row(dict(row)) for row in profile_rows],
+            "jurisdictions": [self._client_jurisdiction_from_row(dict(row)) for row in jurisdiction_rows],
+            "contacts": [self._client_contact_from_row(dict(row)) for row in contact_rows],
+            "deadlines": self.list_deadlines(tenant_id, client_id),
+        }
+
+    def update_client_tax_profile(
+        self,
+        tenant_id: str,
+        client_id: str,
+        tax_year: int,
+        *,
+        entity_election: str | None = None,
+        first_year_filing: bool | None = None,
+        final_year_filing: bool | None = None,
+        extension_requested: bool | None = None,
+        extension_filed: bool | None = None,
+        estimated_tax_required: bool | None = None,
+        payroll_present: bool | None = None,
+        contractor_reporting_required: bool | None = None,
+        notice_received: bool | None = None,
+        intake_status: str | None = None,
+        profile_source: str | None = None,
+        actor: str = "system",
+        actor_ip: str = "127.0.0.1",
+    ) -> ClientTaxProfile:
+        now = self.clock.now()
+        correlation_id = str(uuid4())
+        with self._transaction(tenant_id=tenant_id) as conn:
+            client_row = conn.execute(
+                "SELECT * FROM clients WHERE tenant_id = ? AND client_id = ?",
+                (tenant_id, client_id),
+            ).fetchone()
+            if client_row is None:
+                raise KeyError(client_id)
+            existing_row = conn.execute(
+                """
+                SELECT * FROM client_tax_profiles
+                WHERE tenant_id = ? AND client_id = ? AND tax_year = ?
+                """,
+                (tenant_id, client_id, tax_year),
+            ).fetchone()
+            existing = self._client_tax_profile_from_row(dict(existing_row)) if existing_row else None
+            profile = ClientTaxProfile(
+                profile_id=existing.profile_id if existing else str(uuid4()),
+                tenant_id=tenant_id,
+                client_id=client_id,
+                tax_year=tax_year,
+                entity_election=entity_election if entity_election is not None else (existing.entity_election if existing else None),
+                first_year_filing=first_year_filing if first_year_filing is not None else (existing.first_year_filing if existing else None),
+                final_year_filing=final_year_filing if final_year_filing is not None else (existing.final_year_filing if existing else None),
+                extension_requested=extension_requested if extension_requested is not None else (existing.extension_requested if existing else None),
+                extension_filed=extension_filed if extension_filed is not None else (existing.extension_filed if existing else None),
+                estimated_tax_required=estimated_tax_required if estimated_tax_required is not None else (existing.estimated_tax_required if existing else None),
+                payroll_present=payroll_present if payroll_present is not None else (existing.payroll_present if existing else None),
+                contractor_reporting_required=contractor_reporting_required if contractor_reporting_required is not None else (existing.contractor_reporting_required if existing else None),
+                notice_received=notice_received if notice_received is not None else (existing.notice_received if existing else None),
+                intake_status=intake_status if intake_status is not None else (existing.intake_status if existing else "draft"),
+                source=profile_source if profile_source is not None else (existing.source if existing else "manual"),
+                created_at=existing.created_at if existing else now,
+                updated_at=now,
+            )
+            self._upsert_client_tax_profile(conn, profile)
+            self._insert_audit(
+                conn=conn,
+                tenant_id=tenant_id,
+                actor=actor,
+                actor_ip=actor_ip,
+                action_type="client_tax_profile_updated",
+                object_type="client_tax_profile",
+                object_id=profile.profile_id,
+                before={} if existing is None else self._audit_payload(existing),
+                after=self._audit_payload(profile),
+                correlation_id=correlation_id,
+            )
+        self._publish(
+            EventType.CLIENT_UPDATED,
+            {"tenant_id": tenant_id, "client_id": client_id, "tax_year": tax_year, "profile_id": profile.profile_id},
+            actor,
+        )
+        return profile
+
     def list_rule_review_queue(self) -> list[RuleReviewItem]:
         with self._connect() as conn:
             rows = conn.execute("SELECT * FROM rule_review_queue ORDER BY created_at DESC").fetchall()
@@ -1590,6 +1717,22 @@ class InfrastructureEngine:
             return int(value)
         return value
 
+    def _db_to_bool(self, value: object) -> bool | None:
+        if value is None:
+            return None
+        return bool(value)
+
+    def _audit_payload(self, value: object) -> object:
+        if is_dataclass(value):
+            return self._audit_payload(asdict(value))
+        if isinstance(value, datetime):
+            return value.isoformat()
+        if isinstance(value, dict):
+            return {key: self._audit_payload(item) for key, item in value.items()}
+        if isinstance(value, list):
+            return [self._audit_payload(item) for item in value]
+        return value
+
     def _decode_json_field(self, value: object, default: object) -> object:
         if value is None:
             return default
@@ -1621,6 +1764,56 @@ class InfrastructureEngine:
             preferred_communication_channel=row.get("preferred_communication_channel"),
             responsible_cpa=row.get("responsible_cpa"),
             is_active=bool(row.get("is_active", True)),
+        )
+
+    def _client_tax_profile_from_row(self, row: dict) -> ClientTaxProfile:
+        return ClientTaxProfile(
+            profile_id=row["profile_id"],
+            tenant_id=row["tenant_id"],
+            client_id=row["client_id"],
+            tax_year=row["tax_year"],
+            entity_election=row.get("entity_election"),
+            first_year_filing=self._db_to_bool(row.get("first_year_filing")),
+            final_year_filing=self._db_to_bool(row.get("final_year_filing")),
+            extension_requested=self._db_to_bool(row.get("extension_requested")),
+            extension_filed=self._db_to_bool(row.get("extension_filed")),
+            estimated_tax_required=self._db_to_bool(row.get("estimated_tax_required")),
+            payroll_present=self._db_to_bool(row.get("payroll_present")),
+            contractor_reporting_required=self._db_to_bool(row.get("contractor_reporting_required")),
+            notice_received=self._db_to_bool(row.get("notice_received")),
+            intake_status=row["intake_status"],
+            source=row["source"],
+            created_at=self._parse_datetime(row["created_at"]),
+            updated_at=self._parse_datetime(row["updated_at"]),
+        )
+
+    def _client_jurisdiction_from_row(self, row: dict) -> ClientJurisdiction:
+        return ClientJurisdiction(
+            client_jurisdiction_id=row["client_jurisdiction_id"],
+            tenant_id=row["tenant_id"],
+            client_id=row["client_id"],
+            tax_year=row["tax_year"],
+            jurisdiction=row["jurisdiction"],
+            jurisdiction_type=row["jurisdiction_type"],
+            active=bool(row["active"]),
+            source=row["source"],
+            notes=row.get("notes"),
+            created_at=self._parse_datetime(row["created_at"]),
+        )
+
+    def _client_contact_from_row(self, row: dict) -> ClientContact:
+        return ClientContact(
+            contact_id=row["contact_id"],
+            tenant_id=row["tenant_id"],
+            client_id=row["client_id"],
+            name=row["name"],
+            role=row.get("role"),
+            email=row.get("email"),
+            phone=row.get("phone"),
+            preferred_channel=row.get("preferred_channel"),
+            is_primary=bool(row["is_primary"]),
+            created_at=self._parse_datetime(row["created_at"]),
+            updated_at=self._parse_datetime(row["updated_at"]),
         )
 
     def _rule_from_row(self, row: dict) -> RuleRecord:

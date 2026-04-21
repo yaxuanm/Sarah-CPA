@@ -57,6 +57,24 @@ def build_parser() -> argparse.ArgumentParser:
     client_update.add_argument("tenant_id")
     client_update.add_argument("client_id")
     client_update.add_argument("--states", required=True)
+    client_show = client_subparsers.add_parser("show")
+    client_show.add_argument("tenant_id")
+    client_show.add_argument("client_id")
+    client_profile = client_subparsers.add_parser("update-profile")
+    client_profile.add_argument("tenant_id")
+    client_profile.add_argument("client_id")
+    client_profile.add_argument("--tax-year", type=int, required=True)
+    client_profile.add_argument("--entity-election")
+    client_profile.add_argument("--intake-status")
+    client_profile.add_argument("--profile-source")
+    client_profile.add_argument("--first-year-filing", action=argparse.BooleanOptionalAction, default=None)
+    client_profile.add_argument("--final-year-filing", action=argparse.BooleanOptionalAction, default=None)
+    client_profile.add_argument("--extension-requested", action=argparse.BooleanOptionalAction, default=None)
+    client_profile.add_argument("--extension-filed", action=argparse.BooleanOptionalAction, default=None)
+    client_profile.add_argument("--estimated-tax-required", action=argparse.BooleanOptionalAction, default=None)
+    client_profile.add_argument("--payroll-present", action=argparse.BooleanOptionalAction, default=None)
+    client_profile.add_argument("--contractor-reporting-required", action=argparse.BooleanOptionalAction, default=None)
+    client_profile.add_argument("--notice-received", action=argparse.BooleanOptionalAction, default=None)
     client_list = client_subparsers.add_parser("list")
     client_list.add_argument("tenant_id")
 
@@ -271,6 +289,39 @@ def main() -> int:
                 actor="cli",
             )
             print_json({"client_id": client.client_id, "registered_states": client.registered_states})
+            return 0
+        if args.client_command == "show":
+            bundle = engine.get_client_bundle(args.tenant_id, args.client_id)
+            print_json(
+                {
+                    "client": serialize(bundle["client"]),
+                    "tax_profiles": [serialize(item) for item in bundle["tax_profiles"]],
+                    "jurisdictions": [serialize(item) for item in bundle["jurisdictions"]],
+                    "contacts": [serialize(item) for item in bundle["contacts"]],
+                    "deadlines": [serialize(item) for item in bundle["deadlines"]],
+                },
+                default=str,
+            )
+            return 0
+        if args.client_command == "update-profile":
+            profile = engine.update_client_tax_profile(
+                tenant_id=args.tenant_id,
+                client_id=args.client_id,
+                tax_year=args.tax_year,
+                entity_election=args.entity_election,
+                first_year_filing=args.first_year_filing,
+                final_year_filing=args.final_year_filing,
+                extension_requested=args.extension_requested,
+                extension_filed=args.extension_filed,
+                estimated_tax_required=args.estimated_tax_required,
+                payroll_present=args.payroll_present,
+                contractor_reporting_required=args.contractor_reporting_required,
+                notice_received=args.notice_received,
+                intake_status=args.intake_status,
+                profile_source=args.profile_source,
+                actor="cli",
+            )
+            print_json(serialize(profile), default=str)
             return 0
         if args.client_command == "list":
             print_json([serialize(client) for client in engine.list_clients(args.tenant_id)], default=str)

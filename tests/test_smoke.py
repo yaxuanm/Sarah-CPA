@@ -252,6 +252,45 @@ def test_client_rule_mapping_and_rule_change_update_deadline(app):
     assert previous_ca_rule.status == RuleStatus.SUPERSEDED
 
 
+def test_client_bundle_and_tax_profile_update(app):
+    tenant = app.engine.create_tenant("Tenant Bundle")
+    client = app.engine.register_client(
+        tenant_id=tenant.tenant_id,
+        name="Harbor Studio Partners",
+        entity_type="partnership",
+        registered_states=["NY"],
+        tax_year=2026,
+        home_jurisdiction="NY",
+        primary_contact_name="Evan Malik",
+        primary_contact_email="evan@example.com",
+        intake_status="draft",
+        profile_source="import",
+    )
+
+    bundle = app.engine.get_client_bundle(tenant.tenant_id, client.client_id)
+
+    assert bundle["client"].client_id == client.client_id
+    assert len(bundle["tax_profiles"]) == 1
+    assert bundle["tax_profiles"][0].intake_status == "draft"
+    assert len(bundle["jurisdictions"]) >= 1
+    assert len(bundle["contacts"]) == 1
+
+    updated = app.engine.update_client_tax_profile(
+        tenant_id=tenant.tenant_id,
+        client_id=client.client_id,
+        tax_year=2026,
+        intake_status="needs_followup",
+        extension_requested=True,
+        payroll_present=False,
+        actor="cli",
+    )
+
+    assert updated.intake_status == "needs_followup"
+    assert updated.extension_requested is True
+    refreshed = app.engine.get_client_bundle(tenant.tenant_id, client.client_id)
+    assert refreshed["tax_profiles"][0].intake_status == "needs_followup"
+
+
 def test_reminder_queue_rebuild_and_completion_cancels_future(app):
     tenant = app.engine.create_tenant("Tenant A")
     rule = app.engine.create_rule(
