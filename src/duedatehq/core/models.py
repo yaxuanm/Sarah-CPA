@@ -66,6 +66,14 @@ class BlockerStatus(StrEnum):
     DISMISSED = "dismissed"
 
 
+class NoticeStatus(StrEnum):
+    QUEUED = "queued"
+    READ = "read"
+    DISMISSED = "dismissed"
+    ESCALATED = "escalated"
+    AUTO_UPDATED = "auto_updated"
+
+
 @dataclass(frozen=True, slots=True)
 class SourceDefinition:
     source_key: str
@@ -193,6 +201,21 @@ class Blocker:
     created_at: datetime
     updated_at: datetime
     resolved_at: datetime | None = None
+    dismissed_at: datetime | None = None
+
+
+@dataclass(slots=True)
+class NoticeRecord:
+    notice_id: str
+    tenant_id: str
+    title: str
+    source_url: str
+    source_label: str | None
+    summary: str | None
+    status: NoticeStatus
+    created_at: datetime
+    updated_at: datetime
+    read_at: datetime | None = None
     dismissed_at: datetime | None = None
 
 

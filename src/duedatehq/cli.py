@@ -144,6 +144,12 @@ def build_parser() -> argparse.ArgumentParser:
     import_subparsers = import_parser.add_subparsers(dest="import_command", required=True)
     import_preview = import_subparsers.add_parser("preview")
     import_preview.add_argument("--csv", required=True)
+    import_apply = import_subparsers.add_parser("apply")
+    import_apply.add_argument("tenant_id")
+    import_apply.add_argument("--csv", required=True)
+    import_apply.add_argument("--tax-year", type=int, required=True)
+    import_apply.add_argument("--default-client-type", default="business")
+    import_apply.add_argument("--actor", default="cli")
 
     rule_parser = subparsers.add_parser("rule")
     rule_subparsers = rule_parser.add_subparsers(dest="rule_command", required=True)
@@ -438,6 +444,33 @@ def main() -> int:
         if args.import_command == "preview":
             preview = engine.preview_import_csv(args.csv)
             print_json(preview, default=str)
+            return 0
+        if args.import_command == "apply":
+            result = engine.apply_import_csv(
+                tenant_id=args.tenant_id,
+                csv_path=args.csv,
+                tax_year=args.tax_year,
+                default_client_type=args.default_client_type,
+                actor=args.actor,
+            )
+            print_json(
+                {
+                    "source_name": result["source_name"],
+                    "created_clients": [serialize(client) for client in result["created_clients"]],
+                    "created_blockers": [serialize(blocker) for blocker in result["created_blockers"]],
+                    "created_tasks": [serialize(task) for task in result["created_tasks"]],
+                    "skipped_rows": result["skipped_rows"],
+                    "dashboard": {
+                        "today": result["dashboard"]["today"],
+                        "active_work": [serialize(task) for task in result["dashboard"]["active_work"]],
+                        "waiting_on_info": [serialize(blocker) for blocker in result["dashboard"]["waiting_on_info"]],
+                        "client_count": result["dashboard"]["client_count"],
+                        "open_task_count": result["dashboard"]["open_task_count"],
+                        "open_blocker_count": result["dashboard"]["open_blocker_count"],
+                    },
+                },
+                default=str,
+            )
             return 0
 
     if args.command == "blocker":

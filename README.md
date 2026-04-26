@@ -69,6 +69,7 @@ python -m duedatehq.cli rule add --tax-type franchise_tax --jurisdiction CA --en
 python -m duedatehq.cli client add <tenant_id> "Acme LLC" --entity s-corp --states TX,CA,DE --tax-year 2026
 python -m duedatehq.cli client show <tenant_id> <client_id>
 python -m duedatehq.cli import preview --csv client-portfolio.csv
+python -m duedatehq.cli import apply <tenant_id> --csv client-portfolio.csv --tax-year 2026
 python -m duedatehq.cli task add <tenant_id> <client_id> --title "Review PTE election decision" --task-type review --priority high --source-type deadline --source-id dl-002
 python -m duedatehq.cli task list <tenant_id> --client <client_id>
 python -m duedatehq.cli task update-status <tenant_id> <task_id> --status done

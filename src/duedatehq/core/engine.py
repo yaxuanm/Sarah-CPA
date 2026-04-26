@@ -23,6 +23,8 @@ from .models import (
     DeadlineAction,
     DeadlineStatus,
     DeadlineTransition,
+    NoticeRecord,
+    NoticeStatus,
     NotificationChannel,
     NotificationDelivery,
     NotificationRoute,
@@ -1074,46 +1076,12 @@ class InfrastructureEngine:
         headers: list[str],
         rows: list[list[str]],
     ) -> dict[str, object]:
-        normalized_headers = [self._normalize_import_header(header) for header in headers]
-        used_indexes: set[int] = set()
-        mappings: list[dict[str, object]] = []
-        matched_targets: dict[str, int] = {}
-        for spec in IMPORT_FIELD_SPECS:
-            best_index = None
-            best_confidence = 0.0
-            for index, normalized_header in enumerate(normalized_headers):
-                if index in used_indexes:
-                    continue
-                confidence = self._score_import_header_match(normalized_header, spec["aliases"])
-                if confidence > best_confidence:
-                    best_confidence = confidence
-                    best_index = index
-            if best_index is not None and best_confidence >= 0.82:
-                used_indexes.add(best_index)
-                matched_targets[spec["key"]] = best_index
-                mappings.append(
-                    {
-                        "target_field": spec["target_field"],
-                        "source_column": headers[best_index],
-                        "confidence": round(best_confidence, 2),
-                        "status": "Mapped",
-                    }
-                )
-            else:
-                mappings.append(
-                    {
-                        "target_field": spec["target_field"],
-                        "source_column": "",
-                        "confidence": 0,
-                        "status": "Needs follow-up",
-                    }
-                )
+        mappings, matched_targets, extra_columns = self._analyze_import_headers(headers)
         missing_fields = self._build_import_missing_fields(rows, matched_targets)
         required_mappings = sum(1 for spec in IMPORT_FIELD_SPECS if spec["required"])
         resolved_required_mappings = sum(
             1 for spec in IMPORT_FIELD_SPECS if spec["required"] and spec["key"] in matched_targets
         )
-        extra_columns = [headers[index] for index in range(len(headers)) if index not in used_indexes]
         ready_to_generate = resolved_required_mappings == required_mappings and not missing_fields
         summary = self._build_import_summary(
             imported_rows=len(rows),
@@ -1133,6 +1101,133 @@ class InfrastructureEngine:
             "ready_to_generate": ready_to_generate,
             "required_mappings": required_mappings,
             "resolved_required_mappings": resolved_required_mappings,
+        }
+
+    def apply_import_csv(
+        self,
+        tenant_id: str,
+        csv_path: str | Path,
+        *,
+        tax_year: int,
+        default_client_type: str = "business",
+        actor: str = "system",
+        actor_ip: str = "127.0.0.1",
+    ) -> dict[str, object]:
+        path = Path(csv_path)
+        with path.open("r", encoding="utf-8-sig", newline="") as handle:
+            reader = csv.reader(handle)
+            rows = [row for row in reader if any(cell.strip() for cell in row)]
+        if not rows:
+            return {
+                "source_name": path.name,
+                "created_clients": [],
+                "created_blockers": [],
+                "created_tasks": [],
+                "skipped_rows": [],
+                "dashboard": self.dashboard_payload(tenant_id),
+            }
+        headers = rows[0]
+        data_rows = [self._normalize_import_row(headers, row) for row in rows[1:]]
+        _mappings, matched_targets, _extra_columns = self._analyze_import_headers(headers)
+        missing_required_targets = [spec["target_field"] for spec in IMPORT_FIELD_SPECS if spec["required"] and spec["key"] not in matched_targets]
+        if missing_required_targets:
+            raise ValueError(f"import apply requires mapped columns for: {', '.join(missing_required_targets)}")
+
+        contact_name_index = self._match_optional_import_column(
+            headers,
+            ("primary contact", "contact name", "client contact", "owner name"),
+        )
+        contact_email_index = self._match_optional_import_column(
+            headers,
+            ("contact email", "primary email", "email", "client email"),
+        )
+        contact_phone_index = self._match_optional_import_column(
+            headers,
+            ("contact phone", "phone", "primary phone", "client phone"),
+        )
+        responsible_cpa_index = matched_targets.get("responsible_cpa")
+
+        created_clients: list[Client] = []
+        created_blockers: list[Blocker] = []
+        created_tasks: list[Task] = []
+        skipped_rows: list[dict[str, object]] = []
+        for row_index, row in enumerate(data_rows):
+            client_name = self._extract_import_value(row, matched_targets.get("client_name"))
+            entity_type = self._extract_import_value(row, matched_targets.get("entity_type"))
+            operating_states_raw = self._extract_import_value(row, matched_targets.get("operating_states"))
+            home_jurisdiction = self._extract_import_value(row, matched_targets.get("home_jurisdiction"))
+            payroll_states_raw = self._extract_import_value(row, matched_targets.get("payroll_states"))
+            contact_name = self._extract_import_value(row, contact_name_index)
+            contact_email = self._extract_import_value(row, contact_email_index)
+            contact_phone = self._extract_import_value(row, contact_phone_index)
+            responsible_cpa = self._extract_import_value(row, responsible_cpa_index)
+
+            if not client_name or not entity_type or not operating_states_raw:
+                skipped_rows.append(
+                    {
+                        "row_number": row_index + 2,
+                        "client_name": client_name or None,
+                        "reason": "Missing a required client value after mapping.",
+                    }
+                )
+                continue
+
+            registered_states = self._split_import_states(operating_states_raw)
+            if not registered_states:
+                skipped_rows.append(
+                    {
+                        "row_number": row_index + 2,
+                        "client_name": client_name,
+                        "reason": "Could not derive any operating states from the mapped state column.",
+                    }
+                )
+                continue
+
+            client = self.register_client(
+                tenant_id=tenant_id,
+                name=client_name,
+                entity_type=self._normalize_import_entity_type(entity_type),
+                registered_states=registered_states,
+                tax_year=tax_year,
+                client_type=self._infer_client_type(entity_type, default_client_type),
+                legal_name=client_name,
+                home_jurisdiction=home_jurisdiction or None,
+                primary_contact_name=contact_name or None,
+                primary_contact_email=contact_email or None,
+                primary_contact_phone=contact_phone or None,
+                responsible_cpa=responsible_cpa or None,
+                intake_status="needs_followup" if not home_jurisdiction else "ready",
+                profile_source="import",
+                payroll_present=bool(payroll_states_raw.strip()) if payroll_states_raw else None,
+                actor=actor,
+                actor_ip=actor_ip,
+            )
+            created_clients.append(client)
+
+            row_blockers = self._generate_import_blockers_for_client(
+                client=client,
+                row=row,
+                row_number=row_index + 2,
+                matched_targets=matched_targets,
+                actor=actor,
+                actor_ip=actor_ip,
+            )
+            created_blockers.extend(row_blockers)
+
+            row_tasks = self._generate_import_tasks_for_client(
+                client=client,
+                actor=actor,
+                actor_ip=actor_ip,
+            )
+            created_tasks.extend(row_tasks)
+
+        return {
+            "source_name": path.name,
+            "created_clients": created_clients,
+            "created_blockers": created_blockers,
+            "created_tasks": created_tasks,
+            "skipped_rows": skipped_rows,
+            "dashboard": self.dashboard_payload(tenant_id),
         }
 
     def get_client_bundle(self, tenant_id: str, client_id: str) -> dict[str, object]:
@@ -1543,10 +1638,23 @@ class InfrastructureEngine:
         notice_id: str,
         title: str,
         source_url: str,
+        source_label: str | None = None,
+        summary: str | None = None,
         affected_clients: list[dict[str, object]],
         actor: str = "system",
         actor_ip: str = "127.0.0.1",
     ) -> dict[str, object]:
+        notice = self.upsert_notice(
+            tenant_id=tenant_id,
+            notice_id=notice_id,
+            title=title,
+            source_url=source_url,
+            source_label=source_label,
+            summary=summary,
+            status=NoticeStatus.QUEUED,
+            actor=actor,
+            actor_ip=actor_ip,
+        )
         created_tasks: list[Task] = []
         created_blockers: list[Blocker] = []
         skipped_clients: list[dict[str, object]] = []
@@ -1635,13 +1743,201 @@ class InfrastructureEngine:
                     actor_ip=actor_ip,
                 )
             )
+        next_status = NoticeStatus.AUTO_UPDATED
+        if created_tasks or created_blockers:
+            next_status = NoticeStatus.ESCALATED
+        elif any(item["disposition"] != "auto_updated_only" for item in skipped_clients):
+            next_status = NoticeStatus.ESCALATED
+        notice = self.update_notice_status(
+            tenant_id=tenant_id,
+            notice_id=notice.notice_id,
+            status=next_status,
+            actor=actor,
+            actor_ip=actor_ip,
+        )
         return {
-            "notice_id": notice_id,
-            "title": title,
-            "source_url": source_url,
+            "notice": notice,
+            "notice_id": notice.notice_id,
+            "title": notice.title,
+            "source_url": notice.source_url,
             "tasks": created_tasks,
             "blockers": created_blockers,
             "skipped_clients": skipped_clients,
+        }
+
+    def upsert_notice(
+        self,
+        *,
+        tenant_id: str,
+        notice_id: str,
+        title: str,
+        source_url: str,
+        source_label: str | None = None,
+        summary: str | None = None,
+        status: NoticeStatus = NoticeStatus.QUEUED,
+        actor: str = "system",
+        actor_ip: str = "127.0.0.1",
+    ) -> NoticeRecord:
+        now = self.clock.now()
+        correlation_id = str(uuid4())
+        with self._transaction(tenant_id=tenant_id) as conn:
+            row = conn.execute(
+                "SELECT * FROM notices WHERE tenant_id = ? AND notice_id = ?",
+                (tenant_id, notice_id),
+            ).fetchone()
+            existing = self._notice_from_row(dict(row)) if row is not None else None
+            notice = NoticeRecord(
+                notice_id=notice_id,
+                tenant_id=tenant_id,
+                title=title,
+                source_url=source_url,
+                source_label=source_label if source_label is not None else (existing.source_label if existing else None),
+                summary=summary if summary is not None else (existing.summary if existing else None),
+                status=status if existing is None else existing.status,
+                created_at=existing.created_at if existing else now,
+                updated_at=now,
+                read_at=existing.read_at if existing else None,
+                dismissed_at=existing.dismissed_at if existing else None,
+            )
+            conn.execute(
+                """
+                INSERT INTO notices (
+                    notice_id, tenant_id, title, source_url, source_label, summary, status,
+                    created_at, updated_at, read_at, dismissed_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(notice_id) DO UPDATE SET
+                    title = excluded.title,
+                    source_url = excluded.source_url,
+                    source_label = excluded.source_label,
+                    summary = excluded.summary,
+                    updated_at = excluded.updated_at
+                """,
+                (
+                    notice.notice_id,
+                    notice.tenant_id,
+                    notice.title,
+                    notice.source_url,
+                    notice.source_label,
+                    notice.summary,
+                    notice.status.value,
+                    notice.created_at.isoformat(),
+                    notice.updated_at.isoformat(),
+                    notice.read_at.isoformat() if notice.read_at else None,
+                    notice.dismissed_at.isoformat() if notice.dismissed_at else None,
+                ),
+            )
+            self._insert_audit(
+                conn=conn,
+                tenant_id=tenant_id,
+                actor=actor,
+                actor_ip=actor_ip,
+                action_type="notice_upserted",
+                object_type="notice",
+                object_id=notice.notice_id,
+                before={} if existing is None else self._audit_payload(existing),
+                after=self._audit_payload(notice),
+                correlation_id=correlation_id,
+            )
+        return notice
+
+    def list_notices(self, tenant_id: str, *, status: NoticeStatus | None = None, limit: int | None = None) -> list[NoticeRecord]:
+        query = "SELECT * FROM notices WHERE tenant_id = ?"
+        params: list[object] = [tenant_id]
+        if status is not None:
+            query += " AND status = ?"
+            params.append(status.value)
+        query += " ORDER BY updated_at DESC, created_at DESC"
+        if limit is not None:
+            query += " LIMIT ?"
+            params.append(limit)
+        with self._connect(tenant_id=tenant_id) as conn:
+            rows = conn.execute(query, tuple(params)).fetchall()
+        return [self._notice_from_row(dict(row)) for row in rows]
+
+    def update_notice_status(
+        self,
+        tenant_id: str,
+        notice_id: str,
+        *,
+        status: NoticeStatus,
+        actor: str = "system",
+        actor_ip: str = "127.0.0.1",
+    ) -> NoticeRecord:
+        now = self.clock.now()
+        correlation_id = str(uuid4())
+        with self._transaction(tenant_id=tenant_id) as conn:
+            row = conn.execute(
+                "SELECT * FROM notices WHERE tenant_id = ? AND notice_id = ?",
+                (tenant_id, notice_id),
+            ).fetchone()
+            if row is None:
+                raise KeyError(notice_id)
+            existing = self._notice_from_row(dict(row))
+            updated = NoticeRecord(
+                notice_id=existing.notice_id,
+                tenant_id=existing.tenant_id,
+                title=existing.title,
+                source_url=existing.source_url,
+                source_label=existing.source_label,
+                summary=existing.summary,
+                status=status,
+                created_at=existing.created_at,
+                updated_at=now,
+                read_at=now if status is NoticeStatus.READ else existing.read_at,
+                dismissed_at=now if status is NoticeStatus.DISMISSED else existing.dismissed_at,
+            )
+            conn.execute(
+                """
+                UPDATE notices
+                SET status = ?, updated_at = ?, read_at = ?, dismissed_at = ?
+                WHERE tenant_id = ? AND notice_id = ?
+                """,
+                (
+                    updated.status.value,
+                    updated.updated_at.isoformat(),
+                    updated.read_at.isoformat() if updated.read_at else None,
+                    updated.dismissed_at.isoformat() if updated.dismissed_at else None,
+                    tenant_id,
+                    notice_id,
+                ),
+            )
+            self._insert_audit(
+                conn=conn,
+                tenant_id=tenant_id,
+                actor=actor,
+                actor_ip=actor_ip,
+                action_type="notice_status_updated",
+                object_type="notice",
+                object_id=notice_id,
+                before=self._audit_payload(existing),
+                after=self._audit_payload(updated),
+                correlation_id=correlation_id,
+            )
+        return updated
+
+    def notice_payload(self, tenant_id: str, notice_id: str) -> dict[str, object]:
+        with self._connect(tenant_id=tenant_id) as conn:
+            row = conn.execute(
+                "SELECT * FROM notices WHERE tenant_id = ? AND notice_id = ?",
+                (tenant_id, notice_id),
+            ).fetchone()
+        if row is None:
+            raise KeyError(notice_id)
+        notice = self._notice_from_row(dict(row))
+        tasks = [
+            task
+            for task in self.list_tasks(tenant_id, source_type="notice")
+            if task.source_id and task.source_id.startswith(f"{notice_id}:")
+        ]
+        blockers = [
+            blocker
+            for blocker in self.list_blockers(tenant_id, source_type="notice")
+            if blocker.source_id and blocker.source_id.startswith(f"{notice_id}:")
+        ]
+        return {
+            "notice": notice,
+            "tasks": tasks,
+            "blockers": blockers,
         }
 
     def update_client_tax_profile(
@@ -1772,6 +2068,28 @@ class InfrastructureEngine:
             }
             for item in today_items
         ]
+
+    def dashboard_payload(self, tenant_id: str, limit: int = 5) -> dict[str, object]:
+        active_work = [
+            task
+            for task in self.list_tasks(tenant_id, limit=limit * 3)
+            if task.status in {TaskStatus.OPEN, TaskStatus.IN_PROGRESS, TaskStatus.BLOCKED}
+        ][:limit]
+        blockers = [
+            blocker
+            for blocker in self.list_blockers(tenant_id, limit=limit * 3)
+            if blocker.status is BlockerStatus.OPEN
+        ][:limit]
+        return {
+            "today": self.today_enriched(tenant_id, limit=limit),
+            "active_work": active_work,
+            "waiting_on_info": blockers,
+            "client_count": len(self.list_clients(tenant_id)),
+            "open_task_count": len(
+                [task for task in self.list_tasks(tenant_id) if task.status in {TaskStatus.OPEN, TaskStatus.IN_PROGRESS, TaskStatus.BLOCKED}]
+            ),
+            "open_blocker_count": len([blocker for blocker in self.list_blockers(tenant_id) if blocker.status is BlockerStatus.OPEN]),
+        }
 
     def notify_preview(self, tenant_id: str, within_days: int = 7) -> list[Reminder]:
         now = self.clock.now()
@@ -2463,12 +2781,65 @@ class InfrastructureEngine:
             dismissed_at=self._parse_datetime(row["dismissed_at"]) if row.get("dismissed_at") else None,
         )
 
+    def _notice_from_row(self, row: dict) -> NoticeRecord:
+        return NoticeRecord(
+            notice_id=row["notice_id"],
+            tenant_id=row["tenant_id"],
+            title=row["title"],
+            source_url=row["source_url"],
+            source_label=row.get("source_label"),
+            summary=row.get("summary"),
+            status=NoticeStatus(row["status"]),
+            created_at=self._parse_datetime(row["created_at"]),
+            updated_at=self._parse_datetime(row["updated_at"]),
+            read_at=self._parse_datetime(row["read_at"]) if row.get("read_at") else None,
+            dismissed_at=self._parse_datetime(row["dismissed_at"]) if row.get("dismissed_at") else None,
+        )
+
     def _normalize_import_row(self, headers: list[str], row: list[str]) -> list[str]:
         if len(row) < len(headers):
             return row + [""] * (len(headers) - len(row))
         if len(row) > len(headers):
             return row[: len(headers)]
         return row
+
+    def _analyze_import_headers(self, headers: list[str]) -> tuple[list[dict[str, object]], dict[str, int], list[str]]:
+        normalized_headers = [self._normalize_import_header(header) for header in headers]
+        used_indexes: set[int] = set()
+        mappings: list[dict[str, object]] = []
+        matched_targets: dict[str, int] = {}
+        for spec in IMPORT_FIELD_SPECS:
+            best_index = None
+            best_confidence = 0.0
+            for index, normalized_header in enumerate(normalized_headers):
+                if index in used_indexes:
+                    continue
+                confidence = self._score_import_header_match(normalized_header, spec["aliases"])
+                if confidence > best_confidence:
+                    best_confidence = confidence
+                    best_index = index
+            if best_index is not None and best_confidence >= 0.82:
+                used_indexes.add(best_index)
+                matched_targets[spec["key"]] = best_index
+                mappings.append(
+                    {
+                        "target_field": spec["target_field"],
+                        "source_column": headers[best_index],
+                        "confidence": round(best_confidence, 2),
+                        "status": "Mapped",
+                    }
+                )
+            else:
+                mappings.append(
+                    {
+                        "target_field": spec["target_field"],
+                        "source_column": "",
+                        "confidence": 0,
+                        "status": "Needs follow-up",
+                    }
+                )
+        extra_columns = [headers[index] for index in range(len(headers)) if index not in used_indexes]
+        return mappings, matched_targets, extra_columns
 
     def _normalize_import_header(self, value: str) -> str:
         return re.sub(r"[^a-z0-9]+", " ", value.strip().lower()).strip()
@@ -2523,6 +2894,116 @@ class InfrastructureEngine:
             seen.add(message)
             deduped.append(message)
         return deduped[:5]
+
+    def _match_optional_import_column(self, headers: list[str], aliases: tuple[str, ...]) -> int | None:
+        normalized_headers = [self._normalize_import_header(header) for header in headers]
+        best_index = None
+        best_confidence = 0.0
+        for index, normalized_header in enumerate(normalized_headers):
+            confidence = self._score_import_header_match(normalized_header, aliases)
+            if confidence > best_confidence:
+                best_confidence = confidence
+                best_index = index
+        if best_index is None or best_confidence < 0.82:
+            return None
+        return best_index
+
+    def _extract_import_value(self, row: list[str], index: int | None) -> str:
+        if index is None or index >= len(row):
+            return ""
+        return row[index].strip()
+
+    def _split_import_states(self, raw_value: str) -> list[str]:
+        candidates = re.split(r"[,/;|]+", raw_value)
+        states: list[str] = []
+        for item in candidates:
+            normalized = item.strip().upper()
+            if not normalized or normalized in {"-", "—", "N/A"}:
+                continue
+            states.append(normalized)
+        deduped: list[str] = []
+        seen: set[str] = set()
+        for state in states:
+            if state in seen:
+                continue
+            seen.add(state)
+            deduped.append(state)
+        return deduped
+
+    def _normalize_import_entity_type(self, raw_value: str) -> str:
+        normalized = raw_value.strip().lower()
+        replacements = {
+            "c corp": "c-corp",
+            "c-corp": "c-corp",
+            "s corp": "s-corp",
+            "s-corp": "s-corp",
+            "sole prop": "sole-prop",
+            "sole proprietorship": "sole-prop",
+        }
+        return replacements.get(normalized, normalized.replace(" ", "-"))
+
+    def _infer_client_type(self, raw_entity_type: str, default_client_type: str) -> str:
+        normalized = raw_entity_type.strip().lower()
+        if normalized in {"individual", "1040", "personal"}:
+            return "individual"
+        return default_client_type
+
+    def _generate_import_blockers_for_client(
+        self,
+        *,
+        client: Client,
+        row: list[str],
+        row_number: int,
+        matched_targets: dict[str, int],
+        actor: str,
+        actor_ip: str,
+    ) -> list[Blocker]:
+        blockers: list[Blocker] = []
+        home_jurisdiction = self._extract_import_value(row, matched_targets.get("home_jurisdiction"))
+        if not home_jurisdiction:
+            blockers.append(
+                self.create_blocker(
+                    tenant_id=client.tenant_id,
+                    client_id=client.client_id,
+                    title=f"Confirm home jurisdiction for {client.name}",
+                    description=f"Imported row {row_number} did not include a reliable home jurisdiction value.",
+                    blocker_type="missing_info",
+                    source_type="import",
+                    source_id=f"import-home-jurisdiction:{client.client_id}",
+                    actor=actor,
+                    actor_ip=actor_ip,
+                )
+            )
+        return blockers
+
+    def _generate_import_tasks_for_client(self, *, client: Client, actor: str, actor_ip: str) -> list[Task]:
+        tasks: list[Task] = []
+        today = self.clock.now().date()
+        for deadline in self.list_deadlines(client.tenant_id, client.client_id, within_days=14):
+            if deadline.status is not DeadlineStatus.PENDING:
+                continue
+            due_date = datetime.fromisoformat(deadline.due_date).date()
+            if (due_date - today).days < 0:
+                continue
+            source_id = deadline.deadline_id
+            existing = self._find_open_task_for_source(client.tenant_id, client.client_id, "deadline", source_id)
+            if existing is not None:
+                continue
+            tasks.append(
+                self.create_task(
+                    tenant_id=client.tenant_id,
+                    client_id=client.client_id,
+                    title=f"Prepare {deadline.tax_type} for {client.name}",
+                    description=f"Generated from imported profile because the deadline is due on {deadline.due_date}.",
+                    task_type="deadline_action",
+                    priority="high" if (due_date - today).days <= 7 else "normal",
+                    source_type="deadline",
+                    source_id=deadline.deadline_id,
+                    actor=actor,
+                    actor_ip=actor_ip,
+                )
+            )
+        return tasks
 
     def _import_sample_client_names(self, rows: list[list[str]], client_name_index: int | None) -> list[str]:
         if client_name_index is None:
@@ -2585,16 +3066,25 @@ class InfrastructureEngine:
         return "\n".join(parts)
 
     def _find_open_task_for_notice_client(self, tenant_id: str, client_id: str, source_id: str) -> Task | None:
+        return self._find_open_task_for_source(tenant_id, client_id, "notice", source_id)
+
+    def _find_open_task_for_source(
+        self,
+        tenant_id: str,
+        client_id: str,
+        source_type: str,
+        source_id: str,
+    ) -> Task | None:
         with self._connect(tenant_id=tenant_id) as conn:
             row = conn.execute(
                 """
                 SELECT * FROM tasks
-                WHERE tenant_id = ? AND client_id = ? AND source_type = 'notice' AND source_id = ?
+                WHERE tenant_id = ? AND client_id = ? AND source_type = ? AND source_id = ?
                   AND status NOT IN (?, ?)
                 ORDER BY created_at DESC
                 LIMIT 1
                 """,
-                (tenant_id, client_id, source_id, TaskStatus.DONE.value, TaskStatus.DISMISSED.value),
+                (tenant_id, client_id, source_type, source_id, TaskStatus.DONE.value, TaskStatus.DISMISSED.value),
             ).fetchone()
         return self._task_from_row(dict(row)) if row else None
 

@@ -151,6 +151,21 @@ class SQLiteStorage:
                     FOREIGN KEY (client_id) REFERENCES clients(client_id)
                 );
 
+                CREATE TABLE IF NOT EXISTS notices (
+                    notice_id TEXT PRIMARY KEY,
+                    tenant_id TEXT NOT NULL,
+                    title TEXT NOT NULL,
+                    source_url TEXT NOT NULL,
+                    source_label TEXT,
+                    summary TEXT,
+                    status TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    read_at TEXT,
+                    dismissed_at TEXT,
+                    FOREIGN KEY (tenant_id) REFERENCES tenants(tenant_id)
+                );
+
                 CREATE TABLE IF NOT EXISTS rules (
                     rule_id TEXT PRIMARY KEY,
                     tax_type TEXT NOT NULL,

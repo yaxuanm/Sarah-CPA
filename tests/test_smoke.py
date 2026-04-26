@@ -351,6 +351,42 @@ def test_import_preview_engine_analysis(app, tmp_path):
     assert preview["sample_rows"][0][0] == "Northwind Services LLC"
 
 
+def test_import_apply_writes_clients_and_generates_initial_work(app, tmp_path):
+    tenant = app.engine.create_tenant("Tenant Import Apply")
+    due_date = (datetime.now(timezone.utc).date() + timedelta(days=5)).isoformat()
+    app.engine.create_rule(
+        tax_type="franchise_tax",
+        jurisdiction="CA",
+        entity_types=["llc"],
+        deadline_date=due_date,
+        effective_from=datetime.now(timezone.utc).date().isoformat(),
+        source_url="https://ftb.ca.gov/rule",
+        confidence_score=0.99,
+    )
+    source = tmp_path / "apply.csv"
+    source.write_text(
+        "Client Name,Entity / Return Type,State Footprint,Home State,Contact Email\n"
+        "Northwind Services LLC,LLC,CA,,maya@example.com\n"
+        "Harbor Studio Partners,LLC,CA,CA,evan@example.com\n",
+        encoding="utf-8",
+    )
+
+    result = app.engine.apply_import_csv(
+        tenant_id=tenant.tenant_id,
+        csv_path=source,
+        tax_year=2026,
+        actor="cli",
+    )
+
+    assert len(result["created_clients"]) == 2
+    assert len(result["created_blockers"]) == 1
+    assert result["created_blockers"][0].title.startswith("Confirm home jurisdiction")
+    assert len(result["created_tasks"]) == 2
+    assert result["dashboard"]["client_count"] == 2
+    assert result["dashboard"]["open_task_count"] >= 2
+    assert result["dashboard"]["open_blocker_count"] == 1
+
+
 def test_blocker_lifecycle_and_client_bundle(app):
     tenant = app.engine.create_tenant("Tenant Blockers")
     client = app.engine.register_client(
@@ -782,6 +818,52 @@ def test_cli_import_preview_route(tmp_path, monkeypatch, capsys):
     assert payload["source_kind"] == "CSV import"
     assert payload["imported_rows"] == 2
     assert any(item["target_field"] == "Home jurisdiction" and item["status"] == "Mapped" for item in payload["mappings"])
+
+
+def test_cli_import_apply_route(tmp_path, monkeypatch, capsys):
+    db_path = str(tmp_path / "cli-import-apply.sqlite3")
+    app = create_app(db_path)
+    tenant = app.engine.create_tenant("Tenant CLI Import Apply")
+    due_date = (datetime.now(timezone.utc).date() + timedelta(days=6)).isoformat()
+    app.engine.create_rule(
+        tax_type="franchise_tax",
+        jurisdiction="CA",
+        entity_types=["llc"],
+        deadline_date=due_date,
+        effective_from=datetime.now(timezone.utc).date().isoformat(),
+        source_url="https://ftb.ca.gov/rule",
+        confidence_score=0.99,
+    )
+    csv_path = tmp_path / "apply.csv"
+    csv_path.write_text(
+        "Client Name,Entity / Return Type,State Footprint,Home State\n"
+        "Northwind Services LLC,LLC,CA,\n",
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "duedatehq",
+            "--db",
+            db_path,
+            "import",
+            "apply",
+            tenant.tenant_id,
+            "--csv",
+            str(csv_path),
+            "--tax-year",
+            "2026",
+        ],
+    )
+    assert cli_main() == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert len(payload["created_clients"]) == 1
+    assert len(payload["created_blockers"]) == 1
+    assert len(payload["created_tasks"]) == 1
+    assert payload["dashboard"]["client_count"] == 1
+    assert payload["dashboard"]["open_blocker_count"] == 1
 
 
 def test_cli_blocker_routes(tmp_path, monkeypatch, capsys):

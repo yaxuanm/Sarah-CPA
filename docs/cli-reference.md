@@ -253,6 +253,31 @@ Notes:
 - It does not write clients into the database yet.
 - It is meant to power spreadsheet review, follow-up prompts, and eventual dashboard generation.
 
+### import apply
+
+```bash
+duedatehq import apply <tenant_id> --csv <file> --tax-year <year> [--default-client-type <business|individual>] [--actor <id>]
+```
+
+Behavior:
+
+- Reads a CSV export from an existing client spreadsheet.
+- Applies the inferred mappings from the import analyzer.
+- Writes:
+  - `clients`
+  - annual `client_tax_profiles`
+  - `client_jurisdictions`
+  - primary `client_contacts` when contact columns are available
+- Generates initial work:
+  - blocker objects for missing deadline-driving fields such as home jurisdiction
+  - task objects for near-term deadlines generated from imported profiles
+- Returns:
+  - created clients
+  - created blockers
+  - created tasks
+  - skipped rows
+  - a dashboard-ready payload with `today`, `active_work`, and `waiting_on_info`
+
 ## blocker
 
 ### blocker add
