@@ -51,6 +51,7 @@ class AgentKernelDecision:
     view_goal: str | None = None
     answer: str | None = None
     selected_refs: list[str] | None = None
+    suggested_actions: list[dict[str, str]] | None = None
     next_step: str | None = None
     requires_confirmation: bool = False
     confidence: float = 0.0
@@ -64,6 +65,21 @@ class AgentKernelDecision:
             if str(item) in ALLOWED_DATA_REQUESTS
         ]
         selected_refs = payload.get("selected_refs")
+        suggested_actions = []
+        for item in payload.get("suggested_actions", []) or []:
+            if not isinstance(item, dict):
+                continue
+            label = str(item.get("label") or "").strip()
+            intent = str(item.get("intent") or label).strip()
+            style = str(item.get("style") or "secondary").strip()
+            if label and intent:
+                suggested_actions.append(
+                    {
+                        "label": label[:48],
+                        "intent": intent[:160],
+                        "style": style if style in {"primary", "secondary"} else "secondary",
+                    }
+                )
         return cls(
             route=str(payload.get("route") or "pass_to_planner"),
             need_type=str(payload.get("need_type") or "pass_to_planner"),
@@ -73,6 +89,7 @@ class AgentKernelDecision:
             view_goal=str(payload["view_goal"]) if payload.get("view_goal") else None,
             answer=str(payload["answer"]) if payload.get("answer") else None,
             selected_refs=[str(item) for item in selected_refs] if isinstance(selected_refs, list) else [],
+            suggested_actions=suggested_actions[:3],
             next_step=str(payload["next_step"]) if payload.get("next_step") else None,
             requires_confirmation=bool(payload.get("requires_confirmation")),
             confidence=float(payload.get("confidence") or 0.0),
@@ -95,10 +112,11 @@ class AgentKernel(Protocol):
 
 
 class DeterministicAgentKernel:
-    """Local guardrail and fallback for high-value semantic needs.
+    """Small local guardrail for workflow turns when Claude is unavailable.
 
-    This is not meant to replace the LLM. It protects obvious product-critical
-    cases from stale intent templates and gives tests a deterministic kernel.
+    Semantic synthesis should come from ClaudeAgentKernel. This fallback only
+    protects obvious workflow/navigation turns and simple current-page answers,
+    so old keyword policies do not compete with the Agent loop.
     """
 
     def decide(self, user_input: str, session: dict[str, Any]) -> AgentKernelDecision | None:
@@ -115,30 +133,6 @@ class DeterministicAgentKernel:
                 answer_mode="pass_to_planner",
                 confidence=0.95,
                 reason="existing planner handles navigation and write flows",
-            )
-
-        if self._looks_like_portfolio_overview(text):
-            return AgentKernelDecision(
-                route="render_strategy_surface",
-                need_type="portfolio_overview",
-                render_policy="render_new_view",
-                data_requests=["all_clients", "all_deadlines"],
-                answer_mode="answer_and_render",
-                view_goal="summarize all client status and identify what needs attention",
-                confidence=0.9,
-                reason="broad all-client status question",
-            )
-
-        if self._looks_like_least_urgent_question(text):
-            return AgentKernelDecision(
-                route="render_strategy_surface",
-                need_type="deadline_priority_ranking",
-                render_policy="render_new_view",
-                data_requests=["visible_deadlines", "all_deadlines"],
-                answer_mode="answer_and_render",
-                view_goal="rank deadline urgency and identify which work can wait",
-                confidence=0.88,
-                reason="comparative priority question",
             )
 
         current_view = session.get("current_view")
@@ -184,19 +178,6 @@ class DeterministicAgentKernel:
             "prepare",
         ]
         return any(term in text for term in terms)
-
-    def _looks_like_portfolio_overview(self, text: str) -> bool:
-        all_terms = ["所有", "全部", "整体", "总览", "portfolio", "all"]
-        client_terms = ["客户", "client", "customer"]
-        status_terms = ["情况", "状态", "怎么样", "如何", "overview", "status", "health"]
-        return any(term in text for term in all_terms) and any(term in text for term in client_terms) and any(
-            term in text for term in status_terms
-        )
-
-    def _looks_like_least_urgent_question(self, text: str) -> bool:
-        least_terms = ["最不紧急", "最不急", "不紧急", "不急", "晚点", "最后", "least urgent", "lowest priority", "can wait"]
-        subject_terms = ["客户", "事项", "任务", "deadline", "ddl", "item", "work"]
-        return any(term in text for term in least_terms) and any(term in text for term in subject_terms)
 
     def _looks_like_surface_question(self, text: str) -> bool:
         blocked_source_terms = ["来源", "变更", "变了", "谁改", "历史", "source", "history", "changed"]
@@ -349,13 +330,16 @@ Return ONLY JSON. No markdown.
 Schema:
 {{
   "route": "answer_current_view | render_strategy_surface | prepare_action | ask_clarifying_question | pass_to_planner",
-  "need_type": "short semantic label, e.g. portfolio_overview, deadline_priority_ranking, explain_current_view",
+  "need_type": "short semantic label, e.g. client_risk_review, workload_comparison, explain_current_view",
   "render_policy": "keep_current_view | no_view_needed | update_current_view | render_new_view | pass_to_planner",
   "data_requests": ["current_view | visible_deadlines | all_clients | all_deadlines | client_deadlines | blockers | tasks"],
   "answer_mode": "answer_only | answer_and_render | render_only | pass_to_planner",
   "view_goal": "what the right-side surface should help the user decide",
   "answer": "optional concise answer if current context is already enough",
   "selected_refs": ["item_1"],
+  "suggested_actions": [
+    {{"label": "short button label", "intent": "natural language prompt to send if clicked", "style": "primary | secondary"}}
+  ],
   "next_step": "one concrete next step, or null",
   "requires_confirmation": false,
   "confidence": 0.0,
@@ -370,6 +354,7 @@ Rules:
 - Never execute writes. If a write may be needed, choose prepare_action and requires_confirmation=true.
 - Do not invent facts. If facts are needed, call tools before final JSON.
 - If a user asks a normal advisory question, answer conversationally and still choose whether the current view should stay or a better surface should be rendered.
+- Suggested actions are optional. Include only actions that directly follow from your tool results and the user's stated need. Do not emit generic or canned actions just to fill space.
 
 AVAILABLE_VIEWS:
 - ListCard: multiple deadlines or clients in a list.

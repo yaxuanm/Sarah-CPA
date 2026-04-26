@@ -3,7 +3,6 @@ from __future__ import annotations
 import re
 from typing import Any, Protocol
 
-from .agent_policy import AgentPolicy, AgentPolicyDecision
 from .agent_kernel import AgentKernel, AgentKernelDecision
 from .executor import EntityNotFoundError, PlanExecutionError, PlanExecutor
 from .followup_feedback import classify_followup
@@ -31,14 +30,12 @@ class InteractionBackend:
         intent_planner: IntentPlanner,
         intent_library: InMemoryIntentLibrary | None = None,
         agent_kernel: AgentKernel | None = None,
-        agent_policy: AgentPolicy | None = None,
     ) -> None:
         self.executor = executor
         self.response_generator = response_generator
         self.intent_planner = intent_planner
         self.intent_library = intent_library
         self.agent_kernel = agent_kernel
-        self.agent_policy = agent_policy
 
     def process_message(self, user_input: str, session: dict[str, Any]) -> dict[str, Any]:
         text = user_input.strip()
@@ -98,29 +95,19 @@ class InteractionBackend:
             self._append_history(session, "system", kernel_response.get("message", ""))
             return {"status": "ok", **kernel_response, "session_id": session.get("session_id")}
 
-        policy_decision = self.agent_policy.decide(text, session) if self.agent_policy else None
-        advice_response = self._answer_from_agent_decision(policy_decision, text, session) if policy_decision else None
-        if not advice_response:
-            advice_response = self._answer_current_context_question(text, session)
+        advice_response = self._answer_current_context_question(text, session)
         if advice_response:
             plan = {
-                "intent_label": policy_decision.need_type if policy_decision else "context_advice",
+                "intent_label": "context_advice",
                 "op_class": "read",
             }
             self._remember_response(session, advice_response)
-            if policy_decision:
-                session["last_agent_policy"] = {
-                    "need_type": policy_decision.need_type,
-                    "render_policy": policy_decision.render_policy,
-                    "confidence": policy_decision.confidence,
-                    "reason": policy_decision.reason,
-                }
             self._remember_last_turn(
                 session,
                 text,
                 plan,
                 advice_response,
-                plan_source="agent_policy" if policy_decision else "context_answer",
+                plan_source="context_answer",
             )
             self._append_history(session, "system", advice_response.get("message", ""))
             return {"status": "ok", **advice_response, "session_id": session.get("session_id")}
@@ -250,7 +237,7 @@ class InteractionBackend:
 
     def _answer_from_agent_decision(
         self,
-        decision: AgentPolicyDecision | AgentKernelDecision,
+        decision: AgentKernelDecision,
         user_input: str,
         session: dict[str, Any],
     ) -> dict[str, Any] | None:
@@ -287,179 +274,13 @@ class InteractionBackend:
 
     def _render_agent_strategy_response(
         self,
-        decision: AgentPolicyDecision | AgentKernelDecision,
+        decision: AgentKernelDecision,
         user_input: str,
         session: dict[str, Any],
     ) -> dict[str, Any] | None:
         if not session.get("tenant_id"):
             return None
-        if decision.need_type == "portfolio_overview":
-            return self._portfolio_overview_response(decision, user_input, session)
-        if decision.need_type in {"deadline_priority_ranking", "prioritize_deadlines", "rank_deadlines"}:
-            return self._deadline_priority_response(decision, user_input, session)
         return self._generic_agent_strategy_response(decision, user_input, session)
-
-    def _portfolio_overview_response(
-        self,
-        decision: AgentPolicyDecision | AgentKernelDecision,
-        user_input: str,
-        session: dict[str, Any],
-    ) -> dict[str, Any]:
-        tenant_id = session["tenant_id"]
-        clients = [self.response_generator._serialize_client(client) for client in self.response_generator.engine.list_clients(tenant_id)]
-        deadlines = [
-            self.response_generator._enrich_deadline_item(deadline, session)
-            for deadline in self.response_generator.engine.list_deadlines(tenant_id, status=DeadlineStatus.PENDING, limit=200)
-        ]
-        deadlines.sort(key=lambda item: (item["days_remaining"], item["due_date"], item["client_name"]))
-        overdue = [item for item in deadlines if item["days_remaining"] < 0]
-        due_soon = [item for item in deadlines if item["days_remaining"] <= 7]
-        clients_with_work = {item["client_id"] for item in deadlines}
-        first = deadlines[0] if deadlines else None
-        least = deadlines[-1] if deadlines else None
-
-        if not clients:
-            message = "当前还没有客户数据。右侧我保留一个空状态，下一步应该先导入或新增客户。"
-        elif not deadlines:
-            message = f"当前共有 {len(clients)} 个客户，但没有待处理截止事项。整体看没有马上需要推进的 deadline。"
-        else:
-            message = (
-                f"当前共有 {len(clients)} 个客户，其中 {len(clients_with_work)} 个客户有待处理 deadline。"
-                f"最需要先看的是 {first['client_name']}，截止日 {first['due_date']}。"
-                f"相对最不紧急的是 {least['client_name']}，截止日 {least['due_date']}。"
-            )
-
-        sources = []
-        for item in deadlines[:5]:
-            urgency = "逾期" if item["days_remaining"] < 0 else f"{item['days_remaining']} 天后"
-            sources.append(
-                {
-                    "label": item["client_name"],
-                    "detail": f"{item['tax_type']} / {item['jurisdiction']}，{item['due_date']}，{item['status']}，{urgency}",
-                }
-            )
-        if not sources:
-            sources.append({"label": "客户", "detail": f"{len(clients)} 个客户，当前没有 pending deadline。"})
-
-        render_spec = {
-            "version": "0.1",
-            "surface": "work_card",
-            "title": "客户组合概况",
-            "intent_summary": user_input,
-            "blocks": [
-                {
-                    "type": "decision_brief",
-                    "title": "我先按客户组合来理解",
-                    "body": (
-                        "这个问题不是要选中某一条任务，而是要看所有客户的整体状态。"
-                        "我读取客户列表和待处理截止事项后，按紧急度整理成这个工作面。"
-                    ),
-                },
-                {
-                    "type": "fact_strip",
-                    "facts": [
-                        {"label": "客户数", "value": str(len(clients)), "tone": "blue"},
-                        {"label": "有待办客户", "value": str(len(clients_with_work)), "tone": "gold"},
-                        {"label": "7 天内/逾期", "value": f"{len(due_soon)} / {len(overdue)}", "tone": "red" if overdue else "green"},
-                    ],
-                },
-                {"type": "source_list", "sources": sources},
-                {
-                    "type": "choice_set",
-                    "question": "接下来怎么推进？",
-                    "choices": [
-                        {"label": "打开最紧急客户", "intent": f"focus {first['client_name']}" if first else "查看今天的待处理事项", "style": "primary"},
-                        {"label": "查看客户列表", "intent": "所有客户", "style": "secondary"},
-                        {"label": "回到今日清单", "intent": "查看今天的待处理事项", "style": "secondary"},
-                    ],
-                },
-            ],
-        }
-        selectable = [self.response_generator._to_selectable(index, item) for index, item in enumerate(deadlines[:10], start=1)]
-        return {
-            "message": decision.answer or message,
-            "view": {
-                "type": "RenderSpecSurface",
-                "data": {"render_spec": render_spec},
-                "selectable_items": selectable,
-            },
-            "actions": [],
-            "state_summary": f"客户组合概况：{len(clients)} 个客户，{len(deadlines)} 个 pending deadline。",
-        }
-
-    def _deadline_priority_response(
-        self,
-        decision: AgentPolicyDecision | AgentKernelDecision,
-        user_input: str,
-        session: dict[str, Any],
-    ) -> dict[str, Any]:
-        deadlines = self._visible_deadline_items(session)
-        if not deadlines:
-            tenant_id = session["tenant_id"]
-            deadlines = [
-                self.response_generator._enrich_deadline_item(deadline, session)
-                for deadline in self.response_generator.engine.list_deadlines(tenant_id, status=DeadlineStatus.PENDING, limit=200)
-            ]
-        deadlines.sort(key=lambda item: (item["days_remaining"], item["due_date"], item["client_name"]))
-        if not deadlines:
-            message = "当前没有可比较的待处理 deadline。右侧保留一个空的优先级工作面。"
-            sources = [{"label": "没有待处理事项", "detail": "当前范围内没有 pending deadline。"}]
-            least = None
-        else:
-            least = deadlines[-1]
-            message = (
-                f"相对最不紧急的是 {least['client_name']} 的 {least['tax_type']}，"
-                f"截止日 {least['due_date']}。我按截止日和当前状态做了这个判断；右侧保留排序依据。"
-            )
-            sources = [
-                {
-                    "label": f"{index}. {item['client_name']}",
-                    "detail": f"{item['tax_type']} / {item['jurisdiction']}，{item['due_date']}，{item['status']}，距离 {item['days_remaining']} 天",
-                }
-                for index, item in enumerate(reversed(deadlines[-5:]), start=1)
-            ]
-
-        render_spec = {
-            "version": "0.1",
-            "surface": "work_card",
-            "title": "优先级排序",
-            "intent_summary": user_input,
-            "blocks": [
-                {
-                    "type": "decision_brief",
-                    "title": "我按紧急度来比较",
-                    "body": "这个问题需要横向比较当前可见事项；如果当前页面没有足够数据，我会退到全部 pending deadline 做比较。",
-                },
-                {
-                    "type": "fact_strip",
-                    "facts": [
-                        {"label": "比较范围", "value": f"{len(deadlines)} 项", "tone": "blue"},
-                        {"label": "最不紧急", "value": least["client_name"] if least else "无", "tone": "green"},
-                        {"label": "依据", "value": "截止日 + 状态", "tone": "gold"},
-                    ],
-                },
-                {"type": "source_list", "sources": sources},
-                {
-                    "type": "choice_set",
-                    "question": "下一步你想看什么？",
-                    "choices": [
-                        {"label": "打开最不紧急客户", "intent": f"focus {least['client_name']}" if least else "查看今天的待处理事项", "style": "primary"},
-                        {"label": "回到今日清单", "intent": "查看今天的待处理事项", "style": "secondary"},
-                    ],
-                },
-            ],
-        }
-        selectable = [self.response_generator._to_selectable(index, item) for index, item in enumerate(deadlines[:10], start=1)]
-        return {
-            "message": decision.answer or message,
-            "view": {
-                "type": "RenderSpecSurface",
-                "data": {"render_spec": render_spec},
-                "selectable_items": selectable,
-            },
-            "actions": [],
-            "state_summary": f"优先级排序：比较 {len(deadlines)} 个 pending deadline。",
-        }
 
     def _visible_deadline_items(self, session: dict[str, Any]) -> list[dict[str, Any]]:
         view = session.get("current_view")
@@ -481,7 +302,7 @@ class InteractionBackend:
 
     def _generic_agent_strategy_response(
         self,
-        decision: AgentPolicyDecision | AgentKernelDecision,
+        decision: AgentKernelDecision,
         user_input: str,
         session: dict[str, Any],
     ) -> dict[str, Any]:
@@ -491,7 +312,7 @@ class InteractionBackend:
         title = self._strategy_title(decision)
         body = self._strategy_body(decision, gathered)
         message = decision.answer or self._strategy_message(decision, gathered)
-        choices = self._strategy_choices(gathered)
+        choices = self._strategy_choices(decision)
         render_spec = {
             "version": "0.1",
             "surface": "work_card",
@@ -526,7 +347,7 @@ class InteractionBackend:
 
     def _gather_agent_data(
         self,
-        decision: AgentPolicyDecision | AgentKernelDecision,
+        decision: AgentKernelDecision,
         session: dict[str, Any],
     ) -> dict[str, Any]:
         tenant_id = session["tenant_id"]
@@ -621,13 +442,13 @@ class InteractionBackend:
             ]
         return [{"label": "当前页面", "detail": "这次需求没有读取到额外数据，右侧保留为决策工作面。"}]
 
-    def _strategy_title(self, decision: AgentPolicyDecision | AgentKernelDecision) -> str:
+    def _strategy_title(self, decision: AgentKernelDecision) -> str:
         goal = (decision.view_goal or decision.need_type or "工作面").strip()
         if len(goal) <= 18:
             return goal
         return "按需工作面"
 
-    def _strategy_body(self, decision: AgentPolicyDecision | AgentKernelDecision, gathered: dict[str, Any]) -> str:
+    def _strategy_body(self, decision: AgentKernelDecision, gathered: dict[str, Any]) -> str:
         requests = "、".join(decision.data_requests or ["current_view"])
         goal = decision.view_goal or "帮助你判断下一步"
         deadline_count = len(gathered.get("deadline_pool", []))
@@ -638,7 +459,7 @@ class InteractionBackend:
             f"当前工作面汇总了 {client_count if client_count else '当前范围内'} 个客户和 {deadline_count} 个待处理事项；不会写入任何记录。"
         )
 
-    def _strategy_message(self, decision: AgentPolicyDecision | AgentKernelDecision, gathered: dict[str, Any]) -> str:
+    def _strategy_message(self, decision: AgentKernelDecision, gathered: dict[str, Any]) -> str:
         deadlines = gathered.get("deadline_pool", [])
         if deadlines:
             first = deadlines[0]
@@ -651,19 +472,13 @@ class InteractionBackend:
             return f"我按“{decision.view_goal or decision.need_type}”整理了 {len(clients)} 个客户的信息。"
         return f"我把这个需求整理成了一个工作面：{decision.view_goal or decision.need_type}。"
 
-    def _strategy_choices(self, gathered: dict[str, Any]) -> list[dict[str, str]]:
-        deadlines = gathered.get("deadline_pool", [])
-        if deadlines:
-            first = deadlines[0]
-            return [
-                {"label": "打开最需要关注的事项", "intent": f"focus {first.get('client_name')}", "style": "primary"},
-                {"label": "查看依据", "intent": "show source", "style": "secondary"},
-                {"label": "回到今日清单", "intent": "查看今天的待处理事项", "style": "secondary"},
-            ]
-        return [
-            {"label": "查看今天的待处理事项", "intent": "查看今天的待处理事项", "style": "primary"},
-            {"label": "查看客户列表", "intent": "所有客户", "style": "secondary"},
-        ]
+    def _strategy_choices(self, decision: AgentKernelDecision) -> list[dict[str, str]]:
+        actions = decision.suggested_actions or []
+        if actions:
+            return actions[:3]
+        if decision.next_step:
+            return [{"label": decision.next_step[:48], "intent": decision.next_step, "style": "primary"}]
+        return [{"label": "回到今日清单", "intent": "查看今天的待处理事项", "style": "secondary"}]
 
     def _remember_response(self, session: dict[str, Any], response: dict[str, Any]) -> None:
         view = response.get("view") or {}

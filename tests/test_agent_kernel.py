@@ -5,16 +5,12 @@ import json
 from duedatehq.core.agent_kernel import ClaudeAgentKernel, DeterministicAgentKernel
 
 
-def test_deterministic_agent_kernel_routes_portfolio_overview():
+def test_deterministic_agent_kernel_does_not_route_semantic_overview():
     kernel = DeterministicAgentKernel()
 
     decision = kernel.decide("我所有的客户的情况如何", {})
 
-    assert decision is not None
-    assert decision.route == "render_strategy_surface"
-    assert decision.need_type == "portfolio_overview"
-    assert decision.render_policy == "render_new_view"
-    assert decision.data_requests == ["all_clients", "all_deadlines"]
+    assert decision is None
 
 
 def test_deterministic_agent_kernel_routes_current_view_answer():
@@ -63,13 +59,17 @@ def test_claude_agent_kernel_parses_constrained_decision():
         json.dumps(
             {
                 "route": "render_strategy_surface",
-                "need_type": "portfolio_overview",
+                "need_type": "client_portfolio_status",
                 "render_policy": "render_new_view",
                 "data_requests": ["all_clients", "all_deadlines", "not_allowed"],
                 "answer_mode": "answer_and_render",
                 "view_goal": "show the portfolio",
                 "answer": "我会先看全部客户。",
                 "selected_refs": [],
+                "suggested_actions": [
+                    {"label": "看风险最高客户", "intent": "打开风险最高的客户", "style": "primary"},
+                    {"label": "回到今日清单", "intent": "查看今天的待处理事项", "style": "secondary"},
+                ],
                 "next_step": "先看最紧急客户。",
                 "requires_confirmation": False,
                 "confidence": 0.91,
@@ -83,6 +83,10 @@ def test_claude_agent_kernel_parses_constrained_decision():
     assert decision is not None
     assert decision.route == "render_strategy_surface"
     assert decision.data_requests == ["all_clients", "all_deadlines"]
+    assert decision.suggested_actions == [
+        {"label": "看风险最高客户", "intent": "打开风险最高的客户", "style": "primary"},
+        {"label": "回到今日清单", "intent": "查看今天的待处理事项", "style": "secondary"},
+    ]
 
 
 def test_claude_agent_kernel_low_confidence_uses_fallback():
@@ -101,9 +105,7 @@ def test_claude_agent_kernel_low_confidence_uses_fallback():
 
     decision = kernel.decide("我所有的客户的情况如何", {})
 
-    assert decision is not None
-    assert decision.route == "render_strategy_surface"
-    assert decision.need_type == "portfolio_overview"
+    assert decision is None
 
 
 class FakeBlock:

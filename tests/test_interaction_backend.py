@@ -244,7 +244,7 @@ def test_interaction_backend_answers_context_advice_without_replacing_page(app):
     assert session["last_agent_kernel"]["render_policy"] == "keep_current_view"
 
 
-def test_interaction_backend_renders_portfolio_overview_without_selected_item(app):
+def test_interaction_backend_renders_agent_portfolio_surface_without_selected_item(app):
     tenant, _, _, session = _seed_interaction_data(app)
     today = datetime.now(timezone.utc).date()
     for name in ["Beta LLC", "Cedar LLC"]:
@@ -255,18 +255,33 @@ def test_interaction_backend_renders_portfolio_overview_without_selected_item(ap
             registered_states=["CA"],
             tax_year=today.year,
         )
+    app.interaction_backend.agent_kernel = FakeAgentKernel(
+        AgentKernelDecision(
+            route="render_strategy_surface",
+            need_type="client_portfolio_status",
+            render_policy="render_new_view",
+            data_requests=["all_clients", "all_deadlines"],
+            answer_mode="answer_and_render",
+            view_goal="看所有客户的整体状态",
+            answer="我按所有客户和待处理 deadline 整理了一个工作面。",
+            suggested_actions=[{"label": "查看风险最高客户", "intent": "打开风险最高客户", "style": "primary"}],
+            confidence=0.9,
+        )
+    )
 
     response = app.interaction_backend.process_message("我所有的客户的情况如何", session)
 
     assert response["status"] == "ok"
     assert response["view"]["type"] == "RenderSpecSurface"
-    assert response["view"]["data"]["render_spec"]["title"] == "客户组合概况"
+    assert response["view"]["data"]["render_spec"]["title"] == "看所有客户的整体状态"
     assert "客户" in response["message"]
-    assert session["last_turn"]["intent_label"] == "portfolio_overview"
+    assert session["last_turn"]["intent_label"] == "client_portfolio_status"
     assert session["last_turn"]["plan_source"] == "agent_kernel"
+    choice_block = next(block for block in response["view"]["data"]["render_spec"]["blocks"] if block["type"] == "choice_set")
+    assert choice_block["choices"] == [{"label": "查看风险最高客户", "intent": "打开风险最高客户", "style": "primary"}]
 
 
-def test_interaction_backend_renders_least_urgent_priority_surface(app):
+def test_interaction_backend_renders_agent_priority_surface(app):
     tenant, _, _, session = _seed_interaction_data(app)
     today = datetime.now(timezone.utc).date()
     app.engine.register_client(
@@ -277,14 +292,26 @@ def test_interaction_backend_renders_least_urgent_priority_surface(app):
         tax_year=today.year,
     )
     app.interaction_backend.process_message("今天先做什么", session)
+    app.interaction_backend.agent_kernel = FakeAgentKernel(
+        AgentKernelDecision(
+            route="render_strategy_surface",
+            need_type="deadline_urgency_comparison",
+            render_policy="render_new_view",
+            data_requests=["visible_deadlines", "all_deadlines"],
+            answer_mode="answer_and_render",
+            view_goal="比较当前事项的紧急程度",
+            answer="我比较了当前可见事项，右侧保留排序依据。",
+            confidence=0.9,
+        )
+    )
 
     response = app.interaction_backend.process_message("哪个客户最不紧急", session)
 
     assert response["status"] == "ok"
     assert response["view"]["type"] == "RenderSpecSurface"
-    assert response["view"]["data"]["render_spec"]["title"] == "优先级排序"
-    assert "最不紧急" in response["message"]
-    assert session["last_turn"]["intent_label"] == "deadline_priority_ranking"
+    assert response["view"]["data"]["render_spec"]["title"] == "比较当前事项的紧急程度"
+    assert "排序依据" in response["message"]
+    assert session["last_turn"]["intent_label"] == "deadline_urgency_comparison"
     assert session["last_turn"]["plan_source"] == "agent_kernel"
     assert not session.get("flywheel_feedback_events")
 
@@ -308,6 +335,7 @@ def test_interaction_backend_renders_generic_agent_strategy_surface(app):
             data_requests=["current_view", "client_deadlines"],
             answer_mode="answer_and_render",
             view_goal="整理这个客户当前这些事情的情况",
+            suggested_actions=[{"label": "继续追问", "intent": "这些事情还有什么风险", "style": "primary"}],
             confidence=0.9,
             reason="generic synthesis",
         )
@@ -321,6 +349,8 @@ def test_interaction_backend_renders_generic_agent_strategy_surface(app):
     assert spec["title"]
     assert spec["surface"] == "work_card"
     assert any(block["type"] == "source_list" for block in spec["blocks"])
+    choice_block = next(block for block in spec["blocks"] if block["type"] == "choice_set")
+    assert choice_block["choices"][0]["label"] == "继续追问"
     assert response["view"]["selectable_items"]
     assert session["last_turn"]["intent_label"] == "client_work_summary"
     assert session["last_turn"]["plan_source"] == "agent_kernel"

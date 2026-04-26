@@ -710,18 +710,7 @@ function buildQuickActions(view: ViewEnvelope, actions: ActionPlan[]) {
     if (data.suggested_prompts?.length) {
       return data.suggested_prompts.slice(0, 3).map((prompt) => ({ label: prompt, prompt }));
     }
-    return [
-      { label: "Focus Acme", prompt: "focus Acme Dental LLC" },
-      { label: "Show clients", prompt: "show clients" },
-      { label: "Random need", prompt: "Prepare a polite but firm follow-up for Icom Dental" }
-    ];
-  }
-  if (view.type === "ClientCard") {
-    return [
-      { label: "Prepare request", prompt: "prepare request" },
-      { label: "Show source", prompt: "show source" },
-      { label: "Back to today", prompt: "back to today" }
-    ];
+    return [];
   }
   if (view.type === "RenderSpecSurface") {
     const spec = view.data.render_spec as RenderSpec | undefined;
@@ -733,10 +722,7 @@ function buildQuickActions(view: ViewEnvelope, actions: ActionPlan[]) {
       }));
     }
   }
-  return [
-    { label: "Back to today", prompt: "back to today" },
-    { label: "Random need", prompt: "Which clients are blocked by missing payroll files?" }
-  ];
+  return [];
 }
 
 function summarizeView(view: ViewEnvelope, actions: ActionPlan[]): VisualContext {

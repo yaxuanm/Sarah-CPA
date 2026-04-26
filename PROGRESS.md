@@ -35,6 +35,10 @@ left conversation input
 - Tool Use is still bounded by DueDateHQ's allowed action space. The LLM can
   decide what it needs to inspect, but writes remain behind `ConfirmCard`, and
   backend code still builds the final `view.type` payload.
+- Removed the legacy `AgentPolicy` layer and the hard-coded portfolio/priority
+  strategy branches. Semantic work surfaces now go through the Agent Kernel's
+  `view_goal`, data requests, and optional `suggested_actions` instead of
+  backend keyword mappings.
 - `PlanExecutor` calls engine functions directly.
 - `ResponseGenerator` returns structured `view.type` payloads for known work
   surfaces.
@@ -102,6 +106,9 @@ left conversation input
   normalizes inline numbered markdown into readable list blocks.
 - Unknown/random needs generate a constrained `RenderSpecSurface` instead of a
   generic fallback panel.
+- Quick action buttons are no longer locally invented by the frontend for
+  `ListCard` / `ClientCard`; they come from backend actions or Agent-generated
+  `RenderSpecSurface` choices.
 - `npm run test:render-spec` verifies random demands become valid specs with a
   concrete next step.
 
@@ -111,7 +118,7 @@ Backend:
 
 ```bash
 .tmp/push-venv/bin/python -m pytest
-# 127 passed, 1 skipped
+# 121 passed, 1 skipped
 ```
 
 Frontend:

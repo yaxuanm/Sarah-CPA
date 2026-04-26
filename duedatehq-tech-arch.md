@@ -123,8 +123,7 @@ Agent Kernel 验证：
 - “今天先做什么”仍走 planner / flywheel，不被 kernel 截断
 - “这几件事分别是什么”会识别为 `explain_current_view`，保留当前 `ListCard`，左侧逐条解释
 - “急着处理么 / 哪个最优先”会识别为 `answer_advice`，保留当前页面并回答判断依据
-- “我所有的客户的情况如何”会识别为 `portfolio_overview`，读取允许的客户/deadline 数据并渲染策略面
-- “哪个客户最不紧急”会识别为 `deadline_priority_ranking`，优先用当前可见列表比较，不足时读取 pending deadline
+- “我所有的客户的情况如何 / 哪个客户最不紧急”这类开放问题不再由关键词策略硬编码；Claude Agent Kernel 自主调用允许工具、观察结果，再输出 `need_type`、`view_goal`、`suggested_actions`
 - 导航、写操作、查来源等仍交给 planner / executor / confirmation flow
 
 前端验证壳：
@@ -188,7 +187,7 @@ API 网关（FastAPI）
     └── GET  /session/:id   session 恢复
     ↓
 交互后端（五层）
-    ├── Agent Kernel        判断此刻应该回答、查数据、渲染页面、追问还是执行前确认
+    ├── Agent Kernel        Tool Use + ReAct 判断此刻应该回答、查数据、渲染页面、追问还是执行前确认
     ├── Intent Cache        飞轮第一关：意图模板匹配
     ├── NLU                 Claude Sonnet 4.6 → Plan JSON（仅在缓存未命中时调用）
     ├── Executor            Plan → CLI 调用序列 → 聚合结果
@@ -202,18 +201,16 @@ PostgreSQL / SQLite
 
 ### Agent-Native 技术方向
 
-现在这套系统的地基是对的：有 session、executor、view contract、确认流、飞轮和 SSE。但是当前链路仍然偏 `planner-first`：
+现在这套系统的地基是对的：有 session、executor、view contract、确认流、飞轮和 SSE。上一版链路偏 `planner-first`，现在已经开始迁到 `agent-first`：
 
 ```text
 用户输入
   ↓
-策略层做轻量分流
+Claude Agent Kernel
   ↓
-Intent Cache / NLU / Planner
+受控 Tool Use / ReAct
   ↓
-Executor
-  ↓
-固定 ResponseGenerator
+Intent Cache / Planner 快路径或 ResponseGenerator / RenderSpecSurface
 ```
 
 这会导致一个根本问题：即使用 Claude Sonnet 4.6，模型也只是一个窄路由器，无法真正主导“现在应该理解什么、查什么、展示什么”。所以系统会显得笨、僵硬、像传统软件。
@@ -224,7 +221,7 @@ Executor
 
 这里的“需”不是固定 intent，而是用户当下的目的、上下文、可见页面、历史页面和可执行行动共同推导出的即时需求。
 
-下一阶段应该把主链路改成 `agent-first`：
+主链路方向是 `agent-first`：
 
 ```text
 用户输入
@@ -267,9 +264,9 @@ Response + View
 
 技术选型：
 
-- 当前阶段采用自研薄策略层，不引入 LangGraph / Semantic Kernel / LlamaIndex 这类重编排框架。
-- 策略层可以调用 Claude Sonnet 4.6，但输出必须是受约束 JSON。
-- 策略层只决定交互策略，不直接生成业务事实，不直接执行写操作。
+- 当前阶段采用 Anthropic 官方 SDK Tool Use + 一个普通 Python ReAct loop，不引入 LangGraph / Semantic Kernel / LlamaIndex 这类重编排框架。
+- Agent Kernel 调用 Claude Sonnet 4.6，但输出必须是受约束 JSON。
+- Agent Kernel 只决定交互策略，不直接生成业务事实，不直接执行写操作。
 - 业务事实仍来自 `engine` / `executor`，写操作仍走 `ConfirmCard`。
 - 后续如果出现长链路、多工具、人审暂停恢复等复杂流程，再评估 LangGraph 或 OpenAI Agents SDK。
 
@@ -277,7 +274,7 @@ Agent Kernel 第一版输出结构：
 
 ```json
 {
-  "need_type": "explain_current_view | answer_advice | portfolio_overview | deadline_priority_ranking | change_view | prepare_action | ask_clarifying_question | pass_to_planner",
+  "need_type": "Agent 自己命名的语义标签，例如 client_risk_review / workload_comparison / explain_current_view / prepare_action / ask_clarifying_question / pass_to_planner",
   "route": "answer_current_view | render_strategy_surface | prepare_action | ask_clarifying_question | pass_to_planner",
   "render_policy": "keep_current_view | no_view_needed | update_current_view | render_new_view | pass_to_planner",
   "data_requests": ["current_view | visible_deadlines | all_clients | all_deadlines | client_deadlines | blockers | tasks"],
@@ -285,6 +282,9 @@ Agent Kernel 第一版输出结构：
   "view_goal": "右侧工作面应该帮助用户完成的判断",
   "answer": "如果当前上下文足够，直接给用户的回答",
   "selected_refs": ["item_1"],
+  "suggested_actions": [
+    {"label": "按钮文案", "intent": "点击后作为自然语言继续发送", "style": "primary"}
+  ],
   "next_step": "一个明确下一步",
   "requires_confirmation": false,
   "confidence": 0.91,
@@ -302,14 +302,9 @@ Agent Kernel 第一版输出结构：
 
 这个设计借鉴 Codex-style harness 的核心思想：每轮不是简单分类，而是让模型结合当前上下文、工具能力、历史状态决定下一步；同时保留确定性 guardrails，避免 LLM 自由执行业务写操作。
 
-当前已落地的策略面：
+现在已经清理掉 `portfolio_overview`、`deadline_priority_ranking` 这种后端硬编码策略面。Agent 可以继续输出这些或任何其他 `need_type` 作为语义标签，但后端不再根据标签走特殊分支，而是统一用工具结果和 Agent 的 `view_goal / suggested_actions` 构建受约束工作面。
 
-- `portfolio_overview`：回答“我所有客户情况如何”这类全局问题，读取客户列表和 pending deadline，渲染“客户组合概况”。
-- `deadline_priority_ranking`：回答“哪个客户最不紧急 / 哪些可以晚点”这类比较问题，优先使用当前可见列表，不足时读取全部 pending deadline，渲染“优先级排序”。
-
-这标志着意图识别从“固定 intent 分类”开始升级为“LLM/策略先理解需求，再由可选数据和可选行动空间约束执行”。
-
-但这还只是过渡切片，不是最终 agent-native 架构。最终目标是：
+这标志着意图识别从“固定 intent 分类”升级为“Agent 先理解需求，再由可选数据和可选行动空间约束执行”。最终目标是：
 
 - agent 负责需求理解和页面构思
 - tool layer 负责真实数据读取

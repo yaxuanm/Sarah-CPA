@@ -134,11 +134,10 @@ class ResponseGenerator:
                 },
                 {
                     "type": "choice_set",
-                    "question": "你想先怎么推进？",
+                    "question": "如果这个工作面不对，可以直接继续说你的需求。",
                     "choices": [
-                        {"label": "先整理现状", "intent": "show source", "style": "primary"},
-                        {"label": "生成客户消息", "intent": "prepare a draft", "style": "secondary"},
-                        {"label": "回到今日清单", "intent": "today", "style": "secondary"},
+                        {"label": "补充说明", "intent": "我再补充一下需求", "style": "primary"},
+                        {"label": "回到今日清单", "intent": "查看今天的待处理事项", "style": "secondary"},
                     ],
                 },
             ],
