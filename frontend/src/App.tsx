@@ -345,7 +345,7 @@ function renderInlineMarkdown(text: string) {
 
 function ViewRenderer({ view, onPrompt, onAction }: { view: ViewEnvelope; onPrompt: (prompt: string) => void; onAction: (action: DirectAction) => void }) {
   if (view.type === "ListCard") return <ListCard view={view} onPrompt={onPrompt} onAction={onAction} />;
-  if (view.type === "ClientCard") return <ClientCard view={view} onPrompt={onPrompt} />;
+  if (view.type === "ClientCard") return <ClientCard view={view} onPrompt={onPrompt} onAction={onAction} />;
   if (view.type === "ConfirmCard") return <ConfirmCard view={view} onPrompt={onPrompt} />;
   if (view.type === "HistoryCard") return <HistoryCard view={view} />;
   if (view.type === "ReminderPreviewCard") return <ReminderPreviewCard view={view} />;
@@ -411,7 +411,7 @@ function ListCard({ view, onPrompt, onAction }: { view: ViewEnvelope; onPrompt: 
   );
 }
 
-function ClientCard({ view, onPrompt }: { view: ViewEnvelope; onPrompt: (prompt: string) => void }) {
+function ClientCard({ view, onPrompt, onAction }: { view: ViewEnvelope; onPrompt: (prompt: string) => void; onAction: (action: DirectAction) => void }) {
   const data = view.data as { client_name?: string; entity_type?: string; registered_states?: string[]; deadlines?: TaskItem[] };
   const deadline = data.deadlines?.[0];
   const deadlines = data.deadlines || [];
@@ -441,7 +441,24 @@ function ClientCard({ view, onPrompt }: { view: ViewEnvelope; onPrompt: (prompt:
         </div>
       ) : null}
       <div className="action-bar">
-        <button className="primary" onClick={() => onPrompt("prepare request")}>Prepare request</button>
+        <button
+          className="primary"
+          onClick={() =>
+            onAction({
+              type: "direct_execute",
+              expected_view: "RenderSpecSurface",
+              plan: {
+                special: "render_spec_needed",
+                intent_label: "client_request_draft",
+                op_class: "read",
+                message: "我根据当前选中的客户和事项生成请求草稿。",
+                user_input: `prepare request for ${clientName}`
+              }
+            })
+          }
+        >
+          Prepare request
+        </button>
         <button className="secondary" onClick={() => onPrompt("show source")}>Show source</button>
         <button className="secondary" onClick={() => onPrompt("back to today")}>Back to today</button>
       </div>

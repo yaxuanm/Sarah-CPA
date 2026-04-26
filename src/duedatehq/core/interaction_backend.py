@@ -221,7 +221,22 @@ class InteractionBackend:
         row click opens the cached ClientCard path instead of asking Claude to
         synthesize a temporary surface.
         """
-        return self._relative_visible_item_plan(user_input, session)
+        return self._relative_visible_item_plan(user_input, session) or self._draft_request_plan(user_input, session)
+
+    def _draft_request_plan(self, user_input: str, session: dict[str, Any]) -> dict[str, Any] | None:
+        text = user_input.casefold().strip()
+        if not any(token in text for token in ["prepare", "draft", "request", "message", "email", "起草", "草稿", "邮件", "催", "请求"]):
+            return None
+        if not session.get("selectable_items"):
+            return None
+        return {
+            "special": "render_spec_needed",
+            "intent_label": "client_request_draft",
+            "op_class": "read",
+            "message": "我根据当前选中的客户和事项生成请求草稿。",
+            "user_input": user_input,
+            "selectable_items": session.get("selectable_items", []),
+        }
 
     def _relative_visible_item_plan(self, user_input: str, session: dict[str, Any]) -> dict[str, Any] | None:
         lowered = user_input.casefold()

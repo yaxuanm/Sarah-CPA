@@ -173,6 +173,32 @@ def test_interaction_backend_draft_request_uses_current_task_context(app):
     assert "发送" in response["message"] or "草稿" in response["message"]
 
 
+def test_interaction_backend_prepare_request_hits_known_route_before_agent(app):
+    _, _, _, session = _seed_interaction_data(app)
+    app.interaction_backend.process_message("先看 Acme", session)
+    app.interaction_backend.agent_kernel = FakeAgentKernel(
+        AgentKernelDecision(
+            route="ask_clarifying_question",
+            need_type="ambiguous_prepare_request",
+            render_policy="render_new_view",
+            data_requests=["current_view"],
+            answer_mode="answer_and_render",
+            view_goal="should not ask for clarification",
+            confidence=0.95,
+        )
+    )
+
+    response = app.interaction_backend.process_message("prepare request", session)
+
+    assert response["status"] == "ok"
+    assert response["view"]["type"] == "RenderSpecSurface"
+    spec = response["view"]["data"]["render_spec"]
+    assert "Acme" in spec["title"]
+    assert any(block["type"] == "action_draft" for block in spec["blocks"])
+    assert session["last_turn"]["intent_label"] == "client_request_draft"
+    assert session["last_turn"]["plan_source"] == "known_route"
+
+
 def test_interaction_backend_message_focuses_client_by_name(app):
     _, _, _, session = _seed_interaction_data(app)
 
