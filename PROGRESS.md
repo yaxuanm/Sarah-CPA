@@ -70,9 +70,12 @@ left conversation input
 ### HTTP/SSE
 
 - Optional FastAPI app exposes `/chat`, `/action`, `/chat/stream`,
-  `/session/:id`, and `/flywheel/stats`.
+  `/bootstrap/today`, `/session/:id`, and `/flywheel/stats`.
 - `/chat/stream` emits `thinking`, `intent_confirmed`, `view_rendered`,
   `feedback_recorded`, `message_delta`, and `done`.
+- `/bootstrap/today` is the fast default entry. It bypasses Agent/NLU and
+  directly renders the today `ListCard`, because opening the daily queue is the
+  product's default starting state rather than an ambiguous user intent.
 
 ### Frontend Validation Shell
 
@@ -89,7 +92,9 @@ left conversation input
 - Frontend connects to `/chat/stream` through the SSE client. There is no Local
   mode; the UI is only an AI-backend validation shell.
 - On startup it loads the backend's real today list first, so the page and
-  backend reason over the same customer dataset.
+  backend reason over the same customer dataset. This uses `/bootstrap/today`
+  instead of `/chat/stream`, so the first screen appears without waiting for
+  Agent reasoning.
 - The frontend now sends structured visual context with each SSE request:
   current view summary, visible clients/deadlines/actions, and recently viewed
   surfaces. This gives the NLU enough context to interpret partial requests.
@@ -118,7 +123,7 @@ Backend:
 
 ```bash
 .tmp/push-venv/bin/python -m pytest
-# 121 passed, 1 skipped
+# 122 passed, 1 skipped
 ```
 
 Frontend:

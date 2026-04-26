@@ -1,5 +1,5 @@
 import { FormEvent, ReactNode, useEffect, useRef, useState } from "react";
-import { streamChat } from "./apiClient";
+import { bootstrapToday, streamChat } from "./apiClient";
 import { validateRenderSpec } from "./renderSpec";
 import type { ActionPlan, ChatMessage, RenderBlock, RenderSpec, TaskItem, ViewEnvelope, VisualContext } from "./types";
 
@@ -8,12 +8,11 @@ const apiBase = import.meta.env.VITE_DUEDATEHQ_API_BASE || "http://127.0.0.1:800
 const initialView: ViewEnvelope = {
   type: "GuidanceCard",
   data: {
-    message: "正在连接 DueDateHQ AI 后端。连接后我会先读取真实待办，再根据你的输入渲染工作面。",
-    options: ["查看今天的待处理事项"]
+    message: "正在打开今天的待办。"
   },
   selectable_items: []
 };
-const initialActions: ActionPlan[] = [{ label: "查看今天的待处理事项" }];
+const initialActions: ActionPlan[] = [];
 
 function id(): string {
   return typeof crypto !== "undefined" && "randomUUID" in crypto
@@ -23,7 +22,7 @@ function id(): string {
 
 export function App() {
   const [messages, setMessages] = useState<ChatMessage[]>([
-    { id: id(), role: "system", text: String(initialView.data.message) }
+    { id: id(), role: "status", text: String(initialView.data.message) }
   ]);
   const [view, setView] = useState<ViewEnvelope>(initialView);
   const [actions, setActions] = useState<ActionPlan[]>(initialActions);
@@ -128,37 +127,19 @@ export function App() {
 
   async function loadBackendOverview() {
     setBusy(true);
-    append("status", "我先读取后端当前客户和待办，避免用本地示例误导理解。");
-    let streamedMessageId: string | null = null;
     try {
-      const nextSession = await streamChat({
+      const result = await bootstrapToday({
         apiBase,
-        userInput: "查看今天的待处理事项",
         tenantId,
         session: {
           ...session,
-          current_view: view,
-          visual_context: summarizeView(view, actions),
-          seen_visual_contexts: seenVisualContexts.slice(0, 6)
-        },
-        onUpdate: (update) => {
-          if (update.event === "intent_confirmed") {
-            append("status", humanIntentStatus(update.intentLabel, update.planSource));
-          }
-          if (update.event === "view_rendered") {
-            if (update.view) setView(update.view);
-            setActions(update.actions || []);
-          }
-          if (update.event === "message_delta" && update.delta) {
-            streamedMessageId ??= append("system", "");
-            appendToMessage(streamedMessageId, update.delta);
-          }
-          if (update.event === "done" && update.response?.message && !streamedMessageId) {
-            append("system", update.response.message);
-          }
+          current_view: view
         }
       });
-      setSession(nextSession);
+      if (result.response.view) setView(result.response.view);
+      setActions(result.response.actions || []);
+      setSession(result.session);
+      setMessages([{ id: id(), role: "system", text: result.response.message || "今天的待办已打开。" }]);
     } catch (error) {
       append("system", `后端待办加载失败：${String(error)}`);
     } finally {

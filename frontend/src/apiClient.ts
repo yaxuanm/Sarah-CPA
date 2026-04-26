@@ -53,6 +53,30 @@ export async function streamChat(params: {
   return nextSession;
 }
 
+export async function bootstrapToday(params: {
+  apiBase: string;
+  tenantId: string;
+  session: Record<string, unknown>;
+}): Promise<{
+  response: { message?: string; view?: ViewEnvelope; actions?: ActionPlan[] };
+  session: Record<string, unknown>;
+}> {
+  const response = await fetch(`${params.apiBase.replace(/\/$/, "")}/bootstrap/today`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      tenant_id: params.tenantId,
+      session: params.session
+    })
+  });
+
+  if (!response.ok) {
+    throw new Error(`Bootstrap failed: ${response.status}`);
+  }
+
+  return response.json();
+}
+
 function parseSseChunk(chunk: string): StreamUpdate | null {
   const event = chunk.match(/^event:\s*(.+)$/m)?.[1]?.trim();
   const rawData = chunk.match(/^data:\s*(.+)$/m)?.[1];

@@ -43,6 +43,13 @@ def create_fastapi_app(db_path: str | None = None):
         response = app_state.interaction_backend.process_message(body["user_input"], session)
         return {"response": response, "session": session}
 
+    @api.post("/bootstrap/today")
+    def bootstrap_today(body: dict[str, Any] = Body(...)):
+        session = _prepare_session(body)
+        response = app_state.interaction_backend.process_plan(_today_plan(session["tenant_id"]), session)
+        _remember_bootstrap_response(session, response)
+        return {"response": {"status": "ok", **response, "session_id": session.get("session_id")}, "session": session}
+
     @api.post("/action")
     def action(plan: dict[str, Any], tenant_id: str, session_id: str | None = None):
         session = {"tenant_id": tenant_id, "session_id": session_id or "http-action"}
@@ -119,6 +126,39 @@ def _prepare_session(body: dict[str, Any]) -> dict[str, Any]:
     session.setdefault("session_id", body.get("session_id") or "http-session")
     session.setdefault("today", body.get("today") or datetime.now(timezone.utc).date().isoformat())
     return session
+
+
+def _today_plan(tenant_id: str) -> dict[str, Any]:
+    return {
+        "plan": [
+            {
+                "step_id": "s1",
+                "type": "cli_call",
+                "cli_group": "today",
+                "cli_command": "today",
+                "args": {"tenant_id": tenant_id, "limit": 5, "enrich": True},
+            }
+        ],
+        "intent_label": "today",
+        "op_class": "read",
+    }
+
+
+def _remember_bootstrap_response(session: dict[str, Any], response: dict[str, Any]) -> None:
+    view = response.get("view") or {}
+    session["current_view"] = view
+    session["selectable_items"] = view.get("selectable_items", [])
+    session["current_actions"] = response.get("actions", [])
+    session["state_summary"] = response.get("state_summary")
+    session["last_turn"] = {
+        "user_input": "__bootstrap_today__",
+        "intent_label": "today",
+        "op_class": "read",
+        "plan_source": "bootstrap",
+        "template_id": None,
+        "similarity": None,
+        "view_type": view.get("type"),
+    }
 
 
 def _latest_new_feedback_event(session: dict[str, Any], previous_count: int) -> dict[str, Any] | None:

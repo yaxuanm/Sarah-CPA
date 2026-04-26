@@ -28,7 +28,7 @@
 | 按需渲染契约 | 已新增 contract tests，验证 user need → intent → view.type → 必要事实/action，不允许 source/notification/client/rule 等场景退化成随机 generic panel | `tests/test_on_demand_rendering_contract.py` |
 | Session | 内存版 `InMemoryInteractionSessionManager`；设置 `DUEDATEHQ_REDIS_URL` 后可用 `RedisInteractionSessionManager`，TTL 默认 3600 秒 | `src/duedatehq/core/session_manager.py` |
 | API helper | 有 Python helper：`process_message`、`process_plan`、`process_action`、`start_interaction_session` | `src/duedatehq/api.py` |
-| HTTP API | 已新增可选 FastAPI app，提供 `/chat`、`/action`、`/chat/stream`、`/session/:id`、`/flywheel/stats`；安装 `duedatehq[api]` 后可用 | `src/duedatehq/http_api.py` |
+| HTTP API | 已新增可选 FastAPI app，提供 `/bootstrap/today`、`/chat`、`/action`、`/chat/stream`、`/session/:id`、`/flywheel/stats`；安装 `duedatehq[api]` 后可用 | `src/duedatehq/http_api.py` |
 | 前端验证壳 | 已新增 React/Vite app；支持左侧真实输入、右侧按 `view.type` 渲染、可接 `/chat/stream`，支持 markdown 消息和 `message_delta` 增量传输 | `frontend/` |
 | Flywheel CLI | 已新增 `flywheel stats/templates/feedback/review-queue`，可查看模板、反馈、review queue | `src/duedatehq/cli.py` |
 | 传统后端能力 | 已合入 notice → task/blocker、CSV import preview/apply、task/blocker 对象、client bundle、CSV export | `src/duedatehq/core/engine.py`, `src/duedatehq/cli.py` |
@@ -115,6 +115,7 @@ Flywheel Router 运行时模拟：
 - correction / missing_info 事件可通过 library 和 CLI 查询
 
 HTTP/SSE 骨架验证：
+- `/bootstrap/today` 是默认入口 fast path，直接走 today plan，不进入 Agent/NLU
 - `/chat` 返回 response + session
 - `/chat/stream` 推送 `thinking`、`intent_confirmed`、`view_rendered`、`feedback_recorded`、`message_delta`、`done`
 - `/flywheel/stats` 返回当前 intent library 指标

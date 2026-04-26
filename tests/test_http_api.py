@@ -66,6 +66,26 @@ def test_fastapi_app_allows_frontend_origin(tmp_path):
     assert response.headers["access-control-allow-origin"] == "http://127.0.0.1:5173"
 
 
+def test_bootstrap_today_uses_fast_default_entry(tmp_path):
+    pytest.importorskip("fastapi")
+    pytest.importorskip("httpx")
+    from fastapi.testclient import TestClient
+
+    api = create_fastapi_app(str(tmp_path / "http-bootstrap.sqlite3"))
+    client = TestClient(api)
+
+    response = client.post(
+        "/bootstrap/today",
+        json={"tenant_id": "tenant-a", "session": {"session_id": "bootstrap-session"}},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["response"]["view"]["type"] == "ListCard"
+    assert payload["session"]["last_turn"]["plan_source"] == "bootstrap"
+    assert payload["session"]["current_view"]["type"] == "ListCard"
+
+
 def test_latest_new_feedback_event_ignores_stale_events():
     session = {
         "flywheel_feedback_events": [{"signal": "missing_info", "user_input": "old"}],
