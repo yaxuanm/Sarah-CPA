@@ -7,7 +7,7 @@
 
 ## 当前状态快照
 
-截至当前代码库，DueDateHQ 已经完成的是**后端交互闭环、飞轮验证基础设施、opt-in 的真实 Claude Haiku NLU 验证路径、opt-in 的 cache-first 飞轮运行时路由、追问信号进入飞轮、SQLite 持久化飞轮、Redis session 适配、以及最小 FastAPI/SSE 骨架**。还没有完成的是**React 前端真实接入、生产级 embedding/pgvector 检索、线上 rerank、以及 Sonnet response generator**。
+截至当前代码库，DueDateHQ 已经完成的是**后端交互闭环、飞轮验证基础设施、opt-in 的真实 Claude Sonnet 4.6 NLU 验证路径、Anthropic SDK Tool Use + ReAct Agent Kernel、opt-in 的 cache-first 飞轮运行时路由、追问信号进入飞轮、SQLite 持久化飞轮、Redis session 适配、最小 FastAPI/SSE 骨架、以及 React 前端验证壳**。还没有完成的是**生产级前端接入、后端 render spec generator、生产级 embedding/pgvector 检索、线上 rerank、以及 Sonnet response generator**。
 
 当前已落地：
 
@@ -15,12 +15,13 @@
 |---|---|---|
 | App 装配 | `create_app()` 已装配 engine、executor、planner、intent library、response generator、interaction backend、内存 session | `src/duedatehq/app.py` |
 | 自然语言入口 | `process_message()` 已能处理用户输入、确认、取消、pending action | `src/duedatehq/core/interaction_backend.py` |
+| Agent Kernel | 已作为主链路第一跳：默认确定性 kernel，`DUEDATEHQ_USE_AGENT_KERNEL=1` 或兼容 `DUEDATEHQ_USE_AGENT_POLICY=1` 后可用 Claude Sonnet 4.6 通过 Anthropic 原生 Tool Use + ReAct 循环自主查工具、观察结果、选择回答/渲染/追问/交给 planner/flywheel | `src/duedatehq/core/agent_kernel.py` |
 | 默认 NLU | 默认仍用 `RuleBasedIntentPlanner` 保持本地 MVP 稳定，输出 Plan JSON | `src/duedatehq/core/intent_planner.py` |
-| Claude NLU | 已新增 `ClaudeNLUService`，设置 `DUEDATEHQ_USE_CLAUDE_NLU=1` 可切到 Haiku；输出先过 schema/allowlist 校验，再进入 executor | `src/duedatehq/core/nlu_service.py` |
+| Claude NLU | 已新增 `ClaudeNLUService`，设置 `DUEDATEHQ_USE_CLAUDE_NLU=1` 可切到 Claude；当前默认模型为 `claude-sonnet-4-6`，`CLAUDE_NLU_MODEL` 仍可显式切回 Haiku 等模型 | `src/duedatehq/core/nlu_service.py` |
 | Plan Validator | 已新增确定性 `PlanValidator`，限制 LLM 只能使用 executor 支持的命令和参数，写操作必须声明 `op_class=write` | `src/duedatehq/core/plan_validator.py` |
 | Intent Cache | 内存版 `InMemoryIntentLibrary`，使用 lexical/semantic feature，不是真实 embedding | `src/duedatehq/core/intent_cache.py` |
 | Persistent Intent Cache | 已新增 SQLite 版 `SQLiteIntentLibrary`，设置 `DUEDATEHQ_PERSIST_FLYWHEEL=1` 后持久化 templates/examples/feedback/review queue | `src/duedatehq/core/persistent_intent_cache.py` |
-| Flywheel Router | 已新增 `FlywheelIntentRouter`，设置 `DUEDATEHQ_USE_FLYWHEEL_ROUTER=1` 后先查 intent cache，miss 再走 planner，成功后学习模板；可与 Haiku NLU 组合 | `src/duedatehq/core/flywheel_router.py` |
+| Flywheel Router | 已新增 `FlywheelIntentRouter`，设置 `DUEDATEHQ_USE_FLYWHEEL_ROUTER=1` 后先查 intent cache，miss 再走 planner，成功后学习模板；可与 Claude NLU 组合 | `src/duedatehq/core/flywheel_router.py` |
 | Follow-up Feedback | 已新增规则型追问信号分类：correction / missing_info / drill_down；correction 降低 template success_rate，missing_info 记录缺失字段诉求 | `src/duedatehq/core/followup_feedback.py` |
 | Executor | `PlanExecutor` 已直接调用 engine，支持 `cli_call`、`resolve_entity`、`post_filter`、`foreach`；已可调用 task/blocker/notice/import/client bundle | `src/duedatehq/core/executor.py` |
 | Response | 确定性生成 `ListCard` / `ClientCard` / `ConfirmCard` / `HistoryCard` / `ReminderPreviewCard` / `ClientListCard` / `ReviewQueueCard` / `GuidanceCard`，暂未接 Claude Sonnet | `src/duedatehq/core/response_generator.py` |
@@ -28,11 +29,56 @@
 | Session | 内存版 `InMemoryInteractionSessionManager`；设置 `DUEDATEHQ_REDIS_URL` 后可用 `RedisInteractionSessionManager`，TTL 默认 3600 秒 | `src/duedatehq/core/session_manager.py` |
 | API helper | 有 Python helper：`process_message`、`process_plan`、`process_action`、`start_interaction_session` | `src/duedatehq/api.py` |
 | HTTP API | 已新增可选 FastAPI app，提供 `/chat`、`/action`、`/chat/stream`、`/session/:id`、`/flywheel/stats`；安装 `duedatehq[api]` 后可用 | `src/duedatehq/http_api.py` |
+| 前端验证壳 | 已新增 React/Vite app；支持左侧真实输入、右侧按 `view.type` 渲染、可接 `/chat/stream`，支持 markdown 消息和 `message_delta` 增量传输 | `frontend/` |
 | Flywheel CLI | 已新增 `flywheel stats/templates/feedback/review-queue`，可查看模板、反馈、review queue | `src/duedatehq/cli.py` |
 | 传统后端能力 | 已合入 notice → task/blocker、CSV import preview/apply、task/blocker 对象、client bundle、CSV export | `src/duedatehq/core/engine.py`, `src/duedatehq/cli.py` |
 | 飞轮样本 | 230 条人工基础样本，覆盖 11 类基础 intent | `src/duedatehq/core/intent_samples.py` |
-| 飞轮验证 | 支持 full replay、labeled replay、holdout、Claude 生成模拟样本、真实 Haiku NLU eval | `src/duedatehq/core/flywheel.py`, `scripts/` |
+| 飞轮验证 | 支持 full replay、labeled replay、holdout、Claude 生成模拟样本、真实 Claude NLU eval | `src/duedatehq/core/flywheel.py`, `scripts/` |
 | 测试 | 当前后端交互、飞轮、NLU validator 相关测试通过 | `tests/test_*.py` |
+
+---
+
+## 目标状态：Smart Agent + On-demand Rendering
+
+“按需渲染”的最终形态不是一个固定 dashboard 加聊天框，而是一个**聪明 Agent + 自动渲染工作面**：
+
+1. 用户输入的是 intention，不是菜单命令。
+2. Agent 根据当前页面、曾看过的页面、可选对象、历史对话和工具结果，推断用户当下真正需要什么。
+3. Agent 自主决定要调用哪些受控工具，判断数据是否足够。
+4. Agent 决定当前应该保留页面、更新页面、渲染新页面、要求确认写操作，还是只在对话里回答。
+5. 如果现有视图不足以表达这个需求，先用受约束的 `RenderSpecSurface` 生成临时工作面；同类追问积累后进入产品待办，评估是否新增正式视图组件。
+
+因此核心链路是：
+
+```text
+用户输入
+    ↓
+Intent Cache 命中高频简单意图 → 直接执行
+    ↓ miss
+Agent Kernel
+    ↓
+Claude Tool Use / ReAct loop
+    ├── get_current_view
+    ├── list_visible_deadlines
+    ├── list_all_clients
+    ├── list_all_deadlines
+    ├── list_client_deadlines
+    ├── list_blockers
+    └── list_tasks
+    ↓
+Agent 输出 constrained decision
+    ↓
+InteractionBackend
+    ├── 写操作 → ConfirmCard
+    ├── 已知视图 → ResponseGenerator 构建确定性 view.data
+    └── 未知但有用的需求 → RenderSpecSurface
+    ↓
+前端按 view.type / render_spec 渲染
+    ↓
+用户追问 → correction / missing_info / drill_down 进入飞轮
+```
+
+这个设计刻意不引入 LangGraph/LangChain。ReAct loop 只是标准 Python while loop；工具调用使用 Anthropic 官方 SDK 原生 `tool_use` / `tool_result`。这样保留 Agent 的语义能力，同时让 DueDateHQ 控制工具、数据、写操作确认和最终视图契约。
 
 当前验证结果：
 
@@ -45,7 +91,7 @@ Claude 模拟样本：55
 合并样本：285
 LLM 模拟 holdout：94.34% hit / 94.34% accuracy / 0 wrong matches
 
-真实 Claude Haiku NLU 小规模验证：
+真实 Claude Sonnet 4.6 NLU 小规模验证：
 - 每类 1 条：11/11，100%
 - 每类 2 条：22/22，100%
 - 每类 5 条：55/55，100%
@@ -70,8 +116,23 @@ Flywheel Router 运行时模拟：
 
 HTTP/SSE 骨架验证：
 - `/chat` 返回 response + session
-- `/chat/stream` 推送 `thinking`、`intent_confirmed`、`view_rendered`、`feedback_recorded`、`done`
+- `/chat/stream` 推送 `thinking`、`intent_confirmed`、`view_rendered`、`feedback_recorded`、`message_delta`、`done`
 - `/flywheel/stats` 返回当前 intent library 指标
+
+Agent Kernel 验证：
+- “今天先做什么”仍走 planner / flywheel，不被 kernel 截断
+- “这几件事分别是什么”会识别为 `explain_current_view`，保留当前 `ListCard`，左侧逐条解释
+- “急着处理么 / 哪个最优先”会识别为 `answer_advice`，保留当前页面并回答判断依据
+- “我所有的客户的情况如何”会识别为 `portfolio_overview`，读取允许的客户/deadline 数据并渲染策略面
+- “哪个客户最不紧急”会识别为 `deadline_priority_ranking`，优先用当前可见列表比较，不足时读取 pending deadline
+- 导航、写操作、查来源等仍交给 planner / executor / confirmation flow
+
+前端验证壳：
+- `frontend/` 只保留 AI/SSE 后端路径，不再提供 Local 模式
+- 已经实现 stream client，可消费 `/chat/stream`
+- 左侧消息支持轻量 markdown 渲染，并通过 `message_delta` 增量更新同一条 assistant message
+- 已知 `view.type` 有专门 renderer，未知/随机需求进入受约束 `RenderSpecSurface`
+- `npm run test:render-spec` 验证 6 条随机需求都能生成合法 render spec，并包含可执行下一步
 
 按需渲染契约验证：
 - `today` → `ListCard`，必须包含 deadline/client/tax/due/status/days_remaining 等决策事实
@@ -110,6 +171,7 @@ pytest：96 passed, 1 skipped
 - Flywheel Router 已经能证明“同类需求越多，planner/LLM 调用越少”的成本下降机制；SQLite 模式开始支持跨 app 重启验证。
 - Follow-up Feedback 已经能证明“用户纠错和追问可以反向改变模板质量”的机制；SQLite 模式下 review queue 和 missing info 已可持久化查询。
 - 按需渲染现在有了第一层自动化验收：不是只验证“有 response”，而是验证 response 是否服务当前用户意图、是否包含必要事实、是否避免无关下一步。
+- 前端现在可以开始验证“是否可玩”：同一套对话输入可以驱动真实 `view.type` renderer，也可以用受约束 `render_spec` 检查随机需求是否退化成 generic panel。
 
 ---
 
@@ -126,8 +188,9 @@ API 网关（FastAPI）
     └── GET  /session/:id   session 恢复
     ↓
 交互后端（五层）
+    ├── Agent Kernel        判断此刻应该回答、查数据、渲染页面、追问还是执行前确认
     ├── Intent Cache        飞轮第一关：意图模板匹配
-    ├── NLU                 Claude Haiku → Plan JSON（仅在缓存未命中时调用）
+    ├── NLU                 Claude Sonnet 4.6 → Plan JSON（仅在缓存未命中时调用）
     ├── Executor            Plan → CLI 调用序列 → 聚合结果
     ├── Response Generator  Claude Sonnet → message + view
     └── Session             Redis TTL=3600
@@ -136,6 +199,123 @@ API 网关（FastAPI）
     ↓
 PostgreSQL / SQLite
 ```
+
+### Agent-Native 技术方向
+
+现在这套系统的地基是对的：有 session、executor、view contract、确认流、飞轮和 SSE。但是当前链路仍然偏 `planner-first`：
+
+```text
+用户输入
+  ↓
+策略层做轻量分流
+  ↓
+Intent Cache / NLU / Planner
+  ↓
+Executor
+  ↓
+固定 ResponseGenerator
+```
+
+这会导致一个根本问题：即使用 Claude Sonnet 4.6，模型也只是一个窄路由器，无法真正主导“现在应该理解什么、查什么、展示什么”。所以系统会显得笨、僵硬、像传统软件。
+
+按需渲染的更准确表述应该是：
+
+> **聪明 agent 识别用户需求，自动渲染页面。**
+
+这里的“需”不是固定 intent，而是用户当下的目的、上下文、可见页面、历史页面和可执行行动共同推导出的即时需求。
+
+下一阶段应该把主链路改成 `agent-first`：
+
+```text
+用户输入
+    ↓
+Agent Kernel
+    ├── 理解用户真实需求
+    ├── 判断当前页面是否足够
+    ├── 选择需要读取的数据
+    ├── 决定是否回答 / 是否渲染 / 渲染什么
+    ├── 选择可执行动作，但不直接写入
+    ↓
+Allowed Tool/Data Space
+    ├── current_view
+    ├── visible_deadlines
+    ├── all_clients
+    ├── all_deadlines
+    ├── client_deadlines
+    ├── blockers
+    └── tasks
+    ↓
+Render Spec Generator
+    ├── 已知 view.type
+    └── LLM 生成受约束 render_spec
+    ↓
+Validator / Guardrails
+    ├── schema 校验
+    ├── 数据字段只能来自工具结果
+    ├── action 只能来自 allowed_actions
+    └── write 必须 ConfirmCard
+    ↓
+Response + View
+```
+
+也就是说，planner 不再是主角。Planner / Intent Cache / Flywheel 退到两个位置：
+
+- 快路径：高频稳定需求可以直接命中模板，降低成本。
+- 约束层：写操作、实体解析、工具调用仍然复用确定性后端。
+
+但“用户到底想要什么”和“右侧应该长什么样”，必须交给 agent kernel。
+
+技术选型：
+
+- 当前阶段采用自研薄策略层，不引入 LangGraph / Semantic Kernel / LlamaIndex 这类重编排框架。
+- 策略层可以调用 Claude Sonnet 4.6，但输出必须是受约束 JSON。
+- 策略层只决定交互策略，不直接生成业务事实，不直接执行写操作。
+- 业务事实仍来自 `engine` / `executor`，写操作仍走 `ConfirmCard`。
+- 后续如果出现长链路、多工具、人审暂停恢复等复杂流程，再评估 LangGraph 或 OpenAI Agents SDK。
+
+Agent Kernel 第一版输出结构：
+
+```json
+{
+  "need_type": "explain_current_view | answer_advice | portfolio_overview | deadline_priority_ranking | change_view | prepare_action | ask_clarifying_question | pass_to_planner",
+  "route": "answer_current_view | render_strategy_surface | prepare_action | ask_clarifying_question | pass_to_planner",
+  "render_policy": "keep_current_view | no_view_needed | update_current_view | render_new_view | pass_to_planner",
+  "data_requests": ["current_view | visible_deadlines | all_clients | all_deadlines | client_deadlines | blockers | tasks"],
+  "answer_mode": "answer_only | answer_and_render | render_only | pass_to_planner",
+  "view_goal": "右侧工作面应该帮助用户完成的判断",
+  "answer": "如果当前上下文足够，直接给用户的回答",
+  "selected_refs": ["item_1"],
+  "next_step": "一个明确下一步",
+  "requires_confirmation": false,
+  "confidence": 0.91,
+  "reason": "内部原因"
+}
+```
+
+执行规则：
+
+- `keep_current_view`：左侧回答，右侧页面不动。
+- `no_view_needed`：只回答，不强行渲染垃圾面板。
+- `render_new_view` / `update_current_view`：只有当 `data_requests` 命中白名单时，后端才读取对应数据并生成受约束工作面。
+- `prepare_action`：必须进入确认流，不能直接写入。
+- `pass_to_planner`：策略层不确定时，交给现有 flywheel + planner。
+
+这个设计借鉴 Codex-style harness 的核心思想：每轮不是简单分类，而是让模型结合当前上下文、工具能力、历史状态决定下一步；同时保留确定性 guardrails，避免 LLM 自由执行业务写操作。
+
+当前已落地的策略面：
+
+- `portfolio_overview`：回答“我所有客户情况如何”这类全局问题，读取客户列表和 pending deadline，渲染“客户组合概况”。
+- `deadline_priority_ranking`：回答“哪个客户最不紧急 / 哪些可以晚点”这类比较问题，优先使用当前可见列表，不足时读取全部 pending deadline，渲染“优先级排序”。
+
+这标志着意图识别从“固定 intent 分类”开始升级为“LLM/策略先理解需求，再由可选数据和可选行动空间约束执行”。
+
+但这还只是过渡切片，不是最终 agent-native 架构。最终目标是：
+
+- agent 负责需求理解和页面构思
+- tool layer 负责真实数据读取
+- renderer 负责把 agent 的页面意图变成受约束 UI
+- validator 负责防止假数据和越权动作
+- flywheel 负责把高频需求沉淀成低成本路径
 
 当前实际链路是本地 Python MVP：
 
@@ -158,7 +338,7 @@ InMemoryInteractionSessionManager / session dict
 ```
 用户输入
     ↓
-ClaudeNLUService（Haiku）
+ClaudeNLUService（Sonnet 4.6）
     ↓
 PlanValidator（命令 allowlist / 参数校验 / write op_class 校验）
     ↓
@@ -187,7 +367,8 @@ ResponseGenerator
 
 当前还没有：
 
-- React 前端接真实 `/chat`
+- 生产级 React 前端接真实 `/chat`
+- 后端 LLM-assisted render spec generator
 - 生产级 embedding 检索 / pgvector / 线上 rerank
 - Claude Sonnet response generation
 - HTTP API 的鉴权、租户隔离中间件和生产部署配置
@@ -230,7 +411,7 @@ ResponseGenerator
 在 Intent Library 做相似度匹配
     ↓
 命中（similarity > 0.92）→ 直接返回缓存 Plan，跳过 NLU
-未命中 → 调用 NLU（Claude Haiku）→ 生成 Plan
+未命中 → 调用 NLU（Claude Sonnet 4.6）→ 生成 Plan
     ↓
 执行 Plan（Executor）
     ↓
@@ -396,7 +577,7 @@ def on_user_followup(intent_id: str, is_correction: bool):
 
 当前没有实现：
 
-- Claude Haiku 在线解析 Plan
+- Claude Sonnet 4.6 在线解析 Plan
 - confidence score
 - NLU prompt 注入 CLI spec
 - 低置信 options 兜底
@@ -414,7 +595,7 @@ def on_user_followup(intent_id: str, is_correction: bool):
 class NLUService:
     def parse(self, user_input: str, session: Session) -> Plan:
         response = anthropic.messages.create(
-            model="claude-haiku-4-5-20251001",
+            model="claude-sonnet-4-6",
             max_tokens=1000,
             system=self.build_system_prompt(session),
             messages=[{"role": "user", "content": user_input}]
@@ -885,7 +1066,7 @@ read  → PlanExecutor.execute() → ResponseGenerator.generate()
     ↓
 Intent Cache 查询（<50ms）→ 未命中
     ↓ SSE 推送 stage: understanding
-NLU 调用 Claude Haiku（~500ms）→ Plan
+NLU 调用 Claude Sonnet 4.6（~500ms）→ Plan
     ↓ SSE 推送 stage: executing
 intent_cache.learn(input, plan)  ← 飞轮写入
     ↓
@@ -925,19 +1106,19 @@ Response Generator + enrich（~300ms）
 | 层 | 当前实现 |
 |---|---|
 | NLU | `RuleBasedIntentPlanner` |
-| LLM 模拟测试 | Claude Messages API，模型 `claude-haiku-4-5-20251001` |
+| LLM 模拟测试 | Claude Messages API，默认模型 `claude-sonnet-4-6` |
 | Response Generator | 确定性 Python 生成 |
 | Intent Cache | `InMemoryIntentLibrary` |
 | Session | `InMemoryInteractionSessionManager` + session dict |
 | API | Python helper functions |
 | Storage | SQLite / Postgres storage abstraction，测试多用临时 SQLite |
-| Frontend | 静态 HTML mock，还没接真实后端 |
+| Frontend | React/Vite 验证壳，已可接 FastAPI `/chat/stream` |
 
 目标技术选型：
 
 | 层 | 选择 | 原因 |
 |---|---|---|
-| NLU | Claude Haiku | 低延迟、低成本、指令遵循稳定 |
+| NLU | Claude Sonnet 4.6 | 当前验证优先保证复杂意图理解质量；Haiku 可作为未来降本回退 |
 | Response Generator | Claude Sonnet | 质量要求高 |
 | Intent Cache 向量检索 | pgvector（PostgreSQL 扩展） | 不引入新依赖，现有 PG 直接用 |
 | Session | Redis | TTL 天然支持 |
@@ -1091,7 +1272,7 @@ yield sse("intent_confirmed", {
 result = await executor.run(plan)
 ```
 
-`generate_intent_description` 用 Claude Haiku，`max_tokens=60`，只输出一句话，例如：
+`generate_intent_description` 用 Claude Sonnet 4.6，`max_tokens=60`，只输出一句话，例如：
 
 ```text
 正在为你查看：接下来 14 天内，加州客户的待处理 deadline。
@@ -1103,7 +1284,7 @@ result = await executor.run(plan)
 - 用户可以在执行前看出系统是否理解错
 - 这类执行前纠错可以直接进入第一步的 follow-up feedback
 
-#### 第三步：接入真实 Claude Haiku NLU
+#### 第三步：接入真实 Claude Sonnet 4.6 NLU
 
 当前 `RuleBasedIntentPlanner` 只适合验证边界，不适合生产。下一步接入 `NLUService`，保持同一接口：输入 `user_input + session`，输出 Plan JSON。
 
@@ -1113,7 +1294,7 @@ result = await executor.run(plan)
 class NLUService:
     def plan(self, user_input: str, session: dict) -> dict:
         response = self.client.messages.create(
-            model="claude-haiku-4-5-20251001",
+            model="claude-sonnet-4-6",
             max_tokens=1000,
             system=build_system_prompt(session),
             messages=[{"role": "user", "content": user_input}],
@@ -1189,7 +1370,7 @@ return {
 ```text
 1. 追问信号接进飞轮
 2. 意图描述推送
-3. 真实 Claude Haiku NLU
+3. 真实 Claude Sonnet 4.6 NLU
 4. Claude Sonnet Response Generator
 5. FastAPI + Redis + 前端接入
 ```
@@ -1197,7 +1378,7 @@ return {
 工程最快路径：
 
 ```text
-并行 A：接真实 Claude Haiku NLU
+并行 A：接真实 Claude Sonnet 4.6 NLU
 并行 B：FastAPI /chat + SSE 骨架
 随后：把 intent_confirmed 和 follow-up feedback 接进 SSE 链路
 然后：Redis session + 前端真实接入
@@ -1368,10 +1549,12 @@ missed_inputs = 0
 python3 scripts/run_llm_flywheel_simulation.py --per-intent 5
 ```
 
+模型配置说明：当前默认使用 `claude-sonnet-4-6`。Anthropic 公开模型列表里没有 Haiku 4.6；如果显式传入 `4.6 haiku` / `haiku-4.6`，代码会解析到当前官方 Haiku，避免调用不存在的模型 ID。需要降本验证时可设置 `CLAUDE_NLU_MODEL=claude-haiku-4-5-20251001`。
+
 当前一轮结果：
 
 ```text
-model = claude-haiku-4-5-20251001
+model = claude-sonnet-4-6
 base_samples = 230
 generated_samples = 55
 combined_samples = 285
@@ -1447,26 +1630,29 @@ python3 scripts/run_llm_flywheel_simulation.py --per-intent 5
 
 ## 十一、MVP 验证切片
 
-MVP 不验证模型能力，也不验证前端体验，只验证后端交互链路是否成立。
+MVP 第一阶段已经证明后端交互链路成立。当前切片的重点已经前移到 Agent-native 验证：**模型能否在受控工具空间内理解用户需求，并选择有用的工作面，而不是退回随机面板或硬编码 intent 映射。**
 
-### 范围
+### 当前范围
 
 ```
 用户自然语言输入
     ↓
-RuleBasedIntentPlanner（临时替代 NLU）
-    ↓
-Plan JSON
-    ↓
 InteractionBackend
     ↓
-PlanExecutor 直接调用 engine
+Intent Cache / Flywheel Router
+    ├── 高频简单意图命中 → planner/executor 快速路径
+    └── miss / 复杂语义 → Agent Kernel
+                            ↓
+                      Claude Tool Use + ReAct
+                            ↓
+                      受控 read tools
+                            ↓
+                      constrained decision
+                            ↓
+    ├── read → ResponseGenerator / RenderSpecSurface
+    └── write → ConfirmCard，再等用户确认
     ↓
-ResponseGenerator 输出 message + view + actions
-    ↓
-InMemoryInteractionSessionManager 管理 session
-    ↓
-Session 记录 current_view / selectable_items / pending_action_plan
+Session 记录 current_view / selectable_items / pending_action_plan / feedback
 ```
 
 ### MVP 必须跑通的四个动作
@@ -1499,4 +1685,9 @@ Session 记录 current_view / selectable_items / pending_action_plan
 - 相对引用依赖 `selectable_items`，不会凭空猜
 - 前端未来只需要消费统一的 `view.type` 和 `view.data`
 
-等这个闭环稳定后，再把规则型 planner 替换成 NLU，把内存 session 替换成 Redis，把 HTTP helper 替换成 FastAPI/SSE。
+这个闭环稳定后，下一步不是继续扩大规则型 planner，而是继续增强 Agent Kernel：
+
+- 增加更多只读工具，例如 notice/rule/source/audit。
+- 让 Agent 根据工具结果输出更精确的 `view_goal` 和 `render_spec`。
+- 把追问信号和 `RenderSpecSurface` 使用频率汇总成“是否需要新增正式视图”的产品待办。
+- 保留 planner/flywheel 作为高频、低成本、可缓存的 fast path。

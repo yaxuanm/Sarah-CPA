@@ -61,6 +61,23 @@ def test_response_generator_builds_today_list_card(app):
     assert response["actions"]
 
 
+def test_response_generator_adds_client_names_to_plain_deadlines(app):
+    tenant, client, today_value = _seed_response_data(app)
+    generator = ResponseGenerator(app.engine)
+    deadlines = [generator._serialize_deadline(item) for item in app.engine.list_deadlines(tenant.tenant_id, client.client_id)]
+    executor_result = {
+        "intent_label": "today",
+        "op_class": "read",
+        "final_data": deadlines,
+    }
+
+    response = generator.generate(executor_result, {"tenant_id": tenant.tenant_id, "today": today_value})
+
+    assert response["view"]["type"] == "ListCard"
+    assert response["view"]["data"]["items"][0]["client_name"] == "Acme LLC"
+    assert response["view"]["selectable_items"][0]["client_name"] == "Acme LLC"
+
+
 def test_response_generator_builds_client_card_with_available_actions(app):
     tenant, client, today_value = _seed_response_data(app)
     generator = ResponseGenerator(app.engine)
@@ -77,6 +94,39 @@ def test_response_generator_builds_client_card_with_available_actions(app):
     assert response["view"]["data"]["client_name"] == "Acme LLC"
     assert response["view"]["data"]["deadlines"][0]["available_actions"]
     assert response["actions"][0]["plan"]["op_class"] == "write"
+
+
+def test_response_generator_builds_client_card_from_client_bundle(app):
+    tenant, client, today_value = _seed_response_data(app)
+    generator = ResponseGenerator(app.engine)
+    bundle = app.engine.get_client_bundle(tenant.tenant_id, client.client_id)
+    executor_result = {
+        "intent_label": "client_deadline_list",
+        "op_class": "read",
+        "final_data": bundle,
+    }
+
+    response = generator.generate(executor_result, {"tenant_id": tenant.tenant_id, "today": today_value})
+
+    assert response["view"]["type"] == "ClientCard"
+    assert response["view"]["data"]["client_name"] == "Acme LLC"
+    assert len(response["view"]["data"]["deadlines"]) == 2
+
+
+def test_response_generator_ignores_non_deadline_values_in_client_response(app):
+    tenant, client, today_value = _seed_response_data(app)
+    generator = ResponseGenerator(app.engine)
+    deadline = generator._serialize_deadline(app.engine.list_deadlines(tenant.tenant_id, client.client_id)[0])
+    executor_result = {
+        "intent_label": "client_deadline_list",
+        "op_class": "read",
+        "final_data": {"client": generator._serialize_client(client), "deadlines": [deadline, "not-a-deadline"]},
+    }
+
+    response = generator.generate(executor_result, {"tenant_id": tenant.tenant_id, "today": today_value})
+
+    assert response["view"]["type"] == "ClientCard"
+    assert len(response["view"]["data"]["deadlines"]) == 1
 
 
 def test_response_generator_builds_confirm_card_for_write_plan(app):

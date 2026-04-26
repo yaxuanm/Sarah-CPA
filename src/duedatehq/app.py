@@ -10,6 +10,7 @@ from .core.conversation import ConversationService
 from .core.engine import InfrastructureEngine
 from .core.executor import PlanExecutor
 from .core.flywheel_router import FlywheelIntentRouter
+from .core.agent_kernel import ClaudeAgentKernel, DeterministicAgentKernel
 from .core.intent_cache import InMemoryIntentLibrary
 from .core.intent_planner import RuleBasedIntentPlanner
 from .core.interaction_backend import InteractionBackend, IntentPlanner
@@ -68,7 +69,18 @@ def create_app(db_path: str | None = None) -> App:
     else:
         intent_planner = RuleBasedIntentPlanner(engine)
     response_generator = ResponseGenerator(engine)
-    interaction_backend = InteractionBackend(executor, response_generator, intent_planner, intent_library)
+    agent_kernel = (
+        ClaudeAgentKernel(engine)
+        if os.getenv("DUEDATEHQ_USE_AGENT_KERNEL") == "1" or os.getenv("DUEDATEHQ_USE_AGENT_POLICY") == "1"
+        else DeterministicAgentKernel()
+    )
+    interaction_backend = InteractionBackend(
+        executor,
+        response_generator,
+        intent_planner,
+        intent_library,
+        agent_kernel=agent_kernel,
+    )
     redis_url = os.getenv("DUEDATEHQ_REDIS_URL")
     interaction_sessions = (
         RedisInteractionSessionManager(redis_url)

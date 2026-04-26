@@ -13,6 +13,37 @@ from .plan_validator import PlanValidator
 
 ANTHROPIC_API_URL = "https://api.anthropic.com/v1/messages"
 DEFAULT_HAIKU_MODEL = "claude-haiku-4-5-20251001"
+DEFAULT_SONNET_4_6_MODEL = "claude-sonnet-4-6"
+DEFAULT_CLAUDE_NLU_MODEL = DEFAULT_SONNET_4_6_MODEL
+
+MODEL_ALIASES = {
+    "haiku": DEFAULT_HAIKU_MODEL,
+    "haiku-4.5": DEFAULT_HAIKU_MODEL,
+    "haiku-4-5": DEFAULT_HAIKU_MODEL,
+    "claude-haiku-4-5": DEFAULT_HAIKU_MODEL,
+    "claude-haiku-4.5": DEFAULT_HAIKU_MODEL,
+    # Anthropic has not published a Haiku 4.6 API ID yet. Treat common
+    # shorthand as "latest available Haiku" instead of sending an invalid ID.
+    "haiku-4.6": DEFAULT_HAIKU_MODEL,
+    "haiku-4-6": DEFAULT_HAIKU_MODEL,
+    "4.6-haiku": DEFAULT_HAIKU_MODEL,
+    "4-6-haiku": DEFAULT_HAIKU_MODEL,
+    "claude-haiku-4-6": DEFAULT_HAIKU_MODEL,
+    "sonnet": DEFAULT_SONNET_4_6_MODEL,
+    "sonnet-4.6": DEFAULT_SONNET_4_6_MODEL,
+    "sonnet-4-6": DEFAULT_SONNET_4_6_MODEL,
+    "4.6-sonnet": DEFAULT_SONNET_4_6_MODEL,
+    "4-6-sonnet": DEFAULT_SONNET_4_6_MODEL,
+    "claude-sonnet-4.6": DEFAULT_SONNET_4_6_MODEL,
+    "claude-sonnet-4-6": DEFAULT_SONNET_4_6_MODEL,
+}
+
+
+def resolve_claude_model(model: str | None) -> str:
+    if not model:
+        return DEFAULT_CLAUDE_NLU_MODEL
+    normalized = "-".join(model.strip().casefold().replace("_", "-").split())
+    return MODEL_ALIASES.get(normalized, model.strip())
 
 
 class NLUServiceError(RuntimeError):
@@ -34,7 +65,7 @@ class ClaudeNLUService:
         self.engine = engine
         self.intent_library = intent_library
         self.api_key = api_key or os.getenv("ANTHROPIC_API_KEY") or os.getenv("CLAUDE_API_KEY") or os.getenv("claude_api_key")
-        self.model = model or os.getenv("CLAUDE_NLU_MODEL") or DEFAULT_HAIKU_MODEL
+        self.model = resolve_claude_model(model or os.getenv("CLAUDE_NLU_MODEL"))
         self.validator = validator or PlanValidator()
 
     def plan(self, text: str, session: dict[str, Any]) -> dict[str, Any]:
@@ -174,6 +205,10 @@ class ClaudeNLUService:
             "tenant_id": tenant_id,
             "today": session.get("today"),
             "selectable_items": session.get("selectable_items", []),
+            "current_view": self._summarize_current_view(session.get("current_view")),
+            "visual_context": session.get("visual_context"),
+            "seen_visual_contexts": session.get("seen_visual_contexts", [])[-6:],
+            "state_summary": session.get("state_summary"),
             "clients": clients,
             "recent_history": session.get("history_window", [])[-8:],
         }
@@ -209,6 +244,10 @@ If the request cannot be resolved safely, return this guidance shape:
 Critical rules:
 - Use only IDs present in session context or the client list. Never invent tenant_id, client_id, deadline_id, task_id, blocker_id, or notice_id.
 - Relative references like "this", "that", "current", "刚才", "这个", "第一条" must resolve from selectable_items.
+- Short, partial, or fuzzy user references should use visual_context, current_view, seen_visual_contexts, selectable_items, and recent_history before asking the user to clarify.
+- If the user says a partial client name such as "brigh", resolve it to the closest visible or recently seen client when there is only one plausible match.
+- The current rendered page is part of the conversation state. Use its visible clients, deadlines, drafts, available actions, and selected client to infer what the user means.
+- Only return reference_unresolvable when the request remains ambiguous after using visual and conversation context.
 - If a write target is unclear, return reference_unresolvable.
 - Write operations must use op_class "write". They will be confirmed by the backend before execution.
 - Do not turn a negated write into a write plan. "don't mark done", "先别标记完成", and similar requests should become guidance/defer.
@@ -238,6 +277,65 @@ Supported commands:
 Session context:
 {json.dumps(context, ensure_ascii=False, indent=2)}
 """.strip()
+
+    def _summarize_current_view(self, view: Any) -> dict[str, Any] | None:
+        if not isinstance(view, dict):
+            return None
+        data = view.get("data") if isinstance(view.get("data"), dict) else {}
+        summary: dict[str, Any] = {
+            "type": view.get("type"),
+            "selectable_items": view.get("selectable_items", [])[:10],
+        }
+        for key in (
+            "title",
+            "headline",
+            "description",
+            "client_name",
+            "total",
+            "status_label",
+            "message",
+        ):
+            if key in data:
+                summary[key] = data[key]
+        if isinstance(data.get("items"), list):
+            summary["items"] = [
+                {
+                    "client_name": item.get("client_name"),
+                    "deadline_id": item.get("deadline_id"),
+                    "tax_type": item.get("tax_type"),
+                    "jurisdiction": item.get("jurisdiction"),
+                    "due_date": item.get("due_date"),
+                    "status": item.get("status"),
+                }
+                for item in data["items"][:10]
+                if isinstance(item, dict)
+            ]
+        if isinstance(data.get("deadlines"), list):
+            summary["deadlines"] = [
+                {
+                    "client_name": item.get("client_name"),
+                    "deadline_id": item.get("deadline_id"),
+                    "tax_type": item.get("tax_type"),
+                    "jurisdiction": item.get("jurisdiction"),
+                    "due_date": item.get("due_date"),
+                    "status": item.get("status"),
+                    "missing": item.get("missing"),
+                }
+                for item in data["deadlines"][:10]
+                if isinstance(item, dict)
+            ]
+        if isinstance(data.get("render_spec"), dict):
+            spec = data["render_spec"]
+            summary["render_spec"] = {
+                "title": spec.get("title"),
+                "intent_summary": spec.get("intent_summary"),
+                "block_types": [
+                    block.get("type")
+                    for block in spec.get("blocks", [])
+                    if isinstance(block, dict)
+                ][:10],
+            }
+        return summary
 
     def _command_reference(self) -> str:
         lines = []

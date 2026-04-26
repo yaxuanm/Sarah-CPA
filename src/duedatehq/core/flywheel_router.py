@@ -54,7 +54,8 @@ class FlywheelIntentRouter:
     def plan(self, text: str, session: dict[str, Any]) -> dict[str, Any]:
         self.stats.total_requests += 1
 
-        match = self.intent_library.match(text, session)
+        skip_cache = self._should_skip_cache(text, session)
+        match = None if skip_cache else self.intent_library.match(text, session)
         if match:
             self.stats.cache_hits += 1
             self._remember_route(
@@ -93,6 +94,41 @@ class FlywheelIntentRouter:
             similarity=None,
         )
         return plan
+
+    def _should_skip_cache(self, text: str, session: dict[str, Any]) -> bool:
+        """Let the planner see visual context for short/fuzzy entity navigation.
+
+        Cache templates are useful for stable intents such as "today" or
+        "completed items", but they are dangerous for short inputs like
+        "go to gree": the cache can recognize the broad intent while missing
+        the entity that must be resolved from the current page.
+        """
+        normalized = text.casefold().strip()
+        if not normalized:
+            return False
+        if not any(token in normalized for token in ("go", "open", "show", "focus", "switch", "看", "打开", "切到", "转到")):
+            return False
+
+        visual_context = session.get("visual_context") if isinstance(session.get("visual_context"), dict) else {}
+        seen_contexts = session.get("seen_visual_contexts") if isinstance(session.get("seen_visual_contexts"), list) else []
+        visible_clients = list(visual_context.get("visible_clients") or [])
+        for context in seen_contexts:
+            if isinstance(context, dict):
+                visible_clients.extend(context.get("visible_clients") or [])
+        if not visible_clients:
+            return False
+
+        words = [word for word in self._normalize(normalized).split() if len(word) >= 3]
+        if not words:
+            return False
+        for client_name in visible_clients:
+            client_words = [word for word in self._normalize(str(client_name)).split() if len(word) >= 3]
+            if any(client_word.startswith(word) or word.startswith(client_word) for word in words for client_word in client_words):
+                return True
+        return False
+
+    def _normalize(self, text: str) -> str:
+        return "".join(char if char.isalnum() else " " for char in text.casefold())
 
     def is_confirm(self, text: str) -> bool:
         return self.planner.is_confirm(text) or bool(self.fallback_planner and self.fallback_planner.is_confirm(text))

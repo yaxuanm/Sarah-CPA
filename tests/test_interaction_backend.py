@@ -5,6 +5,7 @@ from datetime import datetime, timedelta, timezone
 import pytest
 
 from duedatehq.app import create_app
+from duedatehq.core.agent_kernel import AgentKernelDecision
 
 
 @pytest.fixture
@@ -145,6 +146,33 @@ def test_interaction_backend_message_renders_today_and_remembers_selectable_item
     assert session["current_view"]["type"] == "ListCard"
 
 
+def test_interaction_backend_long_tail_need_renders_constrained_surface(app):
+    _, _, _, session = _seed_interaction_data(app)
+
+    response = app.interaction_backend.process_message("帮我写一封很强硬但礼貌的客户催资料邮件", session)
+
+    assert response["status"] == "ok"
+    assert response["view"]["type"] == "RenderSpecSurface"
+    spec = response["view"]["data"]["render_spec"]
+    assert spec["surface"] == "work_card"
+    assert spec["version"] == "0.1"
+    assert any(block["type"] == "choice_set" for block in spec["blocks"])
+    assert response["view"]["type"] == session["current_view"]["type"]
+
+
+def test_interaction_backend_draft_request_uses_current_task_context(app):
+    _, _, _, session = _seed_interaction_data(app)
+    app.interaction_backend.process_message("先看 Acme", session)
+
+    response = app.interaction_backend.process_message("prepare a draft", session)
+
+    assert response["view"]["type"] == "RenderSpecSurface"
+    spec = response["view"]["data"]["render_spec"]
+    assert "Acme" in spec["title"]
+    assert any(block["type"] == "action_draft" for block in spec["blocks"])
+    assert "发送" in response["message"] or "草稿" in response["message"]
+
+
 def test_interaction_backend_message_focuses_client_by_name(app):
     _, _, _, session = _seed_interaction_data(app)
 
@@ -153,6 +181,149 @@ def test_interaction_backend_message_focuses_client_by_name(app):
     assert response["status"] == "ok"
     assert response["view"]["type"] == "ClientCard"
     assert response["view"]["data"]["client_name"] == "Acme LLC"
+
+
+def test_interaction_backend_opens_numbered_visible_item(app):
+    tenant, _, _, session = _seed_interaction_data(app)
+    today = datetime.now(timezone.utc).date()
+    app.engine.register_client(
+        tenant_id=tenant.tenant_id,
+        name="Second LLC",
+        entity_type="s-corp",
+        registered_states=["CA"],
+        tax_year=today.year,
+    )
+
+    app.interaction_backend.process_message("今天先做什么", session)
+    expected_client_id = session["selectable_items"][1]["client_id"]
+    response = app.interaction_backend.process_message("打开第 2 条", session)
+
+    assert response["status"] == "ok"
+    assert response["view"]["type"] == "ClientCard"
+    assert response["view"]["data"]["client_id"] == expected_client_id
+
+
+def test_interaction_backend_explains_all_visible_list_items(app):
+    tenant, _, _, session = _seed_interaction_data(app)
+    today = datetime.now(timezone.utc).date()
+    for name in ["Second LLC", "Third LLC"]:
+        app.engine.register_client(
+            tenant_id=tenant.tenant_id,
+            name=name,
+            entity_type="s-corp",
+            registered_states=["CA"],
+            tax_year=today.year,
+        )
+
+    listed = app.interaction_backend.process_message("今天先做什么", session)
+    response = app.interaction_backend.process_message("这几件事分别是什么", session)
+
+    visible_names = [item["client_name"] for item in listed["view"]["data"]["items"]]
+    assert response["status"] == "ok"
+    assert response["view"]["type"] == "ListCard"
+    assert response["view"] == listed["view"]
+    for name in visible_names:
+        assert name in response["message"]
+    assert "打开第 N 条" in response["message"]
+
+
+def test_interaction_backend_answers_context_advice_without_replacing_page(app):
+    _, _, _, session = _seed_interaction_data(app)
+    focused = app.interaction_backend.process_message("先看 Acme", session)
+
+    response = app.interaction_backend.process_message("急着处理么？", session)
+
+    assert focused["view"]["type"] == "ClientCard"
+    assert response["status"] == "ok"
+    assert response["view"]["type"] == "ClientCard"
+    assert response["view"]["data"]["client_name"] == "Acme LLC"
+    assert response["message"]
+    assert "Acme LLC" in response["message"]
+    assert session["last_turn"]["intent_label"] == "answer_advice"
+    assert session["last_turn"]["plan_source"] == "agent_kernel"
+    assert session["last_agent_kernel"]["render_policy"] == "keep_current_view"
+
+
+def test_interaction_backend_renders_portfolio_overview_without_selected_item(app):
+    tenant, _, _, session = _seed_interaction_data(app)
+    today = datetime.now(timezone.utc).date()
+    for name in ["Beta LLC", "Cedar LLC"]:
+        app.engine.register_client(
+            tenant_id=tenant.tenant_id,
+            name=name,
+            entity_type="s-corp",
+            registered_states=["CA"],
+            tax_year=today.year,
+        )
+
+    response = app.interaction_backend.process_message("我所有的客户的情况如何", session)
+
+    assert response["status"] == "ok"
+    assert response["view"]["type"] == "RenderSpecSurface"
+    assert response["view"]["data"]["render_spec"]["title"] == "客户组合概况"
+    assert "客户" in response["message"]
+    assert session["last_turn"]["intent_label"] == "portfolio_overview"
+    assert session["last_turn"]["plan_source"] == "agent_kernel"
+
+
+def test_interaction_backend_renders_least_urgent_priority_surface(app):
+    tenant, _, _, session = _seed_interaction_data(app)
+    today = datetime.now(timezone.utc).date()
+    app.engine.register_client(
+        tenant_id=tenant.tenant_id,
+        name="Later LLC",
+        entity_type="s-corp",
+        registered_states=["CA"],
+        tax_year=today.year,
+    )
+    app.interaction_backend.process_message("今天先做什么", session)
+
+    response = app.interaction_backend.process_message("哪个客户最不紧急", session)
+
+    assert response["status"] == "ok"
+    assert response["view"]["type"] == "RenderSpecSurface"
+    assert response["view"]["data"]["render_spec"]["title"] == "优先级排序"
+    assert "最不紧急" in response["message"]
+    assert session["last_turn"]["intent_label"] == "deadline_priority_ranking"
+    assert session["last_turn"]["plan_source"] == "agent_kernel"
+    assert not session.get("flywheel_feedback_events")
+
+
+class FakeAgentKernel:
+    def __init__(self, decision: AgentKernelDecision):
+        self.decision = decision
+
+    def decide(self, user_input, session):
+        return self.decision
+
+
+def test_interaction_backend_renders_generic_agent_strategy_surface(app):
+    _, _, _, session = _seed_interaction_data(app)
+    app.interaction_backend.process_message("先看 Acme", session)
+    app.interaction_backend.agent_kernel = FakeAgentKernel(
+        AgentKernelDecision(
+            route="render_strategy_surface",
+            need_type="client_work_summary",
+            render_policy="render_new_view",
+            data_requests=["current_view", "client_deadlines"],
+            answer_mode="answer_and_render",
+            view_goal="整理这个客户当前这些事情的情况",
+            confidence=0.9,
+            reason="generic synthesis",
+        )
+    )
+
+    response = app.interaction_backend.process_message("这些事情情况如何", session)
+
+    assert response["status"] == "ok"
+    assert response["view"]["type"] == "RenderSpecSurface"
+    spec = response["view"]["data"]["render_spec"]
+    assert spec["title"]
+    assert spec["surface"] == "work_card"
+    assert any(block["type"] == "source_list" for block in spec["blocks"])
+    assert response["view"]["selectable_items"]
+    assert session["last_turn"]["intent_label"] == "client_work_summary"
+    assert session["last_turn"]["plan_source"] == "agent_kernel"
 
 
 def test_interaction_backend_message_requires_confirmation_before_write(app):

@@ -68,6 +68,23 @@ def classify_followup(last_turn: dict | None, user_input: str) -> FollowupClassi
 
 
 def _looks_like_missing_info_request(lowered: str) -> bool:
+    if _contains_any(
+        lowered,
+        [
+            "所有客户",
+            "全部客户",
+            "客户的情况",
+            "客户情况",
+            "哪个客户最",
+            "哪个客户不",
+            "最不紧急",
+            "最不急",
+            "least urgent",
+            "lowest priority",
+            "portfolio",
+        ],
+    ):
+        return False
     question_tokens = [
         "为什么",
         "为何",

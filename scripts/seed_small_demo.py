@@ -9,11 +9,36 @@ from duedatehq.core.models import DeadlineAction, NotificationChannel
 
 
 DEMO_TENANT_NAME = "Sarah Demo Tenant"
+SARAH_STORY_CLIENTS = [
+    {
+        "name": "Acme Dental LLC",
+        "entity_type": "s-corp",
+        "registered_states": ["CA"],
+        "tax_year": 2026,
+    },
+    {
+        "name": "Greenway Consulting LLC",
+        "entity_type": "s-corp",
+        "registered_states": ["CA", "TX"],
+        "tax_year": 2026,
+    },
+    {
+        "name": "Brighton Manufacturing LLC",
+        "entity_type": "s-corp",
+        "registered_states": ["TX", "DE"],
+        "tax_year": 2026,
+    },
+]
 
 
 def _find_existing_tenant_id(db_path: str, tenant_name: str) -> str | None:
     conn = sqlite3.connect(db_path)
     try:
+        row = conn.execute(
+            "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'tenants'"
+        ).fetchone()
+        if row is None:
+            return None
         row = conn.execute("SELECT tenant_id FROM tenants WHERE name = ?", (tenant_name,)).fetchone()
         return row[0] if row else None
     finally:
@@ -24,12 +49,22 @@ def main() -> None:
     db_path = str(Path.cwd() / ".duedatehq" / "duedatehq.sqlite3")
     existing_tenant_id = _find_existing_tenant_id(db_path, DEMO_TENANT_NAME)
     if existing_tenant_id:
+        app = create_app(db_path)
+        engine = app.engine
+        existing_names = {client.name for client in engine.list_clients(existing_tenant_id)}
+        created_clients = []
+        for client in SARAH_STORY_CLIENTS:
+            if client["name"] in existing_names:
+                continue
+            created = engine.register_client(tenant_id=existing_tenant_id, **client)
+            created_clients.append({"client_id": created.client_id, "name": created.name})
         print(
             json.dumps(
                 {
                     "status": "exists",
                     "tenant_name": DEMO_TENANT_NAME,
                     "tenant_id": existing_tenant_id,
+                    "added_story_clients": created_clients,
                 },
                 indent=2,
                 sort_keys=True,
@@ -100,6 +135,10 @@ def main() -> None:
         registered_states=["CA"],
         tax_year=2026,
     )
+    story_clients = [
+        engine.register_client(tenant_id=tenant.tenant_id, **client)
+        for client in SARAH_STORY_CLIENTS
+    ]
 
     acme_deadlines = engine.list_deadlines(tenant.tenant_id, acme.client_id)
     lone_pine_deadlines = engine.list_deadlines(tenant.tenant_id, lone_pine.client_id)
@@ -152,6 +191,10 @@ def main() -> None:
             {"client_id": acme.client_id, "name": acme.name},
             {"client_id": lone_pine.client_id, "name": lone_pine.name},
             {"client_id": pacific.client_id, "name": pacific.name},
+            *[
+                {"client_id": client.client_id, "name": client.name}
+                for client in story_clients
+            ],
         ],
         "notification_route_id": route.route_id,
         "today_count": len(engine.today_enriched(tenant.tenant_id, limit=10)),

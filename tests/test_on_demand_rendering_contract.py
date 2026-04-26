@@ -132,6 +132,8 @@ def test_upcoming_and_completed_needs_render_deadline_lists(app):
     completed = app.interaction_backend.process_message("已完成的有哪些", session)
 
     assert upcoming["view"]["type"] == "ListCard"
+    assert "未来" in upcoming["view"]["data"]["title"]
+    assert "suggested_prompts" in upcoming["view"]["data"]
     assert upcoming["view"]["data"]["items"]
     assert all(item["status"] != "completed" for item in upcoming["view"]["data"]["items"])
     assert upcoming["actions"] == []

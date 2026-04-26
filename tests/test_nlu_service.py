@@ -5,7 +5,13 @@ import json
 import pytest
 
 from duedatehq.app import create_app
-from duedatehq.core.nlu_service import ClaudeNLUService
+from duedatehq.core.nlu_service import (
+    ClaudeNLUService,
+    DEFAULT_CLAUDE_NLU_MODEL,
+    DEFAULT_HAIKU_MODEL,
+    DEFAULT_SONNET_4_6_MODEL,
+    resolve_claude_model,
+)
 from duedatehq.core.plan_validator import PlanValidationError
 
 
@@ -24,6 +30,18 @@ class RepairingFakeClaudeNLUService(FakeClaudeNLUService):
     def _repair_model_output(self, raw_text: str) -> str:
         assert raw_text == self.model_text
         return json.dumps({"intent_label": "help", "op_class": "read", "plan": []})
+
+
+def test_claude_model_aliases_resolve_to_supported_api_ids():
+    assert resolve_claude_model(None) == DEFAULT_CLAUDE_NLU_MODEL
+    assert DEFAULT_CLAUDE_NLU_MODEL == DEFAULT_SONNET_4_6_MODEL
+    assert resolve_claude_model("haiku") == DEFAULT_HAIKU_MODEL
+    assert resolve_claude_model("4.6 haiku") == DEFAULT_HAIKU_MODEL
+    assert resolve_claude_model("claude-haiku-4-6") == DEFAULT_HAIKU_MODEL
+    assert resolve_claude_model("sonnet 4.6") == DEFAULT_SONNET_4_6_MODEL
+    assert resolve_claude_model("4.6 sonnet") == DEFAULT_SONNET_4_6_MODEL
+    assert resolve_claude_model("claude sonnet 4.6") == DEFAULT_SONNET_4_6_MODEL
+    assert resolve_claude_model("custom-provider-model") == "custom-provider-model"
 
 
 def test_claude_nlu_service_validates_and_returns_plan(tmp_path):
@@ -85,6 +103,50 @@ def test_claude_nlu_service_can_extract_json_from_wrapped_text(tmp_path):
     parsed = service._extract_json_object('Here is JSON: {"special":"reference_unresolvable","message":"x"}')
 
     assert parsed["special"] == "reference_unresolvable"
+
+
+def test_claude_nlu_prompt_includes_visual_context(tmp_path):
+    app = create_app(str(tmp_path / "nlu-context.sqlite3"))
+    service = FakeClaudeNLUService(app.engine, model_text="unused")
+    prompt = service._build_system_prompt(
+        {
+            "tenant_id": "tenant-a",
+            "today": "2026-04-25",
+            "visual_context": {
+                "view_type": "ListCard",
+                "visible_clients": ["Brighton Manufacturing LLC"],
+                "summary": "Today list with Brighton visible",
+            },
+            "seen_visual_contexts": [
+                {
+                    "view_type": "ClientCard",
+                    "selected_client": "Acme Dental LLC",
+                    "summary": "Previously viewed Acme",
+                }
+            ],
+            "current_view": {
+                "type": "ListCard",
+                "data": {
+                    "headline": "Today list",
+                    "items": [
+                        {
+                            "client_name": "Brighton Manufacturing LLC",
+                            "deadline_id": "dl-brighton",
+                            "tax_type": "Payroll",
+                            "jurisdiction": "Federal",
+                            "due_date": "Friday",
+                            "status": "Ready",
+                        }
+                    ],
+                },
+            },
+        }
+    )
+
+    assert "visual_context" in prompt
+    assert "seen_visual_contexts" in prompt
+    assert "Brighton Manufacturing LLC" in prompt
+    assert "partial client name" in prompt
 
 
 def test_claude_nlu_service_normalizes_empty_help_plan(tmp_path):

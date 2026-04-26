@@ -67,6 +67,23 @@ def test_rule_based_planner_builds_client_plan_from_name(app):
     assert plan["plan"][0]["args"]["client_id"] == client.client_id
 
 
+def test_rule_based_planner_opens_numbered_visible_item(app):
+    _, _, _, session = _seed_planner_data(app)
+    session["selectable_items"].append(
+        {
+            "ref": "item_2",
+            "deadline_id": "deadline-2",
+            "client_id": "client-2",
+            "client_name": "Second LLC",
+        }
+    )
+
+    plan = app.intent_planner.plan("打开第 2 条", session)
+
+    assert plan["intent_label"] == "client_deadline_list"
+    assert plan["plan"][0]["args"]["client_id"] == "client-2"
+
+
 def test_rule_based_planner_builds_write_plan_from_relative_reference(app):
     _, _, deadline, session = _seed_planner_data(app)
 

@@ -19,7 +19,7 @@ if str(SRC) not in sys.path:
 
 from duedatehq.app import create_app  # noqa: E402
 from duedatehq.core.intent_samples import BASIC_FLYWHEEL_SAMPLES  # noqa: E402
-from duedatehq.core.nlu_service import ClaudeNLUService, DEFAULT_HAIKU_MODEL  # noqa: E402
+from duedatehq.core.nlu_service import ClaudeNLUService, DEFAULT_CLAUDE_NLU_MODEL, resolve_claude_model  # noqa: E402
 
 
 def load_env(path: Path) -> None:
@@ -90,8 +90,8 @@ def build_session(app) -> dict[str, Any]:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Evaluate Claude Haiku NLU Plan JSON against labeled intent samples.")
-    parser.add_argument("--model", default=os.getenv("CLAUDE_NLU_MODEL", DEFAULT_HAIKU_MODEL))
+    parser = argparse.ArgumentParser(description="Evaluate Claude NLU Plan JSON against labeled intent samples.")
+    parser.add_argument("--model", default=os.getenv("CLAUDE_NLU_MODEL", DEFAULT_CLAUDE_NLU_MODEL))
     parser.add_argument("--per-intent", type=int, default=2, help="Stratified samples per intent unless --all is used.")
     parser.add_argument("--all", action="store_true", help="Run all local labeled samples.")
     parser.add_argument("--output", type=Path, default=None, help="Optional JSON output path.")
@@ -103,7 +103,8 @@ def main() -> int:
     with TemporaryDirectory() as tmpdir:
         app = create_app(str(Path(tmpdir) / "nlu-eval.sqlite3"))
         session = build_session(app)
-        nlu = ClaudeNLUService(app.engine, model=args.model)
+        model = resolve_claude_model(args.model)
+        nlu = ClaudeNLUService(app.engine, model=model)
 
         results = []
         for sample in samples:
@@ -139,7 +140,7 @@ def main() -> int:
         }
 
     report = {
-        "model": args.model,
+        "model": model,
         "total": total,
         "correct": correct,
         "accuracy": correct / total if total else 0,

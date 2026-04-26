@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from .engine import InfrastructureEngine
@@ -32,26 +33,18 @@ class RuleBasedIntentPlanner:
         if self._looks_like_history(lowered):
             target = self._selected_deadline(lowered, session)
             if not target:
+                client = self._match_client(tenant_id, lowered)
+                if client:
+                    return self._client_deadline_plan(tenant_id, client.client_id)
+            if not target:
                 return {
                     "special": "reference_unresolvable",
                     "intent_label": "deadline_history",
-                    "message": "要看变更原因，需要先选中一条任务。",
+                    "message": "要看变更原因，需要先选中一条任务，或者直接说客户名称。",
                     "options": ["查看今天的待处理事项"],
                     "selectable_items": session.get("selectable_items", []),
                 }
-            return {
-                "plan": [
-                    {
-                        "step_id": "s1",
-                        "type": "cli_call",
-                        "cli_group": "deadline",
-                        "cli_command": "transitions",
-                        "args": {"tenant_id": tenant_id, "deadline_id": target["deadline_id"]},
-                    }
-                ],
-                "intent_label": "deadline_history",
-                "op_class": "read",
-            }
+            return self._deadline_history_plan(tenant_id, target["deadline_id"])
 
         if self._looks_like_defer(lowered):
             return {
@@ -101,8 +94,20 @@ class RuleBasedIntentPlanner:
                 "selectable_items": session.get("selectable_items", []),
             }
 
+        if self._looks_like_ad_hoc_generation(lowered):
+            return {
+                "special": "render_spec_needed",
+                "intent_label": "ad_hoc_render_spec",
+                "message": "我会根据这个需求生成一个临时工作面，而不是回到通用面板。",
+                "user_input": text,
+                "selectable_items": session.get("selectable_items", []),
+            }
+
         if self._looks_like_notifications(lowered):
             return self._notification_preview_plan(tenant_id)
+
+        if self._looks_like_today(lowered):
+            return self._today_plan(tenant_id)
 
         if self._looks_like_upcoming(lowered):
             return self._upcoming_deadlines_plan(tenant_id)
@@ -110,14 +115,17 @@ class RuleBasedIntentPlanner:
         if self._looks_like_client_list(lowered):
             return self._client_list_plan(tenant_id)
 
-        if self._looks_like_today(lowered):
-            return self._today_plan(tenant_id)
-
         target = self._selected_deadline(lowered, session)
         if target and self._looks_like_focus(lowered):
             return self._client_deadline_plan(tenant_id, target["client_id"])
 
-        return self._today_plan(tenant_id)
+        return {
+            "special": "render_spec_needed",
+            "intent_label": "ad_hoc_render_spec",
+            "message": "我会根据这个需求生成一个临时工作面，而不是回到通用面板。",
+            "user_input": text,
+            "selectable_items": session.get("selectable_items", []),
+        }
 
     def is_confirm(self, text: str) -> bool:
         lowered = text.casefold()
@@ -165,7 +173,7 @@ class RuleBasedIntentPlanner:
                     "type": "cli_call",
                     "cli_group": "deadline",
                     "cli_command": "list",
-                    "args": {"tenant_id": tenant_id, "within_days": 30, "status": "pending", "limit": 50},
+                    "args": {"tenant_id": tenant_id, "status": "pending", "limit": 100},
                 }
             ],
             "intent_label": "upcoming_deadlines",
@@ -247,12 +255,29 @@ class RuleBasedIntentPlanner:
             "op_class": "write",
         }
 
+    def _deadline_history_plan(self, tenant_id: str, deadline_id: str) -> dict[str, Any]:
+        return {
+            "plan": [
+                {
+                    "step_id": "s1",
+                    "type": "cli_call",
+                    "cli_group": "deadline",
+                    "cli_command": "transitions",
+                    "args": {"tenant_id": tenant_id, "deadline_id": deadline_id},
+                }
+            ],
+            "intent_label": "deadline_history",
+            "op_class": "read",
+        }
+
     def _match_client(self, tenant_id: str, lowered_text: str):
         candidates = []
         for client in self.engine.list_clients(tenant_id):
             name = client.name.casefold()
             compact_name = name.replace(" llc", "").replace(" inc", "").replace(" corp", "")
-            if name in lowered_text or compact_name in lowered_text:
+            tokens = [token for token in compact_name.replace("-", " ").split() if len(token) > 2]
+            token_hits = sum(1 for token in tokens if token in lowered_text)
+            if name in lowered_text or compact_name in lowered_text or token_hits >= min(2, len(tokens)):
                 candidates.append(client)
         return candidates[0] if len(candidates) == 1 else None
 
@@ -260,6 +285,12 @@ class RuleBasedIntentPlanner:
         selectable = session.get("selectable_items") or []
         if not selectable:
             return None
+        numeric_match = re.search(r"(?:第\s*)?([1-9])\s*(?:条|个|项|item)", lowered_text)
+        if not numeric_match:
+            numeric_match = re.search(r"item\s*([1-9])", lowered_text)
+        if numeric_match:
+            index = int(numeric_match.group(1)) - 1
+            return selectable[index] if 0 <= index < len(selectable) else None
         if any(token in lowered_text for token in ["第一", "first", "1st", "第一个"]):
             return selectable[0]
         if any(token in lowered_text for token in ["第二", "second", "2nd"]):
@@ -393,6 +424,15 @@ class RuleBasedIntentPlanner:
             token in lowered
             for token in [
                 "未来",
+                "所有ddl",
+                "所有 ddl",
+                "ddl",
+                "deadline",
+                "deadlines",
+                "due date",
+                "due dates",
+                "截止日",
+                "截止事项",
                 "下个月",
                 "接下来",
                 "未来30天",
@@ -450,8 +490,11 @@ class RuleBasedIntentPlanner:
             for token in [
                 "通知",
                 "提醒",
-                "催",
-                "邮件",
+                "要发哪些邮件",
+                "哪些邮件",
+                "哪些客户要催",
+                "要催哪些",
+                "接下来要催谁",
                 "notification",
                 "reminder",
                 "notify",
@@ -461,6 +504,26 @@ class RuleBasedIntentPlanner:
                 "send reminders",
                 "client reminders",
                 "follow up",
+            ]
+        )
+
+    def _looks_like_ad_hoc_generation(self, lowered: str) -> bool:
+        return any(
+            token in lowered
+            for token in [
+                "帮我写",
+                "写一封",
+                "起草",
+                "草稿",
+                "话术",
+                "措辞",
+                "生成",
+                "draft",
+                "write a",
+                "prepare a",
+                "wording",
+                "message for",
+                "email for",
             ]
         )
 

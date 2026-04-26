@@ -22,9 +22,10 @@ if str(SRC) not in sys.path:
 from duedatehq.app import create_app  # noqa: E402
 from duedatehq.core.flywheel import LabeledFlywheelInput, run_labeled_holdout_test  # noqa: E402
 from duedatehq.core.intent_samples import BASIC_FLYWHEEL_SAMPLES  # noqa: E402
+from duedatehq.core.nlu_service import DEFAULT_CLAUDE_NLU_MODEL, resolve_claude_model  # noqa: E402
 
 
-DEFAULT_MODEL = "claude-haiku-4-5-20251001"
+DEFAULT_MODEL = DEFAULT_CLAUDE_NLU_MODEL
 ANTHROPIC_API_URL = "https://api.anthropic.com/v1/messages"
 
 
@@ -202,7 +203,8 @@ def main() -> int:
         raise SystemExit("No Claude API key found. Set ANTHROPIC_API_KEY, CLAUDE_API_KEY, or claude_api_key in .env.")
 
     by_intent = key_for_intent_samples(BASIC_FLYWHEEL_SAMPLES)
-    generated = call_claude(build_prompt(by_intent, args.per_intent), api_key=api_key, model=args.model)
+    model = resolve_claude_model(args.model)
+    generated = call_claude(build_prompt(by_intent, args.per_intent), api_key=api_key, model=model)
     valid_intents = set(by_intent)
     generated = [item for item in generated if item.expected_intent in valid_intents]
 
@@ -213,7 +215,7 @@ def main() -> int:
         holdout = run_labeled_holdout_test(combined, planner=app.intent_planner, session=session)
 
     report = {
-        "model": args.model,
+        "model": model,
         "base_samples": len(BASIC_FLYWHEEL_SAMPLES),
         "generated_samples": len(generated),
         "combined_samples": len(combined),

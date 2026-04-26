@@ -98,6 +98,149 @@ class ResponseGenerator:
             "state_summary": None,
         }
 
+    def generate_render_spec_surface(
+        self,
+        user_input: str,
+        session: dict[str, Any],
+        message: str | None = None,
+    ) -> dict[str, Any]:
+        text = user_input.strip() or "用户提出了一个开放需求"
+        selected = session.get("selectable_items") or []
+        if selected and self._looks_like_draft_request(text):
+            return self._build_client_message_draft_surface(text, session, selected[0])
+
+        context_label = selected[0].get("client_name") if selected else "当前工作队列"
+        render_spec = {
+            "version": "0.1",
+            "surface": "work_card",
+            "title": "我先帮你把这件事理清楚",
+            "intent_summary": text,
+            "blocks": [
+                {
+                    "type": "decision_brief",
+                    "title": "我理解的是",
+                    "body": (
+                        f"你想继续处理 {context_label}，但这句话还没有指向某一个具体截止事项或动作。"
+                        "我可以先帮你整理现状，也可以继续查依据。"
+                    ),
+                },
+                {
+                    "type": "fact_strip",
+                    "facts": [
+                        {"label": "当前对象", "value": str(context_label), "tone": "blue"},
+                        {"label": "当前阶段", "value": "先整理，不改记录", "tone": "gold"},
+                        {"label": "状态变更", "value": "尚未发生", "tone": "green"},
+                    ],
+                },
+                {
+                    "type": "choice_set",
+                    "question": "你想先怎么推进？",
+                    "choices": [
+                        {"label": "先整理现状", "intent": "show source", "style": "primary"},
+                        {"label": "生成客户消息", "intent": "prepare a draft", "style": "secondary"},
+                        {"label": "回到今日清单", "intent": "today", "style": "secondary"},
+                    ],
+                },
+            ],
+        }
+        return {
+            "message": self._truncate(message or "我先把这件事整理成一个可推进的工作面。"),
+            "view": {
+                "type": "RenderSpecSurface",
+                "data": {"render_spec": render_spec},
+                "selectable_items": selected,
+            },
+            "actions": [],
+            "state_summary": "根据开放需求生成受约束工作面。",
+        }
+
+    def _build_client_message_draft_surface(
+        self,
+        user_input: str,
+        session: dict[str, Any],
+        selected: dict[str, Any],
+    ) -> dict[str, Any]:
+        deadline_id = selected.get("deadline_id")
+        deadline = self._serialize_deadline(self.engine.get_deadline(session["tenant_id"], deadline_id)) if deadline_id else {}
+        client = self._client_map(session["tenant_id"]).get(deadline.get("client_id"))
+        client_name = client["name"] if client else selected.get("client_name") or "当前客户"
+        tax_type = deadline.get("tax_type") or "当前事项"
+        due_date = deadline.get("due_date") or "当前截止日"
+        jurisdiction = deadline.get("jurisdiction") or "相关辖区"
+        draft = (
+            f"Hi,\n\n"
+            f"We are working on your {tax_type} for {jurisdiction}. "
+            f"The current due date is {due_date}. Could you please send over the remaining information needed for this filing?\n\n"
+            f"Thank you,\nSarah"
+        )
+        render_spec = {
+            "version": "0.1",
+            "surface": "work_card",
+            "title": f"{client_name} 的客户消息草稿",
+            "intent_summary": user_input,
+            "blocks": [
+                {
+                    "type": "decision_brief",
+                    "title": "这是一封需要你发出去的消息",
+                    "body": (
+                        f"我根据当前选中的 {client_name} - {tax_type} 生成了草稿。"
+                        "DueDateHQ 只生成内容，不会替你发送，也不会修改记录。"
+                    ),
+                },
+                {
+                    "type": "fact_strip",
+                    "facts": [
+                        {"label": "客户", "value": str(client_name), "tone": "blue"},
+                        {"label": "事项", "value": str(tax_type), "tone": "gold"},
+                        {"label": "截止日", "value": str(due_date), "tone": "red"},
+                    ],
+                },
+                {
+                    "type": "action_draft",
+                    "label": "发送给客户的内容",
+                    "body": draft,
+                    "note": "请通过你的邮箱或客户 portal 发出。发出后再回来记录为已发送。",
+                },
+                {
+                    "type": "choice_set",
+                    "question": "发出之后回来记录。",
+                    "choices": [
+                        {"label": "记录为已发送", "intent": "record as sent", "style": "primary"},
+                        {"label": "查看依据", "intent": "show source", "style": "secondary"},
+                        {"label": "回到今日清单", "intent": "today", "style": "secondary"},
+                    ],
+                },
+            ],
+        }
+        return {
+            "message": self._truncate(f"我已经为 {client_name} 生成客户消息草稿。发出后再回来记录。"),
+            "view": {
+                "type": "RenderSpecSurface",
+                "data": {"render_spec": render_spec},
+                "selectable_items": [selected],
+            },
+            "actions": [],
+            "state_summary": f"生成 {client_name} 的客户消息草稿。",
+        }
+
+    def _looks_like_draft_request(self, text: str) -> bool:
+        lowered = text.casefold()
+        return any(
+            token in lowered
+            for token in [
+                "draft",
+                "prepare",
+                "message",
+                "email",
+                "草稿",
+                "起草",
+                "客户消息",
+                "邮件",
+                "生成客户消息",
+                "先生成草稿",
+            ]
+        )
+
     def _build_today_response(self, final_data: list[dict[str, Any]], session: dict[str, Any]) -> dict[str, Any]:
         items = [self._enrich_today_item(item, session) for item in final_data]
         items.sort(key=lambda item: (item["days_remaining"], item["due_date"]))
@@ -108,21 +251,32 @@ class ResponseGenerator:
             "message": self._truncate(message),
             "view": {
                 "type": "ListCard",
-                "data": {"items": visible, "total": len(items), "has_more": len(items) > 5},
+                "data": {
+                    "title": "今天需要处理的事项",
+                    "headline": "先看最可能卡住申报的事项",
+                    "description": "这是今天最值得你注意的工作队列。打开一项后，我会只围绕那一项继续帮你处理。",
+                    "items": visible,
+                    "total": len(items),
+                    "has_more": len(items) > 5,
+                    "status_label": "待处理",
+                    "suggested_prompts": ["查看所有未来截止日", "只看某个客户", "哪些需要催客户"],
+                },
                 "selectable_items": selectable_items,
             },
             "actions": self._build_actions(session["tenant_id"], visible[0]["deadline_id"], "today") if visible else [],
             "state_summary": None if not items else f"显示 {len(visible)} / {len(items)} 条待处理事项。",
         }
 
-    def _build_client_deadline_response(self, final_data: list[dict[str, Any]], session: dict[str, Any]) -> dict[str, Any]:
-        enriched_deadlines = [self._enrich_deadline_item(item, session) for item in final_data]
+    def _build_client_deadline_response(self, final_data: Any, session: dict[str, Any]) -> dict[str, Any]:
+        deadline_items = self._extract_deadline_items(final_data)
+        enriched_deadlines = [self._enrich_deadline_item(item, session) for item in deadline_items]
         enriched_deadlines.sort(key=lambda item: (item["due_date"], item["deadline_id"]))
         if not enriched_deadlines:
             return self.generate_guidance("没有找到该客户的截止日期。", ["查看今天的待处理事项"])
 
         client_map = self._client_map(session["tenant_id"])
-        client = client_map.get(enriched_deadlines[0]["client_id"])
+        bundled_client = self._extract_bundled_client(final_data)
+        client = client_map.get(enriched_deadlines[0]["client_id"]) or bundled_client
         client_name = client["name"] if client else enriched_deadlines[0]["client_id"]
         selectable_items = [self._to_selectable(index, item, client_name=client_name) for index, item in enumerate(enriched_deadlines, start=1)]
         return {
@@ -192,12 +346,33 @@ class ResponseGenerator:
             client = client_map.get(item["client_id"])
             item["client_name"] = client["name"] if client else item["client_id"]
         selectable_items = [self._to_selectable(index, item) for index, item in enumerate(visible, start=1)]
-        title = "未来待处理截止事项" if intent_label == "upcoming_deadlines" else "已完成截止事项"
+        is_upcoming = intent_label == "upcoming_deadlines"
+        title = "所有未来待处理截止事项" if is_upcoming else "已完成截止事项"
+        headline = "这里是还没有完成的全部未来 DDL" if is_upcoming else "这里是已经处理完的事项"
+        description = (
+            "我先按截止日期排序。你可以继续追问：按客户分组、只看某个客户、只看本周、或解释某一条为什么在这里。"
+            if is_upcoming
+            else "这些事项已经完成，只用于核对和追溯，不提供写操作。"
+        )
+        suggested_prompts = (
+            ["按客户分组", "只看本周", "解释第一条为什么在这里"]
+            if is_upcoming
+            else ["查看今天待处理事项", "查看所有未来截止日"]
+        )
         return {
             "message": self._truncate(f"{title}：{len(items)} 条。"),
             "view": {
                 "type": "ListCard",
-                "data": {"items": visible, "total": len(items), "has_more": len(items) > 10},
+                "data": {
+                    "title": title,
+                    "headline": headline,
+                    "description": description,
+                    "items": visible,
+                    "total": len(items),
+                    "has_more": len(items) > 10,
+                    "status_label": "待处理" if is_upcoming else "已完成",
+                    "suggested_prompts": suggested_prompts,
+                },
                 "selectable_items": selectable_items,
             },
             "actions": [],
@@ -270,19 +445,16 @@ class ResponseGenerator:
         }
 
     def _build_generic_list_response(self, final_data: Any, session: dict[str, Any], intent_label: str) -> dict[str, Any]:
-        items = final_data if isinstance(final_data, list) else [final_data]
-        message = f"{intent_label} 返回 {len(items)} 条结果。"
-        selectable_items = session.get("selectable_items", [])
-        return {
-            "message": self._truncate(message),
-            "view": {
-                "type": "GuidanceCard",
-                "data": {"message": message, "options": [], "context_options": selectable_items},
-                "selectable_items": selectable_items,
-            },
-            "actions": [],
-            "state_summary": None,
-        }
+        latest_user_input = ""
+        for item in reversed(session.get("history_window", [])):
+            if item.get("actor") == "user":
+                latest_user_input = item.get("text", "")
+                break
+        return self.generate_render_spec_surface(
+            latest_user_input or intent_label,
+            session,
+            f"{intent_label} 没有命中专用工作面，已生成受约束 render spec。",
+        )
 
     def _build_actions(self, tenant_id: str, deadline_id: str, intent_label: str) -> list[dict[str, Any]]:
         available = self.engine.available_deadline_actions(tenant_id, deadline_id)
@@ -317,16 +489,57 @@ class ResponseGenerator:
         return actions
 
     def _enrich_today_item(self, item: dict[str, Any], session: dict[str, Any]) -> dict[str, Any]:
-        payload = dict(item)
+        payload = self._serialize_deadline(item)
+        payload = self._attach_client_name(payload, session)
         if "days_remaining" not in payload:
             payload["days_remaining"] = self._days_remaining(payload["due_date"], session["today"])
         return payload
 
     def _enrich_deadline_item(self, item: dict[str, Any], session: dict[str, Any]) -> dict[str, Any]:
         payload = self._serialize_deadline(item)
+        if not payload.get("deadline_id") or not payload.get("client_id") or not payload.get("due_date"):
+            raise ValueError(f"deadline item missing required fields: {payload}")
+        payload = self._attach_client_name(payload, session)
         payload["days_remaining"] = self._days_remaining(payload["due_date"], session["today"])
         payload["available_actions"] = self.engine.available_deadline_actions(session["tenant_id"], payload["deadline_id"])["available_actions"]
         return payload
+
+    def _attach_client_name(self, item: dict[str, Any], session: dict[str, Any]) -> dict[str, Any]:
+        payload = dict(item)
+        if payload.get("client_name"):
+            return payload
+        client = self._client_map(session["tenant_id"]).get(payload.get("client_id"))
+        if client:
+            payload["client_name"] = client["name"]
+        return payload
+
+    def _extract_deadline_items(self, final_data: Any) -> list[Any]:
+        if isinstance(final_data, dict):
+            for key in ("deadlines", "items", "results"):
+                value = final_data.get(key)
+                if isinstance(value, list):
+                    return [item for item in value if self._looks_like_deadline(item)]
+            if self._looks_like_deadline(final_data):
+                return [final_data]
+            return []
+        if isinstance(final_data, list):
+            return [item for item in final_data if self._looks_like_deadline(item)]
+        if self._looks_like_deadline(final_data):
+            return [final_data]
+        return []
+
+    def _extract_bundled_client(self, final_data: Any) -> dict[str, Any] | None:
+        if not isinstance(final_data, dict):
+            return None
+        client = final_data.get("client")
+        if client is None:
+            return None
+        return self._serialize_client(client)
+
+    def _looks_like_deadline(self, item: Any) -> bool:
+        if isinstance(item, dict):
+            return bool(item.get("deadline_id") and item.get("client_id"))
+        return hasattr(item, "deadline_id") and hasattr(item, "client_id")
 
     def _client_map(self, tenant_id: str) -> dict[str, dict[str, Any]]:
         return {

@@ -66,7 +66,7 @@ def test_full_flywheel_loop_learns_renders_corrects_and_executes(app):
     assert today_template.intent_label == "today"
     assert app.intent_planner.snapshot()["planner_calls"] == 1
 
-    second = app.interaction_backend.process_message("今天最紧急的是什么", session)
+    second = app.interaction_backend.process_message("今天先做什么", session)
 
     assert second["view"]["type"] == "ListCard"
     assert session["last_turn"]["plan_source"] == "cache"
@@ -83,7 +83,7 @@ def test_full_flywheel_loop_learns_renders_corrects_and_executes(app):
     assert today_template.success_rate == pytest.approx(0.95)
     assert all("不对" not in example for example in today_template.example_inputs)
 
-    app.interaction_backend.process_message("今天最紧急的是什么", session)
+    app.interaction_backend.process_message("今天先做什么", session)
     history = app.interaction_backend.process_message("这个来源是什么", session)
 
     assert history["view"]["type"] == "HistoryCard"
