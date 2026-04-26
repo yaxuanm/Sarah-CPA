@@ -1,7 +1,7 @@
 import { FormEvent, ReactNode, useEffect, useRef, useState } from "react";
-import { bootstrapToday, streamChat } from "./apiClient";
+import { bootstrapToday, executeAction, streamChat } from "./apiClient";
 import { validateRenderSpec } from "./renderSpec";
-import type { ActionPlan, ChatMessage, RenderBlock, RenderSpec, TaskItem, ViewEnvelope, VisualContext } from "./types";
+import type { ActionPlan, ChatMessage, DirectAction, RenderBlock, RenderSpec, TaskItem, ViewEnvelope, VisualContext } from "./types";
 
 const tenantId = import.meta.env.VITE_DUEDATEHQ_TENANT_ID || "2403c5e1-85ac-4593-86cc-02f8d97a8d92";
 const apiBase = import.meta.env.VITE_DUEDATEHQ_API_BASE || "http://127.0.0.1:8000";
@@ -125,6 +125,56 @@ export function App() {
     }
   }
 
+  async function runDirectAction(action: DirectAction) {
+    if (busy) return;
+    if (action.type === "agent_input" && action.text) {
+      await submit(action.text);
+      return;
+    }
+    if (action.type !== "direct_execute") return;
+
+    if (action.view_data && action.expected_view) {
+      const nextView = {
+        type: action.expected_view,
+        data: action.view_data,
+        selectable_items: action.selectable_items || []
+      };
+      setView(nextView);
+      setActions([]);
+      setSession((current) => ({
+        ...current,
+        current_view: nextView,
+        selectable_items: nextView.selectable_items,
+        current_actions: []
+      }));
+      append("status", "已打开。");
+      return;
+    }
+
+    setBusy(true);
+    try {
+      const result = await executeAction({
+        apiBase,
+        tenantId,
+        session: {
+          ...session,
+          current_view: view,
+          visual_context: summarizeView(view, actions),
+          seen_visual_contexts: seenVisualContexts.slice(0, 6)
+        },
+        action
+      });
+      if (result.response.view) setView(result.response.view);
+      setActions(result.response.actions || []);
+      setSession(result.session);
+      if (result.response.message) append("system", result.response.message);
+    } catch (error) {
+      append("system", `这个按钮暂时执行失败，我没有改动任何数据。${String(error)}`);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function loadBackendOverview() {
     setBusy(true);
     try {
@@ -178,7 +228,11 @@ export function App() {
           </div>
           <div className="quick-actions">
             {quickActions.map((action) => (
-              <button key={action.label} className="quick-btn" onClick={() => void submit(action.prompt)}>
+              <button
+                key={action.label}
+                className="quick-btn"
+                onClick={() => action.action ? void runDirectAction(action.action) : void submit(action.prompt || action.label)}
+              >
                 {action.label}
               </button>
             ))}
@@ -204,7 +258,7 @@ export function App() {
               <span className="pill blue">{view.type}</span>
             </div>
           </div>
-          <ViewRenderer view={view} onPrompt={(prompt) => void submit(prompt)} />
+          <ViewRenderer view={view} onPrompt={(prompt) => void submit(prompt)} onAction={(action) => void runDirectAction(action)} />
         </section>
       </main>
     </div>
@@ -289,8 +343,8 @@ function renderInlineMarkdown(text: string) {
   });
 }
 
-function ViewRenderer({ view, onPrompt }: { view: ViewEnvelope; onPrompt: (prompt: string) => void }) {
-  if (view.type === "ListCard") return <ListCard view={view} onPrompt={onPrompt} />;
+function ViewRenderer({ view, onPrompt, onAction }: { view: ViewEnvelope; onPrompt: (prompt: string) => void; onAction: (action: DirectAction) => void }) {
+  if (view.type === "ListCard") return <ListCard view={view} onPrompt={onPrompt} onAction={onAction} />;
   if (view.type === "ClientCard") return <ClientCard view={view} onPrompt={onPrompt} />;
   if (view.type === "ConfirmCard") return <ConfirmCard view={view} onPrompt={onPrompt} />;
   if (view.type === "HistoryCard") return <HistoryCard view={view} />;
@@ -302,7 +356,7 @@ function ViewRenderer({ view, onPrompt }: { view: ViewEnvelope; onPrompt: (promp
   return <UnknownView view={view} />;
 }
 
-function ListCard({ view, onPrompt }: { view: ViewEnvelope; onPrompt: (prompt: string) => void }) {
+function ListCard({ view, onPrompt, onAction }: { view: ViewEnvelope; onPrompt: (prompt: string) => void; onAction: (action: DirectAction) => void }) {
   const data = view.data as {
     title?: string;
     headline?: string;
@@ -330,7 +384,14 @@ function ListCard({ view, onPrompt }: { view: ViewEnvelope; onPrompt: (prompt: s
           <button
             className="task-row"
             key={item.deadline_id || `${clientName}-${index}`}
-            onClick={() => onPrompt(`打开第 ${index + 1} 条`)}
+            onClick={() => {
+              const action = view.selectable_items?.[index]?.action;
+              if (action) {
+                onAction(action);
+                return;
+              }
+              onPrompt(`打开第 ${index + 1} 条`);
+            }}
             aria-label={`Open ${clientName}`}
             title={`Open ${clientName}`}
           >
@@ -676,8 +737,14 @@ function Fact({ label, value, tone }: { label: string; value: string; tone?: str
   );
 }
 
-function buildQuickActions(view: ViewEnvelope, actions: ActionPlan[]) {
-  const fromBackend = actions.slice(0, 3).map((action) => ({ label: action.label, prompt: action.label }));
+type QuickAction = { label: string; prompt?: string; action?: DirectAction };
+
+function buildQuickActions(view: ViewEnvelope, actions: ActionPlan[]): QuickAction[] {
+  const fromBackend = actions.slice(0, 3).map((action) => ({
+    label: action.label,
+    prompt: action.label,
+    action: action.action || (action.plan ? { type: "direct_execute" as const, plan: action.plan } : undefined)
+  }));
   if (fromBackend.length) return fromBackend;
   if (view.type === "GuidanceCard") {
     const data = view.data as { options?: string[] };

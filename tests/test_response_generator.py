@@ -58,6 +58,8 @@ def test_response_generator_builds_today_list_card(app):
     assert response["view"]["type"] == "ListCard"
     assert response["view"]["data"]["items"]
     assert response["view"]["selectable_items"][0]["ref"] == "item_1"
+    assert response["view"]["selectable_items"][0]["action"]["type"] == "direct_execute"
+    assert response["view"]["selectable_items"][0]["action"]["expected_view"] == "ClientCard"
     assert response["actions"]
 
 

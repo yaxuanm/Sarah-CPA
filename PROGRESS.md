@@ -31,6 +31,10 @@ left conversation input
   clicks and relative references such as `打开第 1 条` now hit the existing
   `ClientCard` contract before Agent reasoning, so stock surfaces stay stable
   and only true long-tail needs use ad-hoc render specs.
+- Added the first real dual-path interaction contract. Known buttons and list
+  rows can carry a `direct_execute` action with a complete plan and expected
+  view; the frontend sends those to `/action` instead of converting the click
+  into a natural-language prompt.
 - `ClaudeAgentKernel` now uses Anthropic's native SDK Tool Use flow plus a
   small ReAct loop. The model can call controlled read tools such as
   `get_current_view`, `list_all_clients`, `list_all_deadlines`,
@@ -87,6 +91,9 @@ left conversation input
 - `/bootstrap/today` is the fast default entry. It bypasses Agent/NLU and
   directly renders the today `ListCard`, because opening the daily queue is the
   product's default starting state rather than an ambiguous user intent.
+- `/action` is now the deterministic button path. Read actions execute their
+  plan and render the expected stock surface without Agent/NLU. Write actions
+  still stop at `ConfirmCard`; direct actions do not bypass confirmation.
 
 ### Frontend Validation Shell
 
@@ -112,6 +119,9 @@ left conversation input
 - Backend list responses now backfill customer names for plain deadline rows,
   and frontend list rows open the visible item by relative reference, e.g.
   `打开第 2 条`, instead of guessing from a possibly duplicated customer name.
+- List rows now prefer backend-provided direct actions over text prompts. A row
+  click executes the embedded plan through `/action`, which keeps stable
+  `ClientCard` navigation out of the Agent path.
 - Current-page questions such as “这几件事分别是什么” are handled as normal
   assistant answers while keeping the right-side page unchanged.
 - Assistant answers now stream into the left conversation via `message_delta`

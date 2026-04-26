@@ -1,8 +1,32 @@
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
+
 import pytest
 
 from duedatehq.http_api import _instant_response_prefix, _latest_new_feedback_event, _message_chunks, _sse, create_fastapi_app
+
+
+def _seed_api_deadline(api):
+    today = datetime.now(timezone.utc).date()
+    tenant = api.state.app_state.engine.create_tenant("Tenant A")
+    api.state.app_state.engine.create_rule(
+        tax_type="franchise_tax",
+        jurisdiction="CA",
+        entity_types=["s-corp"],
+        deadline_date=(today + timedelta(days=2)).isoformat(),
+        effective_from=today.isoformat(),
+        source_url="https://ftb.ca.gov/r1",
+        confidence_score=0.99,
+    )
+    api.state.app_state.engine.register_client(
+        tenant_id=tenant.tenant_id,
+        name="Acme LLC",
+        entity_type="s-corp",
+        registered_states=["CA"],
+        tax_year=today.year,
+    )
+    return tenant
 
 
 def test_sse_helper_formats_event_payload():
@@ -89,6 +113,57 @@ def test_bootstrap_today_uses_fast_default_entry(tmp_path):
     assert payload["response"]["view"]["type"] == "ListCard"
     assert payload["session"]["last_turn"]["plan_source"] == "bootstrap"
     assert payload["session"]["current_view"]["type"] == "ListCard"
+
+
+def test_action_endpoint_executes_direct_read_without_agent(tmp_path):
+    pytest.importorskip("fastapi")
+    pytest.importorskip("httpx")
+    from fastapi.testclient import TestClient
+
+    api = create_fastapi_app(str(tmp_path / "http-action.sqlite3"))
+    tenant = _seed_api_deadline(api)
+    client = TestClient(api)
+    bootstrap = client.post(
+        "/bootstrap/today",
+        json={"tenant_id": tenant.tenant_id, "session": {"session_id": "direct-action-session"}},
+    ).json()
+    action = bootstrap["response"]["view"]["selectable_items"][0]["action"]
+
+    response = client.post(
+        "/action",
+        json={"tenant_id": tenant.tenant_id, "session": bootstrap["session"], "action": action},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["response"]["view"]["type"] == "ClientCard"
+    assert payload["session"]["last_turn"]["plan_source"] == "direct_action"
+
+
+def test_action_endpoint_keeps_write_actions_behind_confirm_card(tmp_path):
+    pytest.importorskip("fastapi")
+    pytest.importorskip("httpx")
+    from fastapi.testclient import TestClient
+
+    api = create_fastapi_app(str(tmp_path / "http-action-write.sqlite3"))
+    tenant = _seed_api_deadline(api)
+    client = TestClient(api)
+    bootstrap = client.post(
+        "/bootstrap/today",
+        json={"tenant_id": tenant.tenant_id, "session": {"session_id": "direct-write-session"}},
+    ).json()
+    write_plan = bootstrap["response"]["actions"][0]["plan"]
+
+    response = client.post(
+        "/action",
+        json={"tenant_id": tenant.tenant_id, "session": bootstrap["session"], "plan": write_plan},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["response"]["view"]["type"] == "ConfirmCard"
+    assert payload["session"]["pending_action_plan"]["op_class"] == "write"
+    assert payload["session"]["last_turn"]["plan_source"] == "direct_action"
 
 
 def test_latest_new_feedback_event_ignores_stale_events():

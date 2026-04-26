@@ -9,7 +9,7 @@ export type ChatMessage = {
 export type ViewEnvelope = {
   type: string;
   data: Record<string, unknown>;
-  selectable_items?: Array<Record<string, unknown>>;
+  selectable_items?: SelectableItem[];
 };
 
 export type VisualContext = {
@@ -25,6 +25,24 @@ export type VisualContext = {
 export type ActionPlan = {
   label: string;
   plan?: Record<string, unknown> | null;
+  action?: DirectAction;
+};
+
+export type DirectAction = {
+  type: "direct_execute" | "agent_input";
+  plan?: Record<string, unknown>;
+  expected_view?: string;
+  view_data?: Record<string, unknown>;
+  selectable_items?: SelectableItem[];
+  text?: string;
+};
+
+export type SelectableItem = Record<string, unknown> & {
+  ref?: string;
+  client_id?: string;
+  client_name?: string;
+  deadline_id?: string;
+  action?: DirectAction;
 };
 
 export type TaskItem = {

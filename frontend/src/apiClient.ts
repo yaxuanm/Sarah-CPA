@@ -1,4 +1,4 @@
-import type { ActionPlan, ViewEnvelope } from "./types";
+import type { ActionPlan, DirectAction, ViewEnvelope } from "./types";
 
 export type StreamUpdate =
   | { event: "thinking"; message: string }
@@ -72,6 +72,32 @@ export async function bootstrapToday(params: {
 
   if (!response.ok) {
     throw new Error(`Bootstrap failed: ${response.status}`);
+  }
+
+  return response.json();
+}
+
+export async function executeAction(params: {
+  apiBase: string;
+  tenantId: string;
+  session: Record<string, unknown>;
+  action: DirectAction;
+}): Promise<{
+  response: { message?: string; view?: ViewEnvelope; actions?: ActionPlan[] };
+  session: Record<string, unknown>;
+}> {
+  const response = await fetch(`${params.apiBase.replace(/\/$/, "")}/action`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      tenant_id: params.tenantId,
+      session: params.session,
+      action: params.action
+    })
+  });
+
+  if (!response.ok) {
+    throw new Error(`Action failed: ${response.status}`);
   }
 
   return response.json();

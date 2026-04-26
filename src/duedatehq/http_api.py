@@ -26,6 +26,7 @@ def create_fastapi_app(db_path: str | None = None):
 
     app_state = create_app(db_path)
     api = FastAPI(title="DueDateHQ API")
+    api.state.app_state = app_state
     api.add_middleware(
         CORSMiddleware,
         allow_origins=[
@@ -51,9 +52,22 @@ def create_fastapi_app(db_path: str | None = None):
         return {"response": {"status": "ok", **response, "session_id": session.get("session_id")}, "session": session}
 
     @api.post("/action")
-    def action(plan: dict[str, Any], tenant_id: str, session_id: str | None = None):
-        session = {"tenant_id": tenant_id, "session_id": session_id or "http-action"}
-        response = app_state.interaction_backend.process_action(plan, session)
+    def action(body: dict[str, Any] = Body(...)):
+        session = _prepare_session(body)
+        action_payload = body.get("action") if isinstance(body.get("action"), dict) else {}
+        plan = body.get("plan") or action_payload.get("plan")
+        if not isinstance(plan, dict):
+            return {
+                "response": {
+                    "status": "error",
+                    "message": "这个按钮缺少可执行计划，我没有改动任何数据。",
+                    "view": session.get("current_view"),
+                    "actions": session.get("current_actions", []),
+                    "session_id": session.get("session_id"),
+                },
+                "session": session,
+            }
+        response = app_state.interaction_backend.process_direct_action(plan, session)
         return {"response": response, "session": session}
 
     @api.post("/session/{tenant_id}")

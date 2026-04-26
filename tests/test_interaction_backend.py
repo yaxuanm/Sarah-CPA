@@ -410,7 +410,8 @@ def test_interaction_backend_resolves_cross_turn_reference_from_today_to_current
     assert today["view"]["type"] == "ListCard"
     assert focused["view"]["type"] == "ClientCard"
     assert history["view"]["type"] == "HistoryCard"
-    assert session["selectable_items"] == selectable_after_focus
+    assert session["selectable_items"][0]["deadline_id"] == selectable_after_focus[0]["deadline_id"]
+    assert session["selectable_items"][0]["client_id"] == selectable_after_focus[0]["client_id"]
     assert confirm["view"]["type"] == "ConfirmCard"
     assert session["pending_action_plan"]["op_class"] == "write"
 

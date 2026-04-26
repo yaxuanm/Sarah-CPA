@@ -244,7 +244,7 @@ class ResponseGenerator:
         items = [self._enrich_today_item(item, session) for item in final_data]
         items.sort(key=lambda item: (item["days_remaining"], item["due_date"]))
         visible = items[:5]
-        selectable_items = [self._to_selectable(index, item) for index, item in enumerate(visible, start=1)]
+        selectable_items = [self._to_selectable(index, item, tenant_id=session["tenant_id"]) for index, item in enumerate(visible, start=1)]
         message = "今天没有待处理事项。" if not items else f"当前有 {len(items)} 件待处理，最早 {items[0]['due_date']} 到期。"
         return {
             "message": self._truncate(message),
@@ -277,7 +277,10 @@ class ResponseGenerator:
         bundled_client = self._extract_bundled_client(final_data)
         client = client_map.get(enriched_deadlines[0]["client_id"]) or bundled_client
         client_name = client["name"] if client else enriched_deadlines[0]["client_id"]
-        selectable_items = [self._to_selectable(index, item, client_name=client_name) for index, item in enumerate(enriched_deadlines, start=1)]
+        selectable_items = [
+            self._to_selectable(index, item, client_name=client_name, tenant_id=session["tenant_id"])
+            for index, item in enumerate(enriched_deadlines, start=1)
+        ]
         return {
             "message": self._truncate(f"{client_name} 有 {len(enriched_deadlines)} 个截止日期，最近 {enriched_deadlines[0]['due_date']}。"),
             "view": {
@@ -344,7 +347,7 @@ class ResponseGenerator:
         for item in visible:
             client = client_map.get(item["client_id"])
             item["client_name"] = client["name"] if client else item["client_id"]
-        selectable_items = [self._to_selectable(index, item) for index, item in enumerate(visible, start=1)]
+        selectable_items = [self._to_selectable(index, item, tenant_id=session["tenant_id"]) for index, item in enumerate(visible, start=1)]
         is_upcoming = intent_label == "upcoming_deadlines"
         title = "所有未来待处理截止事项" if is_upcoming else "已完成截止事项"
         headline = "这里是还没有完成的全部未来 DDL" if is_upcoming else "这里是已经处理完的事项"
@@ -630,12 +633,36 @@ class ResponseGenerator:
                 payload[key] = payload[key].isoformat()
         return payload
 
-    def _to_selectable(self, index: int, item: dict[str, Any], client_name: str | None = None) -> dict[str, Any]:
+    def _to_selectable(
+        self,
+        index: int,
+        item: dict[str, Any],
+        client_name: str | None = None,
+        tenant_id: str | None = None,
+    ) -> dict[str, Any]:
+        resolved_tenant_id = tenant_id or item.get("tenant_id")
         return {
             "ref": f"item_{index}",
             "deadline_id": item["deadline_id"],
             "client_id": item["client_id"],
             "client_name": client_name or item.get("client_name"),
+            "action": {
+                "type": "direct_execute",
+                "expected_view": "ClientCard",
+                "plan": {
+                    "plan": [
+                        {
+                            "step_id": "s1",
+                            "type": "cli_call",
+                            "cli_group": "deadline",
+                            "cli_command": "list",
+                            "args": {"tenant_id": resolved_tenant_id, "client_id": item["client_id"]},
+                        }
+                    ],
+                    "intent_label": "client_deadline_list",
+                    "op_class": "read",
+                },
+            },
         }
 
     def _days_remaining(self, due_date: str, today_value: str) -> int:

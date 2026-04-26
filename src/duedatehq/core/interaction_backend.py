@@ -176,6 +176,9 @@ class InteractionBackend:
 
         return self.response_generator.generate(executor_result, session)
 
+    def process_direct_action(self, plan: dict[str, Any], session: dict[str, Any]) -> dict[str, Any]:
+        return self._process_plan_turn("__direct_action__", plan, session, plan_source="direct_action")
+
     def process_action(self, plan: dict[str, Any], session: dict[str, Any]) -> dict[str, Any]:
         try:
             self.executor.execute(plan)
