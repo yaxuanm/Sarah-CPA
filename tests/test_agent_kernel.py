@@ -163,6 +163,27 @@ class FakeClient:
         self.messages = FakeMessages()
 
 
+class ExplodingMessages:
+    def create(self, **kwargs):
+        raise AssertionError("Claude should not be called for planner-owned workflow routes")
+
+
+class ExplodingClient:
+    def __init__(self):
+        self.messages = ExplodingMessages()
+
+
+def test_claude_agent_kernel_does_not_call_model_for_planner_owned_routes():
+    kernel = ClaudeAgentKernel(api_key="test-key")
+    kernel.client = ExplodingClient()
+
+    decision = kernel.decide("打开第 1 条", {"current_view": {"type": "ListCard", "data": {"items": []}}})
+
+    assert decision is not None
+    assert decision.route == "pass_to_planner"
+    assert decision.need_type == "workflow_or_navigation"
+
+
 def test_claude_agent_kernel_uses_native_tool_loop_before_final_decision():
     kernel = ClaudeAgentKernel(api_key="test-key")
     fake_client = FakeClient()

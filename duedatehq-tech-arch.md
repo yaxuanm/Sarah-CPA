@@ -16,6 +16,7 @@
 | App 装配 | `create_app()` 已装配 engine、executor、planner、intent library、response generator、interaction backend、内存 session | `src/duedatehq/app.py` |
 | 自然语言入口 | `process_message()` 已能处理用户输入、确认、取消、pending action | `src/duedatehq/core/interaction_backend.py` |
 | Agent Kernel | 已作为主链路第一跳：默认确定性 kernel，`DUEDATEHQ_USE_AGENT_KERNEL=1` 或兼容 `DUEDATEHQ_USE_AGENT_POLICY=1` 后可用 Claude Sonnet 4.6 通过 Anthropic 原生 Tool Use + ReAct 循环自主查工具、观察结果、选择回答/渲染/追问/交给 planner/flywheel | `src/duedatehq/core/agent_kernel.py` |
+| 已知路由快路径 | 已新增 pre-agent known route gate：列表行点击、`打开第 N 条` 等存量 UI 动作先命中确定性 `ClientCard`/planner 路径，不交给 Agent 生成临时工作面 | `src/duedatehq/core/interaction_backend.py` |
 | 默认 NLU | 默认仍用 `RuleBasedIntentPlanner` 保持本地 MVP 稳定，输出 Plan JSON | `src/duedatehq/core/intent_planner.py` |
 | Claude NLU | 已新增 `ClaudeNLUService`，设置 `DUEDATEHQ_USE_CLAUDE_NLU=1` 可切到 Claude；当前默认模型为 `claude-sonnet-4-6`，`CLAUDE_NLU_MODEL` 仍可显式切回 Haiku 等模型 | `src/duedatehq/core/nlu_service.py` |
 | Plan Validator | 已新增确定性 `PlanValidator`，限制 LLM 只能使用 executor 支持的命令和参数，写操作必须声明 `op_class=write` | `src/duedatehq/core/plan_validator.py` |
@@ -53,6 +54,8 @@
 ```text
 用户输入
     ↓
+Known Route Gate 命中存量 UI 动作 → 直接执行现有 view contract
+    ↓ miss
 Intent Cache 命中高频简单意图 → 直接执行
     ↓ miss
 Agent Kernel
@@ -79,6 +82,8 @@ InteractionBackend
 ```
 
 这个设计刻意不引入 LangGraph/LangChain。ReAct loop 只是标准 Python while loop；工具调用使用 Anthropic 官方 SDK 原生 `tool_use` / `tool_result`。这样保留 Agent 的语义能力，同时让 DueDateHQ 控制工具、数据、写操作确认和最终视图契约。
+
+一个关键边界是：Agent Kernel 不是所有输入的第一执行者。已知 UI 动作和存量工作流先走确定性路由，例如“打开第 1 条”“完成当前这个”“回到今天”。这些动作已经有稳定的 `view.type` 契约和测试，不应该被 Claude 重新解释成 `RenderSpecSurface`。Agent Kernel 只负责 known route / cache / planner 覆盖不了的语义判断、复合查询、策略视图和长尾按需渲染。
 
 当前验证结果：
 
@@ -123,6 +128,7 @@ HTTP/SSE 骨架验证：
 
 Agent Kernel 验证：
 - “今天先做什么”仍走 planner / flywheel，不被 kernel 截断
+- “打开第 1 条”这类列表行动作先走 known route，直接打开现有 `ClientCard`，即使 Claude Agent 可用也不会生成临时工作面
 - “这几件事分别是什么”会识别为 `explain_current_view`，保留当前 `ListCard`，左侧逐条解释
 - “急着处理么 / 哪个最优先”会识别为 `answer_advice`，保留当前页面并回答判断依据
 - “我所有的客户的情况如何 / 哪个客户最不紧急”这类开放问题不再由关键词策略硬编码；Claude Agent Kernel 自主调用允许工具、观察结果，再输出 `need_type`、`view_goal`、`suggested_actions`

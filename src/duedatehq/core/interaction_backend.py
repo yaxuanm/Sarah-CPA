@@ -72,6 +72,10 @@ class InteractionBackend:
 
         self._record_followup_feedback(text, session)
 
+        known_plan = self._known_route_plan(text, session)
+        if known_plan:
+            return self._process_plan_turn(text, known_plan, session, plan_source="known_route")
+
         kernel_decision = self.agent_kernel.decide(text, session) if self.agent_kernel else None
         kernel_response = self._answer_from_agent_decision(kernel_decision, text, session) if kernel_decision else None
         if kernel_response:
@@ -112,7 +116,17 @@ class InteractionBackend:
             self._append_history(session, "system", advice_response.get("message", ""))
             return {"status": "ok", **advice_response, "session_id": session.get("session_id")}
 
-        plan = self._relative_visible_item_plan(text, session) or self.intent_planner.plan(text, session)
+        plan = self.intent_planner.plan(text, session)
+        return self._process_plan_turn(text, plan, session)
+
+    def _process_plan_turn(
+        self,
+        text: str,
+        plan: dict[str, Any],
+        session: dict[str, Any],
+        *,
+        plan_source: str | None = None,
+    ) -> dict[str, Any]:
         response = self.process_plan(plan, session)
         if response.get("view", {}).get("type") == "ConfirmCard":
             options = response["view"]["data"].get("options", [])
@@ -121,7 +135,7 @@ class InteractionBackend:
                 session["pending_action_plan"] = primary["plan"]
 
         self._remember_response(session, response)
-        self._remember_last_turn(session, text, plan, response)
+        self._remember_last_turn(session, text, plan, response, plan_source=plan_source)
         self._append_history(session, "system", response.get("message", ""))
         return {"status": "ok", **response, "session_id": session.get("session_id")}
 
@@ -195,6 +209,16 @@ class InteractionBackend:
             **response,
             "session_id": session.get("session_id"),
         }
+
+    def _known_route_plan(self, user_input: str, session: dict[str, Any]) -> dict[str, Any] | None:
+        """Resolve deterministic UI routes before the open-ended Agent Kernel.
+
+        Existing work-surface actions such as "打开第 1 条" are not semantic
+        long-tail requests. They should hit the known view contract first so a
+        row click opens the cached ClientCard path instead of asking Claude to
+        synthesize a temporary surface.
+        """
+        return self._relative_visible_item_plan(user_input, session)
 
     def _relative_visible_item_plan(self, user_input: str, session: dict[str, Any]) -> dict[str, Any] | None:
         lowered = user_input.casefold()

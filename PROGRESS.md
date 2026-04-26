@@ -27,6 +27,10 @@ left conversation input
   surface, call tools for more data, render a new work surface, ask for one
   missing bit of context, prepare a confirmable action, or pass through to the
   flywheel/planner fast path.
+- Added a pre-agent known-route gate for existing UI/workflow actions. Row
+  clicks and relative references such as `打开第 1 条` now hit the existing
+  `ClientCard` contract before Agent reasoning, so stock surfaces stay stable
+  and only true long-tail needs use ad-hoc render specs.
 - `ClaudeAgentKernel` now uses Anthropic's native SDK Tool Use flow plus a
   small ReAct loop. The model can call controlled read tools such as
   `get_current_view`, `list_all_clients`, `list_all_deadlines`,
@@ -35,6 +39,10 @@ left conversation input
 - Tool Use is still bounded by DueDateHQ's allowed action space. The LLM can
   decide what it needs to inspect, but writes remain behind `ConfirmCard`, and
   backend code still builds the final `view.type` payload.
+- Claude Agent Kernel now respects planner-owned routes before calling the
+  model. Obvious navigation/write commands are handed to the deterministic
+  planner path immediately, which reduces latency/cost and avoids replacing
+  existing cached surfaces with synthesized ones.
 - Removed the legacy `AgentPolicy` layer and the hard-coded portfolio/priority
   strategy branches. Semantic work surfaces now go through the Agent Kernel's
   `view_goal`, data requests, and optional `suggested_actions` instead of

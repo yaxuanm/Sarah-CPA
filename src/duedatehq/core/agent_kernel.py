@@ -240,6 +240,8 @@ class ClaudeAgentKernel:
 
     def decide(self, user_input: str, session: dict[str, Any]) -> AgentKernelDecision | None:
         deterministic = self.fallback.decide(user_input, session)
+        if deterministic and deterministic.route == "pass_to_planner":
+            return deterministic
         if not self.client:
             return deterministic
 

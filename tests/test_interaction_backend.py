@@ -324,6 +324,31 @@ class FakeAgentKernel:
         return self.decision
 
 
+def test_interaction_backend_known_visible_item_route_wins_before_agent(app):
+    _, _, _, session = _seed_interaction_data(app)
+    app.interaction_backend.process_message("今天先做什么", session)
+    expected_client_id = session["selectable_items"][0]["client_id"]
+    app.interaction_backend.agent_kernel = FakeAgentKernel(
+        AgentKernelDecision(
+            route="render_strategy_surface",
+            need_type="agent_generated_client_surface",
+            render_policy="render_new_view",
+            data_requests=["current_view", "client_deadlines"],
+            answer_mode="answer_and_render",
+            view_goal="agent should not handle row clicks",
+            confidence=0.95,
+        )
+    )
+
+    response = app.interaction_backend.process_message("打开第 1 条", session)
+
+    assert response["status"] == "ok"
+    assert response["view"]["type"] == "ClientCard"
+    assert response["view"]["data"]["client_id"] == expected_client_id
+    assert session["last_turn"]["intent_label"] == "client_deadline_list"
+    assert session["last_turn"]["plan_source"] == "known_route"
+
+
 def test_interaction_backend_renders_generic_agent_strategy_surface(app):
     _, _, _, session = _seed_interaction_data(app)
     app.interaction_backend.process_message("先看 Acme", session)
