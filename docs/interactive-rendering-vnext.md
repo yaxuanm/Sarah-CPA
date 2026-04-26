@@ -145,6 +145,27 @@ It should feel like:
 
 That is the most important shift vNext should make.
 
+There is also a concrete implementation problem underneath that product gap:
+
+- the current rendering path is still largely fixed-format
+- view selection is mostly mapped from intent labels to preselected card shapes
+- rendering logic is centered on formatting output, not on composing the right working surface
+
+That means the system can technically return different views, but it is not yet truly adaptive in the way the product promise requires.
+
+So the next iteration should not be framed as:
+
+- add more card types
+- add more hardcoded branches
+- let the model invent arbitrary UI
+
+It should be framed as:
+
+- understand the user's real decision task
+- select the best stage for that task
+- assemble that stage from trusted reusable patterns
+- layer extra context and actions onto those patterns in real time
+
 ## 7. The Hero Scenario
 
 The hero scenario should anchor the whole interaction model:
@@ -296,7 +317,107 @@ It should also be treated as:
 
 - choose the best stage for the user's current judgment task
 
-## 12. Near-Term Product Direction
+## 12. Requirements First, Not Rendering First
+
+The first priority should be deeper understanding of the customer requirement, not immediate expansion of rendering behavior.
+
+The rendering problem is downstream of a product-understanding problem.
+
+If we do not clearly understand:
+
+- what judgment Sarah is trying to make
+- what minimum context she needs for that judgment
+- what action she is likely to take next
+- what information increases confidence versus distracts
+
+then even a technically sophisticated rendering system will still produce weak decision surfaces.
+
+So the correct order of work is:
+
+1. identify the recurring decision jobs the customer actually performs
+2. define the minimum complete context for each job
+3. define which reusable view patterns best support that job
+4. build rendering logic that selects and composes those patterns dynamically
+
+The rendering engine should therefore be requirement-driven, not format-driven.
+
+## 13. Recommended Rendering Direction
+
+The right technical direction is not "freeform generated UI."
+
+It is a stronger real-time rendering system built on top of reusable interaction patterns.
+
+That means two things should happen together.
+
+### 13.1 Robust real-time stage selection
+
+The system should decide, per turn:
+
+- what the user is trying to resolve
+- what stage deserves the center
+- what supporting context must accompany it
+- what actions should be immediately available
+
+This is a real-time rendering problem, but the key output is not raw layout.
+
+The key output is:
+
+- the correct work surface for the current moment
+
+### 13.2 Pattern reuse with layered rendering logic
+
+The system should keep a constrained library of trusted presentation patterns such as:
+
+- weekly triage surface
+- client deadline detail surface
+- action confirmation surface
+- ambiguity resolution surface
+- change or exception surface
+
+These patterns should not be abandoned.
+
+They should be reused as stable primitives, with additional rendering logic layered on top to decide:
+
+- which pattern to use
+- how much context to inject
+- how to rank visible items
+- what recommendation signals to show
+- which actions are relevant right now
+
+This gives us adaptability without losing trust or predictability.
+
+## 14. Practical Architecture Shift
+
+In practical terms, the presentation layer should evolve from:
+
+- `intent_label -> fixed card template`
+
+toward:
+
+- `user job + current context + execution result -> selected stage + layered pattern payload`
+
+That implies a clearer separation inside presentation:
+
+- stage selection
+- context assembly
+- pattern rendering
+- action layering
+
+The model can help with understanding intent and possibly classifying the current job, but the final stage assembly should remain deterministic and inspectable.
+
+## 15. Near-Term Implementation Priorities
+
+The most useful near-term work is:
+
+- define the top decision jobs, starting with weekly triage
+- formalize a small pattern library instead of adding ad hoc cards
+- add a stage-selection layer ahead of the current response generator
+- enrich pattern payloads with urgency, rationale, and next-action signals
+- keep write execution and confirmation flows deterministic
+
+This path improves adaptability while preserving product trust.
+
+## 16. Near-Term Product Direction
 
 The most realistic near-term goals are:
 
@@ -309,7 +430,7 @@ The most realistic near-term goals are:
 
 This is enough to materially improve the product without changing its philosophical boundaries.
 
-## 13. Working Conclusion
+## 17. Working Conclusion
 
 vNext should not be driven by the question:
 
@@ -334,3 +455,4 @@ The product should move from:
 toward:
 
 - a sharply staged, judgment-support interaction layer centered on Sarah's real working rhythm
+- a requirement-driven real-time rendering system that composes trusted patterns instead of relying on fixed-format output mapping

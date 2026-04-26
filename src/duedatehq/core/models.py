@@ -52,6 +52,28 @@ class DeadlineAction(StrEnum):
     RESUME = "resume"
 
 
+class TaskStatus(StrEnum):
+    OPEN = "open"
+    IN_PROGRESS = "in_progress"
+    BLOCKED = "blocked"
+    DONE = "done"
+    DISMISSED = "dismissed"
+
+
+class BlockerStatus(StrEnum):
+    OPEN = "open"
+    RESOLVED = "resolved"
+    DISMISSED = "dismissed"
+
+
+class NoticeStatus(StrEnum):
+    QUEUED = "queued"
+    READ = "read"
+    DISMISSED = "dismissed"
+    ESCALATED = "escalated"
+    AUTO_UPDATED = "auto_updated"
+
+
 @dataclass(frozen=True, slots=True)
 class SourceDefinition:
     source_key: str
@@ -83,6 +105,118 @@ class Client:
     tax_year: int
     created_at: datetime
     updated_at: datetime
+    client_type: str = "business"
+    legal_name: str | None = None
+    home_jurisdiction: str | None = None
+    primary_contact_name: str | None = None
+    primary_contact_email: str | None = None
+    primary_contact_phone: str | None = None
+    preferred_communication_channel: str | None = None
+    responsible_cpa: str | None = None
+    is_active: bool = True
+
+
+@dataclass(slots=True)
+class ClientTaxProfile:
+    profile_id: str
+    tenant_id: str
+    client_id: str
+    tax_year: int
+    entity_election: str | None
+    first_year_filing: bool | None
+    final_year_filing: bool | None
+    extension_requested: bool | None
+    extension_filed: bool | None
+    estimated_tax_required: bool | None
+    payroll_present: bool | None
+    contractor_reporting_required: bool | None
+    notice_received: bool | None
+    intake_status: str
+    source: str
+    created_at: datetime
+    updated_at: datetime
+
+
+@dataclass(slots=True)
+class ClientJurisdiction:
+    client_jurisdiction_id: str
+    tenant_id: str
+    client_id: str
+    tax_year: int
+    jurisdiction: str
+    jurisdiction_type: str
+    active: bool
+    source: str
+    notes: str | None
+    created_at: datetime
+
+
+@dataclass(slots=True)
+class ClientContact:
+    contact_id: str
+    tenant_id: str
+    client_id: str
+    name: str
+    role: str | None
+    email: str | None
+    phone: str | None
+    preferred_channel: str | None
+    is_primary: bool
+    created_at: datetime
+    updated_at: datetime
+
+
+@dataclass(slots=True)
+class Task:
+    task_id: str
+    tenant_id: str
+    client_id: str
+    title: str
+    description: str | None
+    task_type: str
+    status: TaskStatus
+    priority: str
+    source_type: str
+    source_id: str | None
+    owner_user_id: str | None
+    due_at: datetime | None
+    created_at: datetime
+    updated_at: datetime
+    completed_at: datetime | None = None
+    dismissed_at: datetime | None = None
+
+
+@dataclass(slots=True)
+class Blocker:
+    blocker_id: str
+    tenant_id: str
+    client_id: str
+    title: str
+    description: str | None
+    blocker_type: str
+    status: BlockerStatus
+    source_type: str
+    source_id: str | None
+    owner_user_id: str | None
+    created_at: datetime
+    updated_at: datetime
+    resolved_at: datetime | None = None
+    dismissed_at: datetime | None = None
+
+
+@dataclass(slots=True)
+class NoticeRecord:
+    notice_id: str
+    tenant_id: str
+    title: str
+    source_url: str
+    source_label: str | None
+    summary: str | None
+    status: NoticeStatus
+    created_at: datetime
+    updated_at: datetime
+    read_at: datetime | None = None
+    dismissed_at: datetime | None = None
 
 
 @dataclass(slots=True)

@@ -51,7 +51,7 @@ Returns:
 ### client add
 
 ```bash
-duedatehq client add <tenant_id> <name> --entity <entity_type> --states <csv> --tax-year <year>
+duedatehq client add <tenant_id> <name> --entity <entity_type> --states <csv> --tax-year <year> [--client-type <individual|business>] [--legal-name <name>] [--home-jurisdiction <state>] [--contact-name <name>] [--contact-email <email>] [--contact-phone <phone>] [--preferred-channel <email|sms|slack>] [--responsible-cpa <name>] [--entity-election <value>] [--intake-status <draft|in_progress|ready|needs_followup>] [--profile-source <manual|import|inferred>] [--first-year-filing | --no-first-year-filing] [--final-year-filing | --no-final-year-filing] [--extension-requested | --no-extension-requested] [--extension-filed | --no-extension-filed] [--estimated-tax-required | --no-estimated-tax-required] [--payroll-present | --no-payroll-present] [--contractor-reporting-required | --no-contractor-reporting-required] [--notice-received | --no-notice-received]
 ```
 
 Arguments:
@@ -69,10 +69,48 @@ Arguments:
 - `--tax-year`
   - Required
   - Integer
+- `--client-type`
+  - Optional
+  - Defaults to `business`
+- `--legal-name`
+  - Optional
+- `--home-jurisdiction`
+  - Optional
+  - Resident or home jurisdiction for the client
+- `--contact-name`, `--contact-email`, `--contact-phone`
+  - Optional
+  - Seeds the primary client contact record
+- `--preferred-channel`
+  - Optional
+  - Preferred channel for the primary contact
+- `--responsible-cpa`
+  - Optional
+- `--entity-election`
+  - Optional
+- `--intake-status`
+  - Optional
+  - Defaults to `draft`
+- `--profile-source`
+  - Optional
+  - Defaults to `manual`
+- Annual filing flags
+  - Optional boolean flags stored on the annual tax profile:
+  - `--first-year-filing`
+  - `--final-year-filing`
+  - `--extension-requested`
+  - `--extension-filed`
+  - `--estimated-tax-required`
+  - `--payroll-present`
+  - `--contractor-reporting-required`
+  - `--notice-received`
 
 Behavior:
 
 - Creates a client.
+- Stores stable profile fields on `clients`.
+- Seeds an annual `client_tax_profiles` row for the provided tax year.
+- Seeds resident and operating jurisdictions in `client_jurisdictions`.
+- Creates a primary contact in `client_contacts` when contact details are provided.
 - Automatically generates deadlines from active rules.
 
 Returns:
@@ -102,6 +140,40 @@ Behavior:
 - Updates a client's registered states.
 - Recomputes matching deadlines.
 
+### client show
+
+```bash
+duedatehq client show <tenant_id> <client_id>
+```
+
+Returns:
+
+- One aggregate JSON payload containing:
+  - `client`
+  - `tax_profiles`
+  - `jurisdictions`
+  - `contacts`
+  - `tasks`
+  - `blockers`
+  - `deadlines`
+
+Behavior:
+
+- This is the main read command for the new intake-oriented schema.
+- It gives one client-centered payload instead of forcing callers to reconstruct the profile from multiple tables.
+
+### client update-profile
+
+```bash
+duedatehq client update-profile <tenant_id> <client_id> --tax-year <year> [--entity-election <value>] [--intake-status <draft|in_progress|ready|needs_followup>] [--profile-source <manual|import|inferred>] [--first-year-filing | --no-first-year-filing] [--final-year-filing | --no-final-year-filing] [--extension-requested | --no-extension-requested] [--extension-filed | --no-extension-filed] [--estimated-tax-required | --no-estimated-tax-required] [--payroll-present | --no-payroll-present] [--contractor-reporting-required | --no-contractor-reporting-required] [--notice-received | --no-notice-received]
+```
+
+Behavior:
+
+- Upserts the annual `client_tax_profiles` row for the requested tax year.
+- Intended for the annual filing-profile layer, not the stable client record.
+- Returns the updated `ClientTaxProfile` object.
+
 ### client list
 
 ```bash
@@ -111,6 +183,193 @@ duedatehq client list <tenant_id>
 Returns:
 
 - JSON array of clients for the tenant
+
+## task
+
+### task add
+
+```bash
+duedatehq task add <tenant_id> <client_id> --title <text> [--description <text>] [--task-type <review|follow_up|deadline_action|manual>] [--priority <critical|high|normal|low>] [--source-type <deadline|notice|blocker|watch_item|manual>] [--source-id <id>] [--owner-user-id <id>] [--due-at <iso_ts>] [--actor <id>]
+```
+
+Behavior:
+
+- Creates one active work item for the given client.
+- Intended for human work that sits above deadlines, notices, or blockers.
+- Returns the created `Task` object.
+
+### task list
+
+```bash
+duedatehq task list <tenant_id> [--client <client_id>] [--status <open|in_progress|blocked|done|dismissed>] [--source-type <type>] [--limit <n>]
+```
+
+Behavior:
+
+- Lists tasks for a tenant.
+- Can be filtered by client, status, or source type.
+
+### task update-status
+
+```bash
+duedatehq task update-status <tenant_id> <task_id> --status <open|in_progress|blocked|done|dismissed> [--actor <id>]
+```
+
+Behavior:
+
+- Updates a task lifecycle state.
+- `done` stamps `completed_at`.
+- `dismissed` stamps `dismissed_at`.
+- Returns the updated `Task` object.
+
+## import
+
+### import preview
+
+```bash
+duedatehq import preview --csv <file>
+```
+
+Behavior:
+
+- Reads a CSV export from an existing client spreadsheet.
+- Infers column mappings for the deadline-driving fields the product cares about first.
+- Returns:
+  - `source_name`
+  - `source_kind`
+  - `imported_rows`
+  - `summary`
+  - `mappings`
+  - `missing_fields`
+  - `extra_columns`
+  - `sample_rows`
+  - `ready_to_generate`
+  - `required_mappings`
+  - `resolved_required_mappings`
+
+Notes:
+
+- This is the first backend step for the Import workspace.
+- It does not write clients into the database yet.
+- It is meant to power spreadsheet review, follow-up prompts, and eventual dashboard generation.
+
+### import apply
+
+```bash
+duedatehq import apply <tenant_id> --csv <file> --tax-year <year> [--default-client-type <business|individual>] [--actor <id>]
+```
+
+Behavior:
+
+- Reads a CSV export from an existing client spreadsheet.
+- Applies the inferred mappings from the import analyzer.
+- Writes:
+  - `clients`
+  - annual `client_tax_profiles`
+  - `client_jurisdictions`
+  - primary `client_contacts` when contact columns are available
+- Generates initial work:
+  - blocker objects for missing deadline-driving fields such as home jurisdiction
+  - task objects for near-term deadlines generated from imported profiles
+- Returns:
+  - created clients
+  - created blockers
+  - created tasks
+  - skipped rows
+  - a dashboard-ready payload with `today`, `active_work`, and `waiting_on_info`
+
+## blocker
+
+### blocker add
+
+```bash
+duedatehq blocker add <tenant_id> <client_id> --title <text> [--description <text>] [--blocker-type <missing_info|client_confirmation|policy_review>] [--source-type <import|notice|manual>] [--source-id <id>] [--owner-user-id <id>] [--actor <id>]
+```
+
+Behavior:
+
+- Creates one blocker object for the given client.
+- Intended for the Waiting on info lane rather than the active task queue.
+- Returns the created `Blocker` object.
+
+### blocker list
+
+```bash
+duedatehq blocker list <tenant_id> [--client <client_id>] [--status <open|resolved|dismissed>] [--source-type <type>] [--limit <n>]
+```
+
+Behavior:
+
+- Lists blockers for a tenant.
+- Can be filtered by client, status, or source type.
+
+### blocker update-status
+
+```bash
+duedatehq blocker update-status <tenant_id> <blocker_id> --status <open|resolved|dismissed> [--actor <id>]
+```
+
+Behavior:
+
+- Updates a blocker lifecycle state.
+- `resolved` stamps `resolved_at`.
+- `dismissed` stamps `dismissed_at`.
+- Returns the updated `Blocker` object.
+
+## notice
+
+### notice generate-work
+
+```bash
+duedatehq notice generate-work <tenant_id> --notice-id <id> --title <text> --source-url <url> --impacts-file <json_file> [--actor <id>]
+```
+
+Behavior:
+
+- Takes one notice and a JSON list of impacted clients.
+- Applies the MVP escalation rules:
+  - `auto_updated = true` with no extra uncertainty: no work item is created
+  - `needs_client_confirmation = true` or `missing_context = true`: create a blocker
+  - otherwise: create a review task
+- Uses `notice_id:client_id` as the source key so rerunning the same notice does not create duplicate open items.
+
+Impact file shape:
+
+```json
+[
+  {
+    "client_id": "cl-001",
+    "auto_updated": false,
+    "old_date": "2026-04-30",
+    "new_date": "2026-05-08",
+    "reason": "Manual CA review is still needed."
+  },
+  {
+    "client_id": "cl-002",
+    "auto_updated": false,
+    "needs_client_confirmation": true,
+    "reason": "Imported footprint is incomplete."
+  }
+]
+```
+
+## export
+
+### export
+
+```bash
+duedatehq export <tenant_id> [--client <client_id>] [--format <json|csv>] [--actor <id>]
+```
+
+Behavior:
+
+- Exports deadline rows for a tenant or a single client.
+- `--format json`
+  - Default
+  - Returns the existing JSON payload
+- `--format csv`
+  - Writes CSV to stdout
+  - Includes the canonical deadline fields used by the dashboard and reporting views
 
 ## rule
 

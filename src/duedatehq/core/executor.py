@@ -6,7 +6,7 @@ from typing import Any
 from uuid import uuid4
 
 from .engine import InfrastructureEngine
-from .models import DeadlineAction, DeadlineStatus
+from .models import BlockerStatus, DeadlineAction, DeadlineStatus, TaskStatus
 
 
 class PlanExecutionError(RuntimeError):
@@ -152,6 +152,8 @@ class PlanExecutor:
             return self._serialize(data)
         if cli_group == "client" and cli_command == "list":
             return self._serialize(self.engine.list_clients(args["tenant_id"]))
+        if cli_group == "client" and cli_command in {"show", "bundle"}:
+            return self._serialize(self.engine.get_client_bundle(args["tenant_id"], args["client_id"]))
         if cli_group == "deadline" and cli_command == "list":
             status = DeadlineStatus(args["status"]) if args.get("status") else None
             data = self.engine.list_deadlines(
@@ -189,6 +191,101 @@ class PlanExecutor:
             return self._serialize(self.engine.list_audit_logs(args.get("tenant_id"), args.get("object_id")))
         if cli_group == "export" and cli_command == "export":
             return self.engine.export_deadlines(args["tenant_id"], actor=args.get("actor", "system"), client_id=args.get("client_id"))
+        if cli_group == "task" and cli_command == "add":
+            return self._serialize(
+                self.engine.create_task(
+                    args["tenant_id"],
+                    args["client_id"],
+                    title=args["title"],
+                    description=args.get("description"),
+                    task_type=args.get("task_type", "manual"),
+                    priority=args.get("priority", "normal"),
+                    source_type=args.get("source_type", "manual"),
+                    source_id=args.get("source_id"),
+                    owner_user_id=args.get("owner_user_id"),
+                    due_at=self._parse_optional_datetime(args.get("due_at")),
+                    actor=args.get("actor", "system"),
+                )
+            )
+        if cli_group == "task" and cli_command == "list":
+            status = TaskStatus(args["status"]) if args.get("status") else None
+            return self._serialize(
+                self.engine.list_tasks(
+                    args["tenant_id"],
+                    args.get("client_id"),
+                    status=status,
+                    source_type=args.get("source_type"),
+                    limit=args.get("limit"),
+                )
+            )
+        if cli_group == "task" and cli_command == "update-status":
+            return self._serialize(
+                self.engine.update_task_status(
+                    args["tenant_id"],
+                    args["task_id"],
+                    status=TaskStatus(args["status"]),
+                    actor=args.get("actor", "system"),
+                )
+            )
+        if cli_group == "blocker" and cli_command == "add":
+            return self._serialize(
+                self.engine.create_blocker(
+                    args["tenant_id"],
+                    args["client_id"],
+                    title=args["title"],
+                    description=args.get("description"),
+                    blocker_type=args.get("blocker_type", "missing_info"),
+                    source_type=args.get("source_type", "manual"),
+                    source_id=args.get("source_id"),
+                    owner_user_id=args.get("owner_user_id"),
+                    actor=args.get("actor", "system"),
+                )
+            )
+        if cli_group == "blocker" and cli_command == "list":
+            status = BlockerStatus(args["status"]) if args.get("status") else None
+            return self._serialize(
+                self.engine.list_blockers(
+                    args["tenant_id"],
+                    args.get("client_id"),
+                    status=status,
+                    source_type=args.get("source_type"),
+                    limit=args.get("limit"),
+                )
+            )
+        if cli_group == "blocker" and cli_command == "update-status":
+            return self._serialize(
+                self.engine.update_blocker_status(
+                    args["tenant_id"],
+                    args["blocker_id"],
+                    status=BlockerStatus(args["status"]),
+                    actor=args.get("actor", "system"),
+                )
+            )
+        if cli_group == "notice" and cli_command == "generate-work":
+            return self._serialize(
+                self.engine.generate_notice_work(
+                    args["tenant_id"],
+                    notice_id=args["notice_id"],
+                    title=args["title"],
+                    source_url=args["source_url"],
+                    source_label=args.get("source_label"),
+                    summary=args.get("summary"),
+                    affected_clients=args.get("affected_clients", []),
+                    actor=args.get("actor", "system"),
+                )
+            )
+        if cli_group == "import" and cli_command == "preview":
+            return self.engine.preview_import_csv(args["csv_path"])
+        if cli_group == "import" and cli_command == "apply":
+            return self._serialize(
+                self.engine.apply_import_csv(
+                    args["tenant_id"],
+                    args["csv_path"],
+                    tax_year=args["tax_year"],
+                    default_client_type=args.get("default_client_type", "business"),
+                    actor=args.get("actor", "system"),
+                )
+            )
         if cli_group == "rule" and cli_command == "list":
             return self._serialize(self.engine.list_rules())
         if cli_group == "rule" and cli_command == "review-queue":
@@ -222,6 +319,11 @@ class PlanExecutor:
             else:
                 current = getattr(current, part)
         return current
+
+    def _parse_optional_datetime(self, value: Any) -> datetime | None:
+        if value is None or isinstance(value, datetime):
+            return value
+        return datetime.fromisoformat(str(value))
 
     def _serialize(self, value: Any) -> Any:
         if isinstance(value, list):

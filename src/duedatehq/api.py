@@ -53,6 +53,33 @@ def process_plan(
     }
 
 
+def process_message(
+    user_input: str,
+    *,
+    tenant_id: str,
+    db_path: str | None = None,
+    session: dict[str, object] | None = None,
+    session_id: str | None = None,
+    today: str | None = None,
+) -> dict[str, object]:
+    app = create_app(db_path)
+    runtime_session = session if session is not None else {}
+    runtime_session.setdefault("session_id", session_id or "session-api")
+    runtime_session.setdefault("tenant_id", tenant_id)
+    runtime_session.setdefault("today", today or datetime.now(timezone.utc).date().isoformat())
+    return app.interaction_backend.process_message(user_input, runtime_session)
+
+
+def start_interaction_session(
+    *,
+    tenant_id: str,
+    db_path: str | None = None,
+    today: str | None = None,
+) -> dict[str, object]:
+    app = create_app(db_path)
+    return app.interaction_sessions.start(tenant_id, today=today)
+
+
 def process_action(
     plan: dict[str, object],
     *,

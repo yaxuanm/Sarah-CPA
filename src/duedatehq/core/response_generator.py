@@ -36,6 +36,16 @@ class ResponseGenerator:
             return self._build_today_response(final_data, session)
         if intent_label == "client_deadline_list":
             return self._build_client_deadline_response(final_data, session)
+        if intent_label == "deadline_history":
+            return self._build_deadline_history_response(final_data, session)
+        if intent_label in {"upcoming_deadlines", "completed_deadlines"}:
+            return self._build_deadline_collection_response(final_data, session, intent_label)
+        if intent_label == "notification_preview":
+            return self._build_notification_preview_response(final_data, session)
+        if intent_label == "client_list":
+            return self._build_client_list_response(final_data, session)
+        if intent_label == "rule_review":
+            return self._build_rule_review_response(final_data)
         return self._build_generic_list_response(final_data, session, intent_label)
 
     def generate_confirm_card(self, plan: dict[str, Any], session: dict[str, Any]) -> dict[str, Any]:
@@ -60,7 +70,7 @@ class ResponseGenerator:
                 "data": {
                     "description": f"{client_name} — {deadline['tax_type']}",
                     "due_date": deadline["due_date"],
-                    "consequence": None,
+                    "consequence": f"确认后会把这条截止事项{label}；取消则不改动任何数据。",
                     "options": [
                         {"label": f"确认{label.replace('标记', '')}", "style": "primary", "plan": plan},
                         {"label": "取消", "style": "secondary", "plan": None},
@@ -132,15 +142,143 @@ class ResponseGenerator:
             "state_summary": f"显示 {client_name} 的 {len(enriched_deadlines)} 个截止日期。",
         }
 
+    def _build_deadline_history_response(self, final_data: Any, session: dict[str, Any]) -> dict[str, Any]:
+        transitions = [self._serialize_transition(item) for item in final_data] if isinstance(final_data, list) else []
+        selected = (session.get("selectable_items") or [{}])[0]
+        deadline_id = selected.get("deadline_id") or (transitions[0]["deadline_id"] if transitions else None)
+        deadline = self._serialize_deadline(self.engine.get_deadline(session["tenant_id"], deadline_id)) if deadline_id else {}
+        client = self._client_map(session["tenant_id"]).get(deadline.get("client_id"))
+        rules = {rule.rule_id: rule for rule in self.engine.list_rules()}
+        rule = rules.get(deadline.get("rule_id"))
+        client_name = client["name"] if client else selected.get("client_name")
+        selectable_items = [selected] if selected else []
+        source_url = rule.source_url if rule else None
+        message = (
+            f"{client_name} 这条记录来自规则来源，当前有 {len(transitions)} 条变更记录。"
+            if source_url
+            else f"{client_name or '当前事项'} 当前有 {len(transitions)} 条变更记录。"
+        )
+        return {
+            "message": self._truncate(message),
+            "view": {
+                "type": "HistoryCard",
+                "data": {
+                    "client_name": client_name,
+                    "deadline_id": deadline.get("deadline_id"),
+                    "tax_type": deadline.get("tax_type"),
+                    "jurisdiction": deadline.get("jurisdiction"),
+                    "due_date": deadline.get("due_date"),
+                    "status": deadline.get("status"),
+                    "source_url": source_url,
+                    "transitions": transitions,
+                },
+                "selectable_items": selectable_items,
+            },
+            "actions": [],
+            "state_summary": f"显示 {client_name or '当前事项'} 的来源和变更记录。",
+        }
+
+    def _build_deadline_collection_response(
+        self,
+        final_data: Any,
+        session: dict[str, Any],
+        intent_label: str,
+    ) -> dict[str, Any]:
+        items = [self._enrich_deadline_item(item, session) for item in final_data] if isinstance(final_data, list) else []
+        items.sort(key=lambda item: (item["due_date"], item["deadline_id"]))
+        visible = items[:10]
+        client_map = self._client_map(session["tenant_id"])
+        for item in visible:
+            client = client_map.get(item["client_id"])
+            item["client_name"] = client["name"] if client else item["client_id"]
+        selectable_items = [self._to_selectable(index, item) for index, item in enumerate(visible, start=1)]
+        title = "未来待处理截止事项" if intent_label == "upcoming_deadlines" else "已完成截止事项"
+        return {
+            "message": self._truncate(f"{title}：{len(items)} 条。"),
+            "view": {
+                "type": "ListCard",
+                "data": {"items": visible, "total": len(items), "has_more": len(items) > 10},
+                "selectable_items": selectable_items,
+            },
+            "actions": [],
+            "state_summary": f"显示 {len(visible)} / {len(items)} 条{title}。",
+        }
+
+    def _build_notification_preview_response(self, final_data: Any, session: dict[str, Any]) -> dict[str, Any]:
+        reminders = [self._serialize_reminder(item) for item in final_data] if isinstance(final_data, list) else []
+        client_map = self._client_map(session["tenant_id"])
+        deadline_map = {
+            deadline.deadline_id: self._serialize_deadline(deadline)
+            for deadline in self.engine.list_deadlines(session["tenant_id"])
+        }
+        for reminder in reminders:
+            deadline = deadline_map.get(reminder["deadline_id"], {})
+            client = client_map.get(reminder["client_id"])
+            reminder["client_name"] = client["name"] if client else reminder["client_id"]
+            reminder["tax_type"] = deadline.get("tax_type")
+            reminder["due_date"] = deadline.get("due_date")
+        return {
+            "message": self._truncate(f"接下来需要提醒 {len(reminders)} 项。"),
+            "view": {
+                "type": "ReminderPreviewCard",
+                "data": {"reminders": reminders, "total": len(reminders)},
+                "selectable_items": [
+                    {
+                        "ref": f"item_{index}",
+                        "deadline_id": reminder["deadline_id"],
+                        "client_id": reminder["client_id"],
+                        "client_name": reminder.get("client_name"),
+                    }
+                    for index, reminder in enumerate(reminders[:10], start=1)
+                ],
+            },
+            "actions": [],
+            "state_summary": f"显示 {len(reminders)} 项待提醒事项。",
+        }
+
+    def _build_client_list_response(self, final_data: Any, session: dict[str, Any]) -> dict[str, Any]:
+        clients = [self._serialize_client(item) for item in final_data] if isinstance(final_data, list) else []
+        clients.sort(key=lambda item: item["name"])
+        return {
+            "message": self._truncate(f"共有 {len(clients)} 个客户。"),
+            "view": {
+                "type": "ClientListCard",
+                "data": {"clients": clients, "total": len(clients)},
+                "selectable_items": [
+                    {"ref": f"client_{index}", "client_id": client["client_id"], "client_name": client["name"]}
+                    for index, client in enumerate(clients, start=1)
+                ],
+            },
+            "actions": [],
+            "state_summary": f"显示 {len(clients)} 个客户。",
+        }
+
+    def _build_rule_review_response(self, final_data: Any) -> dict[str, Any]:
+        review_items = [self._serialize_rule_review_item(item) for item in final_data] if isinstance(final_data, list) else []
+        return {
+            "message": self._truncate(f"有 {len(review_items)} 条规则需要审核。"),
+            "view": {
+                "type": "ReviewQueueCard",
+                "data": {"items": review_items, "total": len(review_items)},
+                "selectable_items": [
+                    {"ref": f"review_{index}", "review_id": item["review_id"], "source_url": item["source_url"]}
+                    for index, item in enumerate(review_items, start=1)
+                ],
+            },
+            "actions": [],
+            "state_summary": f"显示 {len(review_items)} 条规则审核项。",
+        }
+
     def _build_generic_list_response(self, final_data: Any, session: dict[str, Any], intent_label: str) -> dict[str, Any]:
         items = final_data if isinstance(final_data, list) else [final_data]
         message = f"{intent_label} 返回 {len(items)} 条结果。"
+        selectable_items = session.get("selectable_items", [])
         return {
             "message": self._truncate(message),
             "view": {
                 "type": "GuidanceCard",
-                "data": {"message": message, "options": [], "context_options": []},
-                "selectable_items": [],
+                "data": {"message": message, "options": [], "context_options": selectable_items},
+                "selectable_items": selectable_items,
             },
             "actions": [],
             "state_summary": None,
@@ -220,6 +358,65 @@ class ResponseGenerator:
             "entity_type": item.entity_type,
             "registered_states": item.registered_states,
         }
+
+    def _serialize_transition(self, item: Any) -> dict[str, Any]:
+        if isinstance(item, dict):
+            payload = dict(item)
+        else:
+            payload = {
+                "transition_id": item.transition_id,
+                "deadline_id": item.deadline_id,
+                "tenant_id": item.tenant_id,
+                "previous_status": item.previous_status,
+                "new_status": item.new_status,
+                "action": item.action,
+                "actor": item.actor,
+                "metadata": item.metadata,
+                "created_at": item.created_at,
+            }
+        if isinstance(payload.get("created_at"), datetime):
+            payload["created_at"] = payload["created_at"].isoformat()
+        return payload
+
+    def _serialize_reminder(self, item: Any) -> dict[str, Any]:
+        if isinstance(item, dict):
+            payload = dict(item)
+        else:
+            payload = {
+                "reminder_id": item.reminder_id,
+                "deadline_id": item.deadline_id,
+                "tenant_id": item.tenant_id,
+                "client_id": item.client_id,
+                "scheduled_at": item.scheduled_at,
+                "triggered_at": item.triggered_at,
+                "status": item.status.value,
+                "reminder_day": item.reminder_day,
+                "reminder_type": item.reminder_type.value,
+                "responded_at": item.responded_at,
+                "response": item.response,
+            }
+        for key in ["scheduled_at", "triggered_at", "responded_at"]:
+            if isinstance(payload.get(key), datetime):
+                payload[key] = payload[key].isoformat()
+        return payload
+
+    def _serialize_rule_review_item(self, item: Any) -> dict[str, Any]:
+        if isinstance(item, dict):
+            payload = dict(item)
+        else:
+            payload = {
+                "review_id": item.review_id,
+                "source_url": item.source_url,
+                "fetched_at": item.fetched_at,
+                "raw_text": item.raw_text,
+                "confidence_score": item.confidence_score,
+                "created_at": item.created_at,
+                "parse_payload": item.parse_payload,
+            }
+        for key in ["fetched_at", "created_at"]:
+            if isinstance(payload.get(key), datetime):
+                payload[key] = payload[key].isoformat()
+        return payload
 
     def _to_selectable(self, index: int, item: dict[str, Any], client_name: str | None = None) -> dict[str, Any]:
         return {

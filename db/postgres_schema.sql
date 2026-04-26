@@ -46,6 +46,115 @@ CREATE TABLE IF NOT EXISTS duedatehq.clients (
     updated_at timestamptz NOT NULL
 );
 
+ALTER TABLE duedatehq.clients ADD COLUMN IF NOT EXISTS client_type text NOT NULL DEFAULT 'business';
+ALTER TABLE duedatehq.clients ADD COLUMN IF NOT EXISTS legal_name text;
+ALTER TABLE duedatehq.clients ADD COLUMN IF NOT EXISTS home_jurisdiction text;
+ALTER TABLE duedatehq.clients ADD COLUMN IF NOT EXISTS primary_contact_name text;
+ALTER TABLE duedatehq.clients ADD COLUMN IF NOT EXISTS primary_contact_email text;
+ALTER TABLE duedatehq.clients ADD COLUMN IF NOT EXISTS primary_contact_phone text;
+ALTER TABLE duedatehq.clients ADD COLUMN IF NOT EXISTS preferred_communication_channel text;
+ALTER TABLE duedatehq.clients ADD COLUMN IF NOT EXISTS responsible_cpa text;
+ALTER TABLE duedatehq.clients ADD COLUMN IF NOT EXISTS is_active boolean NOT NULL DEFAULT true;
+
+CREATE TABLE IF NOT EXISTS duedatehq.client_tax_profiles (
+    profile_id text PRIMARY KEY,
+    tenant_id text NOT NULL REFERENCES duedatehq.tenants(tenant_id),
+    client_id text NOT NULL REFERENCES duedatehq.clients(client_id),
+    tax_year integer NOT NULL,
+    entity_election text,
+    first_year_filing boolean,
+    final_year_filing boolean,
+    extension_requested boolean,
+    extension_filed boolean,
+    estimated_tax_required boolean,
+    payroll_present boolean,
+    contractor_reporting_required boolean,
+    notice_received boolean,
+    intake_status text NOT NULL,
+    source text NOT NULL,
+    created_at timestamptz NOT NULL,
+    updated_at timestamptz NOT NULL,
+    UNIQUE (client_id, tax_year)
+);
+
+CREATE TABLE IF NOT EXISTS duedatehq.client_jurisdictions (
+    client_jurisdiction_id text PRIMARY KEY,
+    tenant_id text NOT NULL REFERENCES duedatehq.tenants(tenant_id),
+    client_id text NOT NULL REFERENCES duedatehq.clients(client_id),
+    tax_year integer NOT NULL,
+    jurisdiction text NOT NULL,
+    jurisdiction_type text NOT NULL,
+    active boolean NOT NULL,
+    source text NOT NULL,
+    notes text,
+    created_at timestamptz NOT NULL,
+    UNIQUE (client_id, tax_year, jurisdiction, jurisdiction_type)
+);
+
+CREATE TABLE IF NOT EXISTS duedatehq.client_contacts (
+    contact_id text PRIMARY KEY,
+    tenant_id text NOT NULL REFERENCES duedatehq.tenants(tenant_id),
+    client_id text NOT NULL REFERENCES duedatehq.clients(client_id),
+    name text NOT NULL,
+    role text,
+    email text,
+    phone text,
+    preferred_channel text,
+    is_primary boolean NOT NULL,
+    created_at timestamptz NOT NULL,
+    updated_at timestamptz NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS duedatehq.tasks (
+    task_id text PRIMARY KEY,
+    tenant_id text NOT NULL REFERENCES duedatehq.tenants(tenant_id),
+    client_id text NOT NULL REFERENCES duedatehq.clients(client_id),
+    title text NOT NULL,
+    description text,
+    task_type text NOT NULL,
+    status text NOT NULL,
+    priority text NOT NULL,
+    source_type text NOT NULL,
+    source_id text,
+    owner_user_id text,
+    due_at timestamptz,
+    created_at timestamptz NOT NULL,
+    updated_at timestamptz NOT NULL,
+    completed_at timestamptz,
+    dismissed_at timestamptz
+);
+
+CREATE TABLE IF NOT EXISTS duedatehq.blockers (
+    blocker_id text PRIMARY KEY,
+    tenant_id text NOT NULL REFERENCES duedatehq.tenants(tenant_id),
+    client_id text NOT NULL REFERENCES duedatehq.clients(client_id),
+    title text NOT NULL,
+    description text,
+    blocker_type text NOT NULL,
+    status text NOT NULL,
+    source_type text NOT NULL,
+    source_id text,
+    owner_user_id text,
+    created_at timestamptz NOT NULL,
+    updated_at timestamptz NOT NULL,
+    resolved_at timestamptz,
+    dismissed_at timestamptz
+);
+
+CREATE TABLE IF NOT EXISTS duedatehq.notices (
+    notice_id text PRIMARY KEY,
+    tenant_id text NOT NULL REFERENCES duedatehq.tenants(tenant_id),
+    title text NOT NULL,
+    source_url text NOT NULL,
+    source_label text,
+    summary text,
+    status text NOT NULL,
+    created_at timestamptz NOT NULL,
+    updated_at timestamptz NOT NULL,
+    read_at timestamptz,
+    dismissed_at timestamptz
+);
+
 CREATE TABLE IF NOT EXISTS duedatehq.rules (
     rule_id text PRIMARY KEY,
     tax_type text NOT NULL,
@@ -202,6 +311,12 @@ FOR EACH ROW
 EXECUTE FUNCTION duedatehq.audit_log_append_only();
 
 ALTER TABLE duedatehq.clients ENABLE ROW LEVEL SECURITY;
+ALTER TABLE duedatehq.client_tax_profiles ENABLE ROW LEVEL SECURITY;
+ALTER TABLE duedatehq.client_jurisdictions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE duedatehq.client_contacts ENABLE ROW LEVEL SECURITY;
+ALTER TABLE duedatehq.tasks ENABLE ROW LEVEL SECURITY;
+ALTER TABLE duedatehq.blockers ENABLE ROW LEVEL SECURITY;
+ALTER TABLE duedatehq.notices ENABLE ROW LEVEL SECURITY;
 ALTER TABLE duedatehq.deadlines ENABLE ROW LEVEL SECURITY;
 ALTER TABLE duedatehq.deadline_transitions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE duedatehq.reminders ENABLE ROW LEVEL SECURITY;
@@ -213,6 +328,36 @@ DROP POLICY IF EXISTS clients_tenant_isolation ON duedatehq.clients;
 CREATE POLICY clients_tenant_isolation ON duedatehq.clients
 USING (tenant_id = duedatehq.require_tenant_id())
 WITH CHECK (tenant_id = duedatehq.require_tenant_id());
+
+DROP POLICY IF EXISTS client_tax_profiles_tenant_isolation ON duedatehq.client_tax_profiles;
+CREATE POLICY client_tax_profiles_tenant_isolation ON duedatehq.client_tax_profiles
+USING (tenant_id = duedatehq.require_tenant_id())
+WITH CHECK (tenant_id = duedatehq.require_tenant_id());
+
+DROP POLICY IF EXISTS client_jurisdictions_tenant_isolation ON duedatehq.client_jurisdictions;
+CREATE POLICY client_jurisdictions_tenant_isolation ON duedatehq.client_jurisdictions
+USING (tenant_id = duedatehq.require_tenant_id())
+WITH CHECK (tenant_id = duedatehq.require_tenant_id());
+
+DROP POLICY IF EXISTS client_contacts_tenant_isolation ON duedatehq.client_contacts;
+CREATE POLICY client_contacts_tenant_isolation ON duedatehq.client_contacts
+    USING (tenant_id = duedatehq.require_tenant_id())
+    WITH CHECK (tenant_id = duedatehq.require_tenant_id());
+
+DROP POLICY IF EXISTS tasks_tenant_isolation ON duedatehq.tasks;
+CREATE POLICY tasks_tenant_isolation ON duedatehq.tasks
+    USING (tenant_id = duedatehq.require_tenant_id())
+    WITH CHECK (tenant_id = duedatehq.require_tenant_id());
+
+DROP POLICY IF EXISTS blockers_tenant_isolation ON duedatehq.blockers;
+CREATE POLICY blockers_tenant_isolation ON duedatehq.blockers
+    USING (tenant_id = duedatehq.require_tenant_id())
+    WITH CHECK (tenant_id = duedatehq.require_tenant_id());
+
+DROP POLICY IF EXISTS notices_tenant_isolation ON duedatehq.notices;
+CREATE POLICY notices_tenant_isolation ON duedatehq.notices
+    USING (tenant_id = duedatehq.require_tenant_id())
+    WITH CHECK (tenant_id = duedatehq.require_tenant_id());
 
 DROP POLICY IF EXISTS deadlines_tenant_isolation ON duedatehq.deadlines;
 CREATE POLICY deadlines_tenant_isolation ON duedatehq.deadlines

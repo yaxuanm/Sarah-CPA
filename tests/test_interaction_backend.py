@@ -132,3 +132,79 @@ def test_interaction_backend_turns_entity_not_found_into_guidance(app):
     )
 
     assert response["view"]["type"] == "GuidanceCard"
+
+
+def test_interaction_backend_message_renders_today_and_remembers_selectable_items(app):
+    _, _, _, session = _seed_interaction_data(app)
+
+    response = app.interaction_backend.process_message("今天先做什么", session)
+
+    assert response["status"] == "ok"
+    assert response["view"]["type"] == "ListCard"
+    assert session["selectable_items"][0]["deadline_id"]
+    assert session["current_view"]["type"] == "ListCard"
+
+
+def test_interaction_backend_message_focuses_client_by_name(app):
+    _, _, _, session = _seed_interaction_data(app)
+
+    response = app.interaction_backend.process_message("先看 Acme", session)
+
+    assert response["status"] == "ok"
+    assert response["view"]["type"] == "ClientCard"
+    assert response["view"]["data"]["client_name"] == "Acme LLC"
+
+
+def test_interaction_backend_message_requires_confirmation_before_write(app):
+    tenant, _, deadline, session = _seed_interaction_data(app)
+
+    app.interaction_backend.process_message("今天先做什么", session)
+    confirm = app.interaction_backend.process_message("完成第一条", session)
+
+    assert confirm["view"]["type"] == "ConfirmCard"
+    assert session["pending_action_plan"]["op_class"] == "write"
+    assert app.engine.get_deadline(tenant.tenant_id, deadline.deadline_id).status.value == "pending"
+
+    done = app.interaction_backend.process_message("确认", session)
+
+    assert done["status"] == "ok"
+    assert "pending_action_plan" not in session
+    assert app.engine.get_deadline(tenant.tenant_id, deadline.deadline_id).status.value == "completed"
+
+
+def test_interaction_backend_resolves_cross_turn_reference_from_today_to_current_item(app):
+    _, _, _, session = _seed_interaction_data(app)
+
+    today = app.interaction_backend.process_message("今天先做什么", session)
+    focused = app.interaction_backend.process_message("看第一条", session)
+    selectable_after_focus = list(session["selectable_items"])
+    history = app.interaction_backend.process_message("刚才那个为什么变了", session)
+    confirm = app.interaction_backend.process_message("完成这个", session)
+
+    assert today["view"]["type"] == "ListCard"
+    assert focused["view"]["type"] == "ClientCard"
+    assert history["view"]["type"] == "HistoryCard"
+    assert session["selectable_items"] == selectable_after_focus
+    assert confirm["view"]["type"] == "ConfirmCard"
+    assert session["pending_action_plan"]["op_class"] == "write"
+
+
+def test_interaction_backend_can_cancel_and_resume_cross_turn_write(app):
+    tenant, _, deadline, session = _seed_interaction_data(app)
+
+    app.interaction_backend.process_message("先看 Acme", session)
+    app.interaction_backend.process_message("这个来源是什么", session)
+    first_confirm = app.interaction_backend.process_message("完成当前这个", session)
+    cancelled = app.interaction_backend.process_message("取消", session)
+    second_confirm = app.interaction_backend.process_message("完成刚才那个", session)
+    before = app.engine.get_deadline(tenant.tenant_id, deadline.deadline_id).status.value
+    done = app.interaction_backend.process_message("确认", session)
+    after = app.engine.get_deadline(tenant.tenant_id, deadline.deadline_id).status.value
+
+    assert first_confirm["view"]["type"] == "ConfirmCard"
+    assert cancelled["view"]["type"] == "GuidanceCard"
+    assert "pending_action_plan" not in session
+    assert second_confirm["view"]["type"] == "ConfirmCard"
+    assert before == "pending"
+    assert done["view"]["type"] == "ListCard"
+    assert after == "completed"

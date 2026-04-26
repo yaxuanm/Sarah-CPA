@@ -170,3 +170,102 @@ def test_executor_assigns_step_ids_when_missing(app):
 
     assert result["steps_executed"] == ["s1"]
     assert result["meta"]["total"] >= 1
+
+
+def test_executor_can_call_task_and_blocker_backend_objects(app):
+    tenant = _seed_executor_data(app)
+    client = app.engine.list_clients(tenant.tenant_id)[0]
+    executor = PlanExecutor(app.engine)
+
+    task_result = executor.execute(
+        {
+            "plan": [
+                {
+                    "type": "cli_call",
+                    "cli_group": "task",
+                    "cli_command": "add",
+                    "args": {
+                        "tenant_id": tenant.tenant_id,
+                        "client_id": client.client_id,
+                        "title": "Request missing payroll docs",
+                        "task_type": "follow_up",
+                        "priority": "high",
+                    },
+                }
+            ],
+            "intent_label": "task_create",
+            "op_class": "write",
+        }
+    )
+    blocker_result = executor.execute(
+        {
+            "plan": [
+                {
+                    "type": "cli_call",
+                    "cli_group": "blocker",
+                    "cli_command": "add",
+                    "args": {
+                        "tenant_id": tenant.tenant_id,
+                        "client_id": client.client_id,
+                        "title": "Confirm home jurisdiction",
+                        "blocker_type": "missing_info",
+                        "source_type": "import",
+                    },
+                }
+            ],
+            "intent_label": "blocker_create",
+            "op_class": "write",
+        }
+    )
+    bundle_result = executor.execute(
+        {
+            "plan": [
+                {
+                    "type": "cli_call",
+                    "cli_group": "client",
+                    "cli_command": "bundle",
+                    "args": {"tenant_id": tenant.tenant_id, "client_id": client.client_id},
+                }
+            ],
+            "intent_label": "client_bundle",
+            "op_class": "read",
+        }
+    )
+
+    assert task_result["final_data"]["status"] == "open"
+    assert blocker_result["final_data"]["status"] == "open"
+    assert len(bundle_result["final_data"]["tasks"]) == 1
+    assert len(bundle_result["final_data"]["blockers"]) == 1
+
+
+def test_executor_can_generate_notice_work(app):
+    tenant = _seed_executor_data(app)
+    clients = app.engine.list_clients(tenant.tenant_id)
+    executor = PlanExecutor(app.engine)
+
+    result = executor.execute(
+        {
+            "plan": [
+                {
+                    "type": "cli_call",
+                    "cli_group": "notice",
+                    "cli_command": "generate-work",
+                    "args": {
+                        "tenant_id": tenant.tenant_id,
+                        "notice_id": "notice-001",
+                        "title": "California filing update",
+                        "source_url": "https://example.com/notice",
+                        "affected_clients": [
+                            {"client_id": clients[0].client_id, "auto_updated": False},
+                            {"client_id": clients[1].client_id, "needs_client_confirmation": True},
+                        ],
+                    },
+                }
+            ],
+            "intent_label": "notice_generate_work",
+            "op_class": "write",
+        }
+    )
+
+    assert len(result["final_data"]["tasks"]) == 1
+    assert len(result["final_data"]["blockers"]) == 1

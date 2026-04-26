@@ -1,4 +1,5 @@
 .duedatehq/
+.env
 *.sqlite3
 .tmp_*.sqlite3
 .tmp/
@@ -6,3 +7,11 @@
 __pycache__/
 *.pyc
 .pytest_cache/
+.DS_Store
+uv.lock
+src/duedatehq.egg-info/
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+frontend/.onboarding.html.swp
+duedatehq-frontend-skill.zip

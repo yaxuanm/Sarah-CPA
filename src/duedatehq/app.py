@@ -9,10 +9,16 @@ from .core.clock import SystemClock
 from .core.conversation import ConversationService
 from .core.engine import InfrastructureEngine
 from .core.executor import PlanExecutor
-from .core.interaction_backend import InteractionBackend
+from .core.flywheel_router import FlywheelIntentRouter
+from .core.intent_cache import InMemoryIntentLibrary
+from .core.intent_planner import RuleBasedIntentPlanner
+from .core.interaction_backend import InteractionBackend, IntentPlanner
+from .core.nlu_service import ClaudeNLUService
+from .core.persistent_intent_cache import SQLiteIntentLibrary
 from .core.postgres import PostgresStorage
 from .core.repositories import Repositories
 from .core.response_generator import ResponseGenerator
+from .core.session_manager import InMemoryInteractionSessionManager, RedisInteractionSessionManager
 from .core.storage import SQLiteStorage
 
 
@@ -21,12 +27,16 @@ class App:
     engine: InfrastructureEngine
     conversation: ConversationService
     executor: PlanExecutor
+    intent_planner: IntentPlanner
+    intent_library: InMemoryIntentLibrary
     response_generator: ResponseGenerator
     interaction_backend: InteractionBackend
+    interaction_sessions: InMemoryInteractionSessionManager | RedisInteractionSessionManager
 
 
 def create_app(db_path: str | None = None) -> App:
-    repositories = Repositories(storage=build_storage(db_path))
+    storage = build_storage(db_path)
+    repositories = Repositories(storage=storage)
     event_bus = InMemoryEventBus()
     clock = SystemClock()
     engine = InfrastructureEngine(
@@ -36,14 +46,44 @@ def create_app(db_path: str | None = None) -> App:
     )
     conversation = ConversationService(engine)
     executor = PlanExecutor(engine)
+    if os.getenv("DUEDATEHQ_PERSIST_FLYWHEEL") == "1" and isinstance(storage, SQLiteStorage):
+        intent_library = SQLiteIntentLibrary(storage)
+    else:
+        intent_library = InMemoryIntentLibrary()
+    if os.getenv("DUEDATEHQ_USE_FLYWHEEL_ROUTER") == "1":
+        rule_planner = RuleBasedIntentPlanner(engine)
+        if os.getenv("DUEDATEHQ_USE_CLAUDE_NLU") == "1":
+            planner = ClaudeNLUService(engine)
+            fallback_planner = rule_planner
+        else:
+            planner = rule_planner
+            fallback_planner = None
+        intent_planner = FlywheelIntentRouter(
+            intent_library=intent_library,
+            planner=planner,
+            fallback_planner=fallback_planner,
+        )
+    elif os.getenv("DUEDATEHQ_USE_CLAUDE_NLU") == "1":
+        intent_planner = ClaudeNLUService(engine, intent_library=intent_library)
+    else:
+        intent_planner = RuleBasedIntentPlanner(engine)
     response_generator = ResponseGenerator(engine)
-    interaction_backend = InteractionBackend(executor, response_generator)
+    interaction_backend = InteractionBackend(executor, response_generator, intent_planner, intent_library)
+    redis_url = os.getenv("DUEDATEHQ_REDIS_URL")
+    interaction_sessions = (
+        RedisInteractionSessionManager(redis_url)
+        if redis_url
+        else InMemoryInteractionSessionManager()
+    )
     return App(
         engine=engine,
         conversation=conversation,
         executor=executor,
+        intent_planner=intent_planner,
+        intent_library=intent_library,
         response_generator=response_generator,
         interaction_backend=interaction_backend,
+        interaction_sessions=interaction_sessions,
     )
 
 

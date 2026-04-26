@@ -7,6 +7,10 @@ DueDateHQ first-phase infrastructure, validated without any frontend.
 - Rule ingestion into an append-preserving rule table with supersession tracking
 - Low-confidence rule routing into a manual review queue
 - Client-to-rule mapping into concrete deadlines
+- Task model for active work items, blocker follow-up, and notice-driven review work
+- Blocker model for the Waiting on info lane and missing-information tracking
+- CSV import preview with column mapping, missing-field detection, and sample-row inspection
+- Notice-driven work generation that escalates impacted clients into tasks or blockers
 - Reminder queue generation and rebuild on deadline changes
 - Tenant-scoped reminder triggering for PostgreSQL RLS compatibility
 - Deadline state machine with transition history
@@ -15,7 +19,6 @@ DueDateHQ first-phase infrastructure, validated without any frontend.
 - Notification delivery routing for email, SMS, and Slack
 - Celery dispatch hooks for fetch, reminder scheduling, and notification delivery
 - Interactive chat mode with text-first realtime view rendering and a voice-ready input mode
-- Structured plan execution pipeline: executor, response generator, and interaction backend
 - CLI commands for create/list/update/export/worker flows
 
 ## Database
@@ -64,10 +67,21 @@ python -m duedatehq.cli worker fetch --source irs --url https://irs.gov/pub/irs-
 python -m duedatehq.cli worker fetch --source federal_register --rss-url https://example.com/feed.xml --entry-title-contains deadline
 python -m duedatehq.cli rule add --tax-type franchise_tax --jurisdiction CA --entity-types s-corp --deadline-date 2026-04-20 --effective-from 2026-01-01 --source-url https://ftb.ca.gov/rule
 python -m duedatehq.cli client add <tenant_id> "Acme LLC" --entity s-corp --states TX,CA,DE --tax-year 2026
+python -m duedatehq.cli client show <tenant_id> <client_id>
+python -m duedatehq.cli import preview --csv client-portfolio.csv
+python -m duedatehq.cli import apply <tenant_id> --csv client-portfolio.csv --tax-year 2026
+python -m duedatehq.cli task add <tenant_id> <client_id> --title "Review PTE election decision" --task-type review --priority high --source-type deadline --source-id dl-002
+python -m duedatehq.cli task list <tenant_id> --client <client_id>
+python -m duedatehq.cli task update-status <tenant_id> <task_id> --status done
+python -m duedatehq.cli blocker add <tenant_id> <client_id> --title "Need payroll support docs" --blocker-type missing_info --source-type import
+python -m duedatehq.cli blocker list <tenant_id> --client <client_id>
+python -m duedatehq.cli blocker update-status <tenant_id> <blocker_id> --status resolved
+python -m duedatehq.cli notice generate-work <tenant_id> --notice-id notice-002 --title "Texas nexus threshold clarification" --source-url https://comptroller.texas.gov/ --impacts-file notice-impacts.json
 python -m duedatehq.cli deadline list <tenant_id> --client <client_id> --show-reminders
 python -m duedatehq.cli deadline action <tenant_id> <deadline_id> complete --actor user-1
 python -m duedatehq.cli deadline trigger-reminders --tenant-id <tenant_id> --at 2026-04-19T09:00:00+00:00
 python -m duedatehq.cli today <tenant_id>
+python -m duedatehq.cli export <tenant_id> --client <client_id> --format csv
 python -m duedatehq.cli chat --tenant-id <tenant_id> --prompt "show me today"
 python -m duedatehq.cli chat --tenant-id <tenant_id> --mode voice --transcript-file sample_transcript.txt
 python -m duedatehq.cli notify config add <tenant_id> --channel email --destination owner@example.com
@@ -125,36 +139,6 @@ The current render contract is:
 
 - one short language conclusion
 - one or more structured render blocks such as `Today`, `Deadlines`, `Rule Review Queue`, or `Pending Notifications`
-
-## Structured Interaction Backend
-
-The repo now includes deterministic interaction primitives for the v5 guide:
-
-- `PlanExecutor`: executes `cli_call`, `resolve_entity`, `foreach`, and `post_filter` plan steps
-- `ResponseGenerator`: turns executor output into frontend payloads such as `ListCard`, `ClientCard`, `ConfirmCard`, and `GuidanceCard`
-- `InteractionBackend`: routes read plans, write plans, and confirmed actions through the executor/renderer pipeline
-
-The programmatic entry points live in `duedatehq.api`:
-
-- `process_plan(...)`
-- `process_action(...)`
-- `chat(...)`
-
-These are intended for small-scale interaction and LLM smoke testing before a dedicated frontend or HTTP transport is added.
-
-For the next-step interaction direction, see:
-
-- `docs/interactive-rendering-vnext.md`
-
-## Small Demo Data
-
-A minimal demo seed script is available for local testing:
-
-```bash
-C:\sarah-cpa\.tools\python\3.11.9\python.exe scripts\seed_small_demo.py
-```
-
-It creates one demo tenant with a few rules, three clients, several deadlines, a small amount of history, and one notification route. The script is idempotent for the demo tenant name.
 
 ## Verification
 

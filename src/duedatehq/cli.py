@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import argparse
+import csv
 import json
 from dataclasses import asdict, is_dataclass
 from datetime import datetime, timezone
+from io import StringIO
 from pathlib import Path
 
 from .app import build_storage, create_app
@@ -11,7 +13,7 @@ from .core.conversation import InteractionMode
 from .core.dispatchers import CeleryDispatcher
 from .core.postgres import PostgresStorage
 from .core.fetchers import FileFetcher, HtmlFetcher, HttpTextFetcher, PdfFetcher, RssEntryFetcher, fetcher_for_source
-from .core.models import DeadlineAction, DeadlineStatus, NotificationChannel
+from .core.models import BlockerStatus, DeadlineAction, DeadlineStatus, NotificationChannel, TaskStatus
 from .core.notifiers import ConsoleNotifier, JsonWebhookNotifier, NotifierRegistry, SMTPEmailNotifier
 from .core.workers import FetchWorker, PersistentJobQueue, ReminderScheduler, ReminderWorker
 
@@ -34,12 +36,120 @@ def build_parser() -> argparse.ArgumentParser:
     client_add.add_argument("--entity", required=True)
     client_add.add_argument("--states", required=True)
     client_add.add_argument("--tax-year", type=int, required=True)
+    client_add.add_argument("--client-type", default="business")
+    client_add.add_argument("--legal-name")
+    client_add.add_argument("--home-jurisdiction")
+    client_add.add_argument("--contact-name")
+    client_add.add_argument("--contact-email")
+    client_add.add_argument("--contact-phone")
+    client_add.add_argument("--preferred-channel")
+    client_add.add_argument("--responsible-cpa")
+    client_add.add_argument("--entity-election")
+    client_add.add_argument("--intake-status", default="draft")
+    client_add.add_argument("--profile-source", default="manual")
+    client_add.add_argument("--first-year-filing", action=argparse.BooleanOptionalAction, default=None)
+    client_add.add_argument("--final-year-filing", action=argparse.BooleanOptionalAction, default=None)
+    client_add.add_argument("--extension-requested", action=argparse.BooleanOptionalAction, default=None)
+    client_add.add_argument("--extension-filed", action=argparse.BooleanOptionalAction, default=None)
+    client_add.add_argument("--estimated-tax-required", action=argparse.BooleanOptionalAction, default=None)
+    client_add.add_argument("--payroll-present", action=argparse.BooleanOptionalAction, default=None)
+    client_add.add_argument("--contractor-reporting-required", action=argparse.BooleanOptionalAction, default=None)
+    client_add.add_argument("--notice-received", action=argparse.BooleanOptionalAction, default=None)
     client_update = client_subparsers.add_parser("update-states")
     client_update.add_argument("tenant_id")
     client_update.add_argument("client_id")
     client_update.add_argument("--states", required=True)
+    client_show = client_subparsers.add_parser("show")
+    client_show.add_argument("tenant_id")
+    client_show.add_argument("client_id")
+    client_profile = client_subparsers.add_parser("update-profile")
+    client_profile.add_argument("tenant_id")
+    client_profile.add_argument("client_id")
+    client_profile.add_argument("--tax-year", type=int, required=True)
+    client_profile.add_argument("--entity-election")
+    client_profile.add_argument("--intake-status")
+    client_profile.add_argument("--profile-source")
+    client_profile.add_argument("--first-year-filing", action=argparse.BooleanOptionalAction, default=None)
+    client_profile.add_argument("--final-year-filing", action=argparse.BooleanOptionalAction, default=None)
+    client_profile.add_argument("--extension-requested", action=argparse.BooleanOptionalAction, default=None)
+    client_profile.add_argument("--extension-filed", action=argparse.BooleanOptionalAction, default=None)
+    client_profile.add_argument("--estimated-tax-required", action=argparse.BooleanOptionalAction, default=None)
+    client_profile.add_argument("--payroll-present", action=argparse.BooleanOptionalAction, default=None)
+    client_profile.add_argument("--contractor-reporting-required", action=argparse.BooleanOptionalAction, default=None)
+    client_profile.add_argument("--notice-received", action=argparse.BooleanOptionalAction, default=None)
     client_list = client_subparsers.add_parser("list")
     client_list.add_argument("tenant_id")
+
+    task_parser = subparsers.add_parser("task")
+    task_subparsers = task_parser.add_subparsers(dest="task_command", required=True)
+    task_add = task_subparsers.add_parser("add")
+    task_add.add_argument("tenant_id")
+    task_add.add_argument("client_id")
+    task_add.add_argument("--title", required=True)
+    task_add.add_argument("--description")
+    task_add.add_argument("--task-type", default="manual")
+    task_add.add_argument("--priority", default="normal")
+    task_add.add_argument("--source-type", default="manual")
+    task_add.add_argument("--source-id")
+    task_add.add_argument("--owner-user-id")
+    task_add.add_argument("--due-at")
+    task_add.add_argument("--actor", default="cli")
+    task_list = task_subparsers.add_parser("list")
+    task_list.add_argument("tenant_id")
+    task_list.add_argument("--client", dest="client_id")
+    task_list.add_argument("--status", choices=[item.value for item in TaskStatus])
+    task_list.add_argument("--source-type")
+    task_list.add_argument("--limit", type=int)
+    task_update = task_subparsers.add_parser("update-status")
+    task_update.add_argument("tenant_id")
+    task_update.add_argument("task_id")
+    task_update.add_argument("--status", choices=[item.value for item in TaskStatus], required=True)
+    task_update.add_argument("--actor", default="cli")
+
+    blocker_parser = subparsers.add_parser("blocker")
+    blocker_subparsers = blocker_parser.add_subparsers(dest="blocker_command", required=True)
+    blocker_add = blocker_subparsers.add_parser("add")
+    blocker_add.add_argument("tenant_id")
+    blocker_add.add_argument("client_id")
+    blocker_add.add_argument("--title", required=True)
+    blocker_add.add_argument("--description")
+    blocker_add.add_argument("--blocker-type", default="missing_info")
+    blocker_add.add_argument("--source-type", default="manual")
+    blocker_add.add_argument("--source-id")
+    blocker_add.add_argument("--owner-user-id")
+    blocker_add.add_argument("--actor", default="cli")
+    blocker_list = blocker_subparsers.add_parser("list")
+    blocker_list.add_argument("tenant_id")
+    blocker_list.add_argument("--client", dest="client_id")
+    blocker_list.add_argument("--status", choices=[item.value for item in BlockerStatus])
+    blocker_list.add_argument("--source-type")
+    blocker_list.add_argument("--limit", type=int)
+    blocker_update = blocker_subparsers.add_parser("update-status")
+    blocker_update.add_argument("tenant_id")
+    blocker_update.add_argument("blocker_id")
+    blocker_update.add_argument("--status", choices=[item.value for item in BlockerStatus], required=True)
+    blocker_update.add_argument("--actor", default="cli")
+
+    notice_parser = subparsers.add_parser("notice")
+    notice_subparsers = notice_parser.add_subparsers(dest="notice_command", required=True)
+    notice_generate = notice_subparsers.add_parser("generate-work")
+    notice_generate.add_argument("tenant_id")
+    notice_generate.add_argument("--notice-id", required=True)
+    notice_generate.add_argument("--title", required=True)
+    notice_generate.add_argument("--source-url", required=True)
+    notice_generate.add_argument("--impacts-file", required=True)
+    notice_generate.add_argument("--actor", default="cli")
+
+    import_parser = subparsers.add_parser("import")
+    import_subparsers = import_parser.add_subparsers(dest="import_command", required=True)
+    import_preview = import_subparsers.add_parser("preview")
+    import_preview.add_argument("--csv", required=True)
+    import_apply = import_subparsers.add_parser("apply")
+    import_apply.add_argument("tenant_id")
+    import_apply.add_argument("--csv", required=True)
+    import_apply.add_argument("--tax-year", type=int, required=True)
+    import_apply.add_argument("--default-client-type", default="business")
+    import_apply.add_argument("--actor", default="cli")
 
     rule_parser = subparsers.add_parser("rule")
     rule_subparsers = rule_parser.add_subparsers(dest="rule_command", required=True)
@@ -103,6 +213,7 @@ def build_parser() -> argparse.ArgumentParser:
     export_parser = subparsers.add_parser("export")
     export_parser.add_argument("tenant_id")
     export_parser.add_argument("--client", dest="client_id")
+    export_parser.add_argument("--format", choices=["json", "csv"], default="json")
     export_parser.add_argument("--actor", default="cli")
 
     today_parser = subparsers.add_parser("today")
@@ -115,6 +226,18 @@ def build_parser() -> argparse.ArgumentParser:
     chat_parser.add_argument("--mode", choices=[item.value for item in InteractionMode], default=InteractionMode.TEXT.value)
     chat_parser.add_argument("--prompt")
     chat_parser.add_argument("--transcript-file")
+
+    flywheel_parser = subparsers.add_parser("flywheel")
+    flywheel_subparsers = flywheel_parser.add_subparsers(dest="flywheel_command", required=True)
+    flywheel_subparsers.add_parser("stats")
+    flywheel_templates = flywheel_subparsers.add_parser("templates")
+    flywheel_templates.add_argument("--status")
+    flywheel_templates.add_argument("--limit", type=int, default=50)
+    flywheel_feedback = flywheel_subparsers.add_parser("feedback")
+    flywheel_feedback.add_argument("--signal")
+    flywheel_feedback.add_argument("--limit", type=int, default=50)
+    flywheel_review = flywheel_subparsers.add_parser("review-queue")
+    flywheel_review.add_argument("--limit", type=int, default=50)
 
     notify_parser = subparsers.add_parser("notify")
     notify_subparsers = notify_parser.add_subparsers(dest="notify_command", required=True)
@@ -221,6 +344,25 @@ def main() -> int:
                 entity_type=args.entity,
                 registered_states=split_csv(args.states),
                 tax_year=args.tax_year,
+                client_type=args.client_type,
+                legal_name=args.legal_name,
+                home_jurisdiction=args.home_jurisdiction,
+                primary_contact_name=args.contact_name,
+                primary_contact_email=args.contact_email,
+                primary_contact_phone=args.contact_phone,
+                preferred_communication_channel=args.preferred_channel,
+                responsible_cpa=args.responsible_cpa,
+                entity_election=args.entity_election,
+                first_year_filing=args.first_year_filing,
+                final_year_filing=args.final_year_filing,
+                extension_requested=args.extension_requested,
+                extension_filed=args.extension_filed,
+                estimated_tax_required=args.estimated_tax_required,
+                payroll_present=args.payroll_present,
+                contractor_reporting_required=args.contractor_reporting_required,
+                notice_received=args.notice_received,
+                intake_status=args.intake_status,
+                profile_source=args.profile_source,
                 actor="cli",
             )
             print_json({"client_id": client.client_id, "tenant_id": client.tenant_id})
@@ -234,8 +376,172 @@ def main() -> int:
             )
             print_json({"client_id": client.client_id, "registered_states": client.registered_states})
             return 0
+        if args.client_command == "show":
+            bundle = engine.get_client_bundle(args.tenant_id, args.client_id)
+            print_json(
+                {
+                    "client": serialize(bundle["client"]),
+                    "tax_profiles": [serialize(item) for item in bundle["tax_profiles"]],
+                    "jurisdictions": [serialize(item) for item in bundle["jurisdictions"]],
+                    "contacts": [serialize(item) for item in bundle["contacts"]],
+                    "tasks": [serialize(item) for item in bundle["tasks"]],
+                    "blockers": [serialize(item) for item in bundle["blockers"]],
+                    "deadlines": [serialize(item) for item in bundle["deadlines"]],
+                },
+                default=str,
+            )
+            return 0
+        if args.client_command == "update-profile":
+            profile = engine.update_client_tax_profile(
+                tenant_id=args.tenant_id,
+                client_id=args.client_id,
+                tax_year=args.tax_year,
+                entity_election=args.entity_election,
+                first_year_filing=args.first_year_filing,
+                final_year_filing=args.final_year_filing,
+                extension_requested=args.extension_requested,
+                extension_filed=args.extension_filed,
+                estimated_tax_required=args.estimated_tax_required,
+                payroll_present=args.payroll_present,
+                contractor_reporting_required=args.contractor_reporting_required,
+                notice_received=args.notice_received,
+                intake_status=args.intake_status,
+                profile_source=args.profile_source,
+                actor="cli",
+            )
+            print_json(serialize(profile), default=str)
+            return 0
         if args.client_command == "list":
             print_json([serialize(client) for client in engine.list_clients(args.tenant_id)], default=str)
+            return 0
+
+    if args.command == "task":
+        if args.task_command == "add":
+            task = engine.create_task(
+                tenant_id=args.tenant_id,
+                client_id=args.client_id,
+                title=args.title,
+                description=args.description,
+                task_type=args.task_type,
+                priority=args.priority,
+                source_type=args.source_type,
+                source_id=args.source_id,
+                owner_user_id=args.owner_user_id,
+                due_at=parse_ts(args.due_at) if args.due_at else None,
+                actor=args.actor,
+            )
+            print_json(serialize(task), default=str)
+            return 0
+        if args.task_command == "list":
+            tasks = engine.list_tasks(
+                args.tenant_id,
+                args.client_id,
+                status=TaskStatus(args.status) if args.status else None,
+                source_type=args.source_type,
+                limit=args.limit,
+            )
+            print_json([serialize(task) for task in tasks], default=str)
+            return 0
+        if args.task_command == "update-status":
+            task = engine.update_task_status(
+                tenant_id=args.tenant_id,
+                task_id=args.task_id,
+                status=TaskStatus(args.status),
+                actor=args.actor,
+            )
+            print_json(serialize(task), default=str)
+            return 0
+
+    if args.command == "import":
+        if args.import_command == "preview":
+            preview = engine.preview_import_csv(args.csv)
+            print_json(preview, default=str)
+            return 0
+        if args.import_command == "apply":
+            result = engine.apply_import_csv(
+                tenant_id=args.tenant_id,
+                csv_path=args.csv,
+                tax_year=args.tax_year,
+                default_client_type=args.default_client_type,
+                actor=args.actor,
+            )
+            print_json(
+                {
+                    "source_name": result["source_name"],
+                    "created_clients": [serialize(client) for client in result["created_clients"]],
+                    "created_blockers": [serialize(blocker) for blocker in result["created_blockers"]],
+                    "created_tasks": [serialize(task) for task in result["created_tasks"]],
+                    "skipped_rows": result["skipped_rows"],
+                    "dashboard": {
+                        "today": result["dashboard"]["today"],
+                        "active_work": [serialize(task) for task in result["dashboard"]["active_work"]],
+                        "waiting_on_info": [serialize(blocker) for blocker in result["dashboard"]["waiting_on_info"]],
+                        "client_count": result["dashboard"]["client_count"],
+                        "open_task_count": result["dashboard"]["open_task_count"],
+                        "open_blocker_count": result["dashboard"]["open_blocker_count"],
+                    },
+                },
+                default=str,
+            )
+            return 0
+
+    if args.command == "blocker":
+        if args.blocker_command == "add":
+            blocker = engine.create_blocker(
+                tenant_id=args.tenant_id,
+                client_id=args.client_id,
+                title=args.title,
+                description=args.description,
+                blocker_type=args.blocker_type,
+                source_type=args.source_type,
+                source_id=args.source_id,
+                owner_user_id=args.owner_user_id,
+                actor=args.actor,
+            )
+            print_json(serialize(blocker), default=str)
+            return 0
+        if args.blocker_command == "list":
+            blockers = engine.list_blockers(
+                args.tenant_id,
+                args.client_id,
+                status=BlockerStatus(args.status) if args.status else None,
+                source_type=args.source_type,
+                limit=args.limit,
+            )
+            print_json([serialize(blocker) for blocker in blockers], default=str)
+            return 0
+        if args.blocker_command == "update-status":
+            blocker = engine.update_blocker_status(
+                tenant_id=args.tenant_id,
+                blocker_id=args.blocker_id,
+                status=BlockerStatus(args.status),
+                actor=args.actor,
+            )
+            print_json(serialize(blocker), default=str)
+            return 0
+
+    if args.command == "notice":
+        if args.notice_command == "generate-work":
+            impacts = json.loads(Path(args.impacts_file).read_text(encoding="utf-8"))
+            result = engine.generate_notice_work(
+                tenant_id=args.tenant_id,
+                notice_id=args.notice_id,
+                title=args.title,
+                source_url=args.source_url,
+                affected_clients=impacts,
+                actor=args.actor,
+            )
+            print_json(
+                {
+                    "notice_id": result["notice_id"],
+                    "title": result["title"],
+                    "source_url": result["source_url"],
+                    "tasks": [serialize(task) for task in result["tasks"]],
+                    "blockers": [serialize(blocker) for blocker in result["blockers"]],
+                    "skipped_clients": result["skipped_clients"],
+                },
+                default=str,
+            )
             return 0
 
     if args.command == "rule":
@@ -338,7 +644,11 @@ def main() -> int:
         return 0
 
     if args.command == "export":
-        print_json(engine.export_deadlines(args.tenant_id, args.actor, client_id=args.client_id), default=str)
+        exported = engine.export_deadlines(args.tenant_id, args.actor, client_id=args.client_id)
+        if args.format == "csv":
+            print(print_csv_rows(exported), end="")
+            return 0
+        print_json(exported, default=str)
         return 0
 
     if args.command == "today":
@@ -358,6 +668,37 @@ def main() -> int:
             print_chat_response(response)
             return 0
         return run_chat_loop(conversation, session, mode)
+
+    if args.command == "flywheel":
+        if args.flywheel_command == "stats":
+            print_json(app.intent_library.stats(), default=str)
+            return 0
+        if args.flywheel_command == "templates":
+            templates = [
+                {
+                    "intent_id": template.intent_id,
+                    "intent_label": template.intent_label,
+                    "status": template.status,
+                    "hit_count": template.hit_count,
+                    "success_rate": template.success_rate,
+                    "example_count": len(template.example_inputs),
+                    "correction_count": template.correction_count,
+                    "missing_info_count": template.missing_info_count,
+                    "view_type": template.view_type,
+                    "updated_at": template.updated_at.isoformat(),
+                }
+                for template in app.intent_library.all()
+                if args.status is None or template.status == args.status
+            ]
+            templates.sort(key=lambda item: item["updated_at"], reverse=True)
+            print_json(templates[: args.limit], default=str)
+            return 0
+        if args.flywheel_command == "feedback":
+            print_json(app.intent_library.feedback_events(signal=args.signal, limit=args.limit), default=str)
+            return 0
+        if args.flywheel_command == "review-queue":
+            print_json(app.intent_library.review_queue(limit=args.limit), default=str)
+            return 0
 
     if args.command == "notify":
         if args.notify_command == "config":
@@ -468,6 +809,29 @@ def parse_ts(value: str) -> datetime:
 
 def print_json(payload, default=None) -> None:
     print(json.dumps(payload, indent=2, default=default, sort_keys=True))
+
+
+def print_csv_rows(rows: list[dict[str, object]]) -> str:
+    if not rows:
+        return ""
+    fieldnames = [
+        "tenant_id",
+        "client_id",
+        "deadline_id",
+        "tax_type",
+        "jurisdiction",
+        "due_date",
+        "status",
+        "override_date",
+        "snoozed_until",
+        "reminder_type",
+    ]
+    output = StringIO()
+    writer = csv.DictWriter(output, fieldnames=fieldnames, extrasaction="ignore")
+    writer.writeheader()
+    for row in rows:
+        writer.writerow(row)
+    return output.getvalue()
 
 
 def serialize(value):
