@@ -95,7 +95,7 @@ export function App() {
           seen_visual_contexts: seenVisualContexts.slice(0, 6)
         },
         onUpdate: (update) => {
-          if (update.event === "thinking") append("status", update.message);
+          if (update.event === "thinking") return;
           if (update.event === "intent_confirmed") {
             append("status", humanIntentStatus(update.intentLabel, update.planSource));
           }

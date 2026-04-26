@@ -117,7 +117,8 @@ Flywheel Router 运行时模拟：
 HTTP/SSE 骨架验证：
 - `/bootstrap/today` 是默认入口 fast path，直接走 today plan，不进入 Agent/NLU
 - `/chat` 返回 response + session
-- `/chat/stream` 推送 `thinking`、`intent_confirmed`、`view_rendered`、`feedback_recorded`、`message_delta`、`done`
+- `/chat/stream` 推送 `message_delta`、`intent_confirmed`、`view_rendered`、`feedback_recorded`、`done`
+- `/chat/stream` 在进入 Agent 推理前先推一个即时 `message_delta`，让左侧对话立刻开始流式输出
 - `/flywheel/stats` 返回当前 intent library 指标
 
 Agent Kernel 验证：

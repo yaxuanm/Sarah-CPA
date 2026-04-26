@@ -69,7 +69,7 @@ def create_fastapi_app(db_path: str | None = None):
         session = _prepare_session(body)
 
         def events():
-            yield _sse("thinking", {"message": "理解请求中。"})
+            yield _sse("message_delta", {"delta": _instant_response_prefix(body.get("user_input", ""), session)})
             previous_feedback_count = len(session.get("flywheel_feedback_events", []))
             try:
                 response = app_state.interaction_backend.process_message(body["user_input"], session)
@@ -126,6 +126,15 @@ def _prepare_session(body: dict[str, Any]) -> dict[str, Any]:
     session.setdefault("session_id", body.get("session_id") or "http-session")
     session.setdefault("today", body.get("today") or datetime.now(timezone.utc).date().isoformat())
     return session
+
+
+def _instant_response_prefix(user_input: str, session: dict[str, Any]) -> str:
+    current_view = session.get("current_view")
+    if isinstance(current_view, dict) and current_view.get("type"):
+        return "我先看当前页面和相关数据。\n\n"
+    if user_input.strip():
+        return "我先理解你的问题，再查需要的数据。\n\n"
+    return "我先看一下。\n\n"
 
 
 def _today_plan(tenant_id: str) -> dict[str, Any]:

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from duedatehq.http_api import _latest_new_feedback_event, _message_chunks, _sse, create_fastapi_app
+from duedatehq.http_api import _instant_response_prefix, _latest_new_feedback_event, _message_chunks, _sse, create_fastapi_app
 
 
 def test_sse_helper_formats_event_payload():
@@ -28,6 +28,11 @@ def test_message_chunks_prefer_natural_boundaries():
     assert len(chunks) > 1
     assert chunks[0].endswith("。")
     assert "".join(chunks) == message
+
+
+def test_instant_response_prefix_uses_current_view_context():
+    assert _instant_response_prefix("总体情况如何", {"current_view": {"type": "ListCard"}}).startswith("我先看当前页面")
+    assert _instant_response_prefix("总体情况如何", {}).startswith("我先理解")
 
 
 def test_fastapi_app_requires_optional_dependency(monkeypatch):

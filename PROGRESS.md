@@ -71,8 +71,11 @@ left conversation input
 
 - Optional FastAPI app exposes `/chat`, `/action`, `/chat/stream`,
   `/bootstrap/today`, `/session/:id`, and `/flywheel/stats`.
-- `/chat/stream` emits `thinking`, `intent_confirmed`, `view_rendered`,
-  `feedback_recorded`, `message_delta`, and `done`.
+- `/chat/stream` emits `message_delta`, `intent_confirmed`, `view_rendered`,
+  `feedback_recorded`, and `done`.
+- `/chat/stream` now sends an immediate `message_delta` before expensive Agent
+  reasoning, so the conversation starts streaming right away instead of showing
+  a frozen "thinking" bubble.
 - `/bootstrap/today` is the fast default entry. It bypasses Agent/NLU and
   directly renders the today `ListCard`, because opening the daily queue is the
   product's default starting state rather than an ambiguous user intent.
@@ -123,7 +126,7 @@ Backend:
 
 ```bash
 .tmp/push-venv/bin/python -m pytest
-# 122 passed, 1 skipped
+# 123 passed, 1 skipped
 ```
 
 Frontend:
