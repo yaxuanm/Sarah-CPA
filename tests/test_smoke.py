@@ -15,7 +15,7 @@ from duedatehq.cli import main as cli_main
 from duedatehq.core.conversation import InteractionMode
 from duedatehq.core.dispatchers import CeleryDispatcher
 from duedatehq.core.fetchers import FileFetcher, HttpTextFetcher, RssEntryFetcher, fetcher_for_source
-from duedatehq.core.models import DeadlineAction, DeadlineStatus, NotificationChannel, NotificationStatus, ReminderStatus, RuleReviewItem, RuleStatus
+from duedatehq.core.models import BlockerStatus, DeadlineAction, DeadlineStatus, NotificationChannel, NotificationStatus, ReminderStatus, RuleReviewItem, RuleStatus, TaskStatus
 from duedatehq.core.notifiers import ConsoleNotifier, NotifierRegistry
 from duedatehq.core.postgres import PostgresStorage
 from duedatehq.core.sources import official_source_registry
@@ -291,6 +291,178 @@ def test_client_bundle_and_tax_profile_update(app):
     assert refreshed["tax_profiles"][0].intake_status == "needs_followup"
 
 
+def test_task_lifecycle_and_client_bundle(app):
+    tenant = app.engine.create_tenant("Tenant Tasks")
+    client = app.engine.register_client(
+        tenant_id=tenant.tenant_id,
+        name="Northwind Services LLC",
+        entity_type="llc",
+        registered_states=["CA"],
+        tax_year=2026,
+    )
+
+    task = app.engine.create_task(
+        tenant_id=tenant.tenant_id,
+        client_id=client.client_id,
+        title="Follow up on payroll package",
+        description="Need missing payroll support docs before filing can move.",
+        task_type="follow_up",
+        priority="critical",
+        source_type="blocker",
+        source_id="blocker-001",
+        actor="cli",
+    )
+
+    assert task.status is TaskStatus.OPEN
+    listed = app.engine.list_tasks(tenant.tenant_id, client.client_id)
+    assert [item.task_id for item in listed] == [task.task_id]
+
+    updated = app.engine.update_task_status(
+        tenant_id=tenant.tenant_id,
+        task_id=task.task_id,
+        status=TaskStatus.BLOCKED,
+        actor="cli",
+    )
+    assert updated.status is TaskStatus.BLOCKED
+
+    bundle = app.engine.get_client_bundle(tenant.tenant_id, client.client_id)
+    assert len(bundle["tasks"]) == 1
+    assert bundle["tasks"][0].task_id == task.task_id
+    assert bundle["tasks"][0].status is TaskStatus.BLOCKED
+
+
+def test_import_preview_engine_analysis(app, tmp_path):
+    source = tmp_path / "clients.csv"
+    source.write_text(
+        "Client Name,Entity / Return Type,State Footprint,Payroll States\n"
+        "Northwind Services LLC,LLC,\"CA,NV\",CA\n"
+        "Harbor Studio Partners,Partnership,NY,\n",
+        encoding="utf-8",
+    )
+
+    preview = app.engine.preview_import_csv(source)
+
+    assert preview["source_name"] == "clients.csv"
+    assert preview["imported_rows"] == 2
+    assert preview["required_mappings"] == 3
+    assert preview["resolved_required_mappings"] == 3
+    assert any(item["target_field"] == "Client name" and item["status"] == "Mapped" for item in preview["mappings"])
+    assert any("home jurisdiction" in item.lower() for item in preview["missing_fields"])
+    assert preview["sample_rows"][0][0] == "Northwind Services LLC"
+
+
+def test_blocker_lifecycle_and_client_bundle(app):
+    tenant = app.engine.create_tenant("Tenant Blockers")
+    client = app.engine.register_client(
+        tenant_id=tenant.tenant_id,
+        name="Sierra Wholesale Inc.",
+        entity_type="c-corp",
+        registered_states=["TX", "CA"],
+        tax_year=2026,
+    )
+
+    blocker = app.engine.create_blocker(
+        tenant_id=tenant.tenant_id,
+        client_id=client.client_id,
+        title="Need missing Texas payroll confirmation",
+        description="Payroll state coverage is incomplete in the imported sheet.",
+        blocker_type="missing_info",
+        source_type="import",
+        source_id="import-001",
+        actor="cli",
+    )
+
+    assert blocker.status is BlockerStatus.OPEN
+    listed = app.engine.list_blockers(tenant.tenant_id, client.client_id)
+    assert [item.blocker_id for item in listed] == [blocker.blocker_id]
+
+    updated = app.engine.update_blocker_status(
+        tenant_id=tenant.tenant_id,
+        blocker_id=blocker.blocker_id,
+        status=BlockerStatus.RESOLVED,
+        actor="cli",
+    )
+    assert updated.status is BlockerStatus.RESOLVED
+
+    bundle = app.engine.get_client_bundle(tenant.tenant_id, client.client_id)
+    assert len(bundle["blockers"]) == 1
+    assert bundle["blockers"][0].blocker_id == blocker.blocker_id
+    assert bundle["blockers"][0].status is BlockerStatus.RESOLVED
+
+
+def test_notice_generate_work_creates_tasks_and_blockers(app):
+    tenant = app.engine.create_tenant("Tenant Notices")
+    client_a = app.engine.register_client(
+        tenant_id=tenant.tenant_id,
+        name="Northwind Services LLC",
+        entity_type="llc",
+        registered_states=["CA"],
+        tax_year=2026,
+    )
+    client_b = app.engine.register_client(
+        tenant_id=tenant.tenant_id,
+        name="Sierra Wholesale Inc.",
+        entity_type="c-corp",
+        registered_states=["TX", "CA"],
+        tax_year=2026,
+    )
+    client_c = app.engine.register_client(
+        tenant_id=tenant.tenant_id,
+        name="Harbor Studio Partners",
+        entity_type="partnership",
+        registered_states=["NY"],
+        tax_year=2026,
+    )
+
+    result = app.engine.generate_notice_work(
+        tenant_id=tenant.tenant_id,
+        notice_id="notice-002",
+        title="Texas nexus threshold clarification",
+        source_url="https://comptroller.texas.gov/",
+        affected_clients=[
+            {
+                "client_id": client_a.client_id,
+                "auto_updated": False,
+                "reason": "CA footprint may need manual nexus review.",
+                "old_date": "2026-04-30",
+                "new_date": "2026-05-08",
+            },
+            {
+                "client_id": client_b.client_id,
+                "auto_updated": False,
+                "needs_client_confirmation": True,
+                "reason": "Imported state footprint is incomplete.",
+            },
+            {
+                "client_id": client_c.client_id,
+                "auto_updated": True,
+            },
+        ],
+        actor="cli",
+    )
+
+    assert len(result["tasks"]) == 1
+    assert result["tasks"][0].client_id == client_a.client_id
+    assert len(result["blockers"]) == 1
+    assert result["blockers"][0].client_id == client_b.client_id
+    assert result["skipped_clients"][0]["client_id"] == client_c.client_id
+
+    rerun = app.engine.generate_notice_work(
+        tenant_id=tenant.tenant_id,
+        notice_id="notice-002",
+        title="Texas nexus threshold clarification",
+        source_url="https://comptroller.texas.gov/",
+        affected_clients=[
+            {"client_id": client_a.client_id, "auto_updated": False},
+            {"client_id": client_b.client_id, "auto_updated": False, "needs_client_confirmation": True},
+        ],
+        actor="cli",
+    )
+    assert len(rerun["tasks"]) == 0
+    assert len(rerun["blockers"]) == 0
+    assert {item["disposition"] for item in rerun["skipped_clients"]} == {"existing_task", "existing_blocker"}
+
+
 def test_reminder_queue_rebuild_and_completion_cancels_future(app):
     tenant = app.engine.create_tenant("Tenant A")
     rule = app.engine.create_rule(
@@ -507,6 +679,242 @@ def test_cli_routes_new_deadline_and_today_features(tmp_path, monkeypatch, capsy
     assert cli_main() == 0
     export_payload = json.loads(capsys.readouterr().out)
     assert {item["client_id"] for item in export_payload} == {client.client_id}
+
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["duedatehq", "--db", db_path, "export", tenant.tenant_id, "--client", client.client_id, "--format", "csv"],
+    )
+    assert cli_main() == 0
+    export_csv = capsys.readouterr().out
+    assert "deadline_id" in export_csv
+    assert client.client_id in export_csv
+
+
+def test_cli_task_routes(tmp_path, monkeypatch, capsys):
+    db_path = str(tmp_path / "cli-tasks.sqlite3")
+    app = create_app(db_path)
+    tenant = app.engine.create_tenant("Tenant Tasks")
+    client = app.engine.register_client(
+        tenant_id=tenant.tenant_id,
+        name="Harbor Studio Partners",
+        entity_type="partnership",
+        registered_states=["NY"],
+        tax_year=2026,
+    )
+
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "duedatehq",
+            "--db",
+            db_path,
+            "task",
+            "add",
+            tenant.tenant_id,
+            client.client_id,
+            "--title",
+            "Review PTE election decision",
+            "--task-type",
+            "review",
+            "--priority",
+            "high",
+            "--source-type",
+            "deadline",
+            "--source-id",
+            "dl-002",
+        ],
+    )
+    assert cli_main() == 0
+    task_payload = json.loads(capsys.readouterr().out)
+    assert task_payload["title"] == "Review PTE election decision"
+    assert task_payload["status"] == "open"
+
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["duedatehq", "--db", db_path, "task", "list", tenant.tenant_id, "--client", client.client_id],
+    )
+    assert cli_main() == 0
+    list_payload = json.loads(capsys.readouterr().out)
+    assert len(list_payload) == 1
+    task_id = list_payload[0]["task_id"]
+
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["duedatehq", "--db", db_path, "task", "update-status", tenant.tenant_id, task_id, "--status", "done"],
+    )
+    assert cli_main() == 0
+    updated_payload = json.loads(capsys.readouterr().out)
+    assert updated_payload["status"] == "done"
+
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["duedatehq", "--db", db_path, "client", "show", tenant.tenant_id, client.client_id],
+    )
+    assert cli_main() == 0
+    bundle_payload = json.loads(capsys.readouterr().out)
+    assert len(bundle_payload["tasks"]) == 1
+    assert bundle_payload["tasks"][0]["task_id"] == task_id
+
+
+def test_cli_import_preview_route(tmp_path, monkeypatch, capsys):
+    db_path = str(tmp_path / "cli-import.sqlite3")
+    csv_path = tmp_path / "portfolio.csv"
+    csv_path.write_text(
+        "Client Name,Entity / Return Type,State Footprint,Home State\n"
+        "Sierra Wholesale Inc.,C-Corp,\"TX,CA\",TX\n"
+        "Harbor Studio Partners,Partnership,NY,\n",
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["duedatehq", "--db", db_path, "import", "preview", "--csv", str(csv_path)],
+    )
+    assert cli_main() == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["source_name"] == "portfolio.csv"
+    assert payload["source_kind"] == "CSV import"
+    assert payload["imported_rows"] == 2
+    assert any(item["target_field"] == "Home jurisdiction" and item["status"] == "Mapped" for item in payload["mappings"])
+
+
+def test_cli_blocker_routes(tmp_path, monkeypatch, capsys):
+    db_path = str(tmp_path / "cli-blockers.sqlite3")
+    app = create_app(db_path)
+    tenant = app.engine.create_tenant("Tenant Blockers")
+    client = app.engine.register_client(
+        tenant_id=tenant.tenant_id,
+        name="Northwind Services LLC",
+        entity_type="llc",
+        registered_states=["CA"],
+        tax_year=2026,
+    )
+
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "duedatehq",
+            "--db",
+            db_path,
+            "blocker",
+            "add",
+            tenant.tenant_id,
+            client.client_id,
+            "--title",
+            "Need payroll support docs",
+            "--blocker-type",
+            "missing_info",
+            "--source-type",
+            "import",
+            "--source-id",
+            "import-001",
+        ],
+    )
+    assert cli_main() == 0
+    blocker_payload = json.loads(capsys.readouterr().out)
+    assert blocker_payload["status"] == "open"
+
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["duedatehq", "--db", db_path, "blocker", "list", tenant.tenant_id, "--client", client.client_id],
+    )
+    assert cli_main() == 0
+    list_payload = json.loads(capsys.readouterr().out)
+    assert len(list_payload) == 1
+    blocker_id = list_payload[0]["blocker_id"]
+
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["duedatehq", "--db", db_path, "blocker", "update-status", tenant.tenant_id, blocker_id, "--status", "resolved"],
+    )
+    assert cli_main() == 0
+    updated_payload = json.loads(capsys.readouterr().out)
+    assert updated_payload["status"] == "resolved"
+
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["duedatehq", "--db", db_path, "client", "show", tenant.tenant_id, client.client_id],
+    )
+    assert cli_main() == 0
+    bundle_payload = json.loads(capsys.readouterr().out)
+    assert len(bundle_payload["blockers"]) == 1
+    assert bundle_payload["blockers"][0]["blocker_id"] == blocker_id
+
+
+def test_cli_notice_generate_work_route(tmp_path, monkeypatch, capsys):
+    db_path = str(tmp_path / "cli-notice.sqlite3")
+    app = create_app(db_path)
+    tenant = app.engine.create_tenant("Tenant Notice CLI")
+    client_a = app.engine.register_client(
+        tenant_id=tenant.tenant_id,
+        name="Northwind Services LLC",
+        entity_type="llc",
+        registered_states=["CA"],
+        tax_year=2026,
+    )
+    client_b = app.engine.register_client(
+        tenant_id=tenant.tenant_id,
+        name="Sierra Wholesale Inc.",
+        entity_type="c-corp",
+        registered_states=["TX", "CA"],
+        tax_year=2026,
+    )
+    impacts_path = tmp_path / "notice-impacts.json"
+    impacts_path.write_text(
+        json.dumps(
+            [
+                {
+                    "client_id": client_a.client_id,
+                    "auto_updated": False,
+                    "reason": "Manual CA review is still needed.",
+                },
+                {
+                    "client_id": client_b.client_id,
+                    "auto_updated": False,
+                    "missing_context": True,
+                    "reason": "Imported footprint is incomplete.",
+                },
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "duedatehq",
+            "--db",
+            db_path,
+            "notice",
+            "generate-work",
+            tenant.tenant_id,
+            "--notice-id",
+            "notice-002",
+            "--title",
+            "Texas nexus threshold clarification",
+            "--source-url",
+            "https://comptroller.texas.gov/",
+            "--impacts-file",
+            str(impacts_path),
+        ],
+    )
+    assert cli_main() == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert len(payload["tasks"]) == 1
+    assert len(payload["blockers"]) == 1
+    assert payload["tasks"][0]["source_type"] == "notice"
+    assert payload["blockers"][0]["source_type"] == "notice"
 
 
 def test_notification_routes_and_deliveries(app):

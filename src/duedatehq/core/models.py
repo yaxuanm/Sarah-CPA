@@ -52,6 +52,20 @@ class DeadlineAction(StrEnum):
     RESUME = "resume"
 
 
+class TaskStatus(StrEnum):
+    OPEN = "open"
+    IN_PROGRESS = "in_progress"
+    BLOCKED = "blocked"
+    DONE = "done"
+    DISMISSED = "dismissed"
+
+
+class BlockerStatus(StrEnum):
+    OPEN = "open"
+    RESOLVED = "resolved"
+    DISMISSED = "dismissed"
+
+
 @dataclass(frozen=True, slots=True)
 class SourceDefinition:
     source_key: str
@@ -142,6 +156,44 @@ class ClientContact:
     is_primary: bool
     created_at: datetime
     updated_at: datetime
+
+
+@dataclass(slots=True)
+class Task:
+    task_id: str
+    tenant_id: str
+    client_id: str
+    title: str
+    description: str | None
+    task_type: str
+    status: TaskStatus
+    priority: str
+    source_type: str
+    source_id: str | None
+    owner_user_id: str | None
+    due_at: datetime | None
+    created_at: datetime
+    updated_at: datetime
+    completed_at: datetime | None = None
+    dismissed_at: datetime | None = None
+
+
+@dataclass(slots=True)
+class Blocker:
+    blocker_id: str
+    tenant_id: str
+    client_id: str
+    title: str
+    description: str | None
+    blocker_type: str
+    status: BlockerStatus
+    source_type: str
+    source_id: str | None
+    owner_user_id: str | None
+    created_at: datetime
+    updated_at: datetime
+    resolved_at: datetime | None = None
+    dismissed_at: datetime | None = None
 
 
 @dataclass(slots=True)

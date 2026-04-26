@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import csv
 import json
 import re
 from dataclasses import asdict, dataclass, field, is_dataclass
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from uuid import uuid4
 
 from .bus import InMemoryEventBus
@@ -11,6 +13,8 @@ from .clock import Clock
 from .events import Event, EventType
 from .models import (
     AuditRecord,
+    Blocker,
+    BlockerStatus,
     Client,
     ClientContact,
     ClientJurisdiction,
@@ -26,6 +30,8 @@ from .models import (
     Reminder,
     ReminderStatus,
     ReminderType,
+    Task,
+    TaskStatus,
     FetchRun,
     RuleRecord,
     RuleReviewItem,
@@ -38,6 +44,44 @@ from ..layers.state_machine import DeadlineStateMachine
 
 
 FEDERAL_JURISDICTION = "FEDERAL"
+IMPORT_FIELD_SPECS = (
+    {
+        "key": "client_name",
+        "target_field": "Client name",
+        "required": True,
+        "aliases": ("client name", "client", "account name", "company name", "name"),
+    },
+    {
+        "key": "entity_type",
+        "target_field": "Entity type",
+        "required": True,
+        "aliases": ("entity type", "entity / return type", "return type", "entity", "business type"),
+    },
+    {
+        "key": "operating_states",
+        "target_field": "Operating states",
+        "required": True,
+        "aliases": ("operating states", "state footprint", "states", "registered states", "state"),
+    },
+    {
+        "key": "home_jurisdiction",
+        "target_field": "Home jurisdiction",
+        "required": False,
+        "aliases": ("home jurisdiction", "resident state", "home state", "domicile state"),
+    },
+    {
+        "key": "payroll_states",
+        "target_field": "Payroll states",
+        "required": False,
+        "aliases": ("payroll states", "payroll state", "payroll footprint"),
+    },
+    {
+        "key": "responsible_cpa",
+        "target_field": "Responsible CPA",
+        "required": False,
+        "aliases": ("responsible cpa", "owner", "manager", "account owner"),
+    },
+)
 
 
 @dataclass(slots=True)
@@ -994,6 +1038,103 @@ class InfrastructureEngine:
             raise KeyError(client_id)
         return self._client_from_row(dict(row))
 
+    def preview_import_csv(self, csv_path: str | Path) -> dict[str, object]:
+        path = Path(csv_path)
+        with path.open("r", encoding="utf-8-sig", newline="") as handle:
+            reader = csv.reader(handle)
+            rows = [row for row in reader if any(cell.strip() for cell in row)]
+        if not rows:
+            return {
+                "source_name": path.name,
+                "source_kind": "CSV import",
+                "imported_rows": 0,
+                "summary": "The file is empty, so there is nothing to map yet.",
+                "mappings": [],
+                "missing_fields": ["Add at least one client row before continuing."],
+                "extra_columns": [],
+                "sample_rows": [],
+                "ready_to_generate": False,
+                "required_mappings": 0,
+                "resolved_required_mappings": 0,
+            }
+        headers = rows[0]
+        data_rows = [self._normalize_import_row(headers, row) for row in rows[1:]]
+        return self.preview_import_table(
+            source_name=path.name,
+            source_kind="CSV import",
+            headers=headers,
+            rows=data_rows,
+        )
+
+    def preview_import_table(
+        self,
+        *,
+        source_name: str,
+        source_kind: str,
+        headers: list[str],
+        rows: list[list[str]],
+    ) -> dict[str, object]:
+        normalized_headers = [self._normalize_import_header(header) for header in headers]
+        used_indexes: set[int] = set()
+        mappings: list[dict[str, object]] = []
+        matched_targets: dict[str, int] = {}
+        for spec in IMPORT_FIELD_SPECS:
+            best_index = None
+            best_confidence = 0.0
+            for index, normalized_header in enumerate(normalized_headers):
+                if index in used_indexes:
+                    continue
+                confidence = self._score_import_header_match(normalized_header, spec["aliases"])
+                if confidence > best_confidence:
+                    best_confidence = confidence
+                    best_index = index
+            if best_index is not None and best_confidence >= 0.82:
+                used_indexes.add(best_index)
+                matched_targets[spec["key"]] = best_index
+                mappings.append(
+                    {
+                        "target_field": spec["target_field"],
+                        "source_column": headers[best_index],
+                        "confidence": round(best_confidence, 2),
+                        "status": "Mapped",
+                    }
+                )
+            else:
+                mappings.append(
+                    {
+                        "target_field": spec["target_field"],
+                        "source_column": "",
+                        "confidence": 0,
+                        "status": "Needs follow-up",
+                    }
+                )
+        missing_fields = self._build_import_missing_fields(rows, matched_targets)
+        required_mappings = sum(1 for spec in IMPORT_FIELD_SPECS if spec["required"])
+        resolved_required_mappings = sum(
+            1 for spec in IMPORT_FIELD_SPECS if spec["required"] and spec["key"] in matched_targets
+        )
+        extra_columns = [headers[index] for index in range(len(headers)) if index not in used_indexes]
+        ready_to_generate = resolved_required_mappings == required_mappings and not missing_fields
+        summary = self._build_import_summary(
+            imported_rows=len(rows),
+            resolved_required_mappings=resolved_required_mappings,
+            required_mappings=required_mappings,
+            missing_count=len(missing_fields),
+        )
+        return {
+            "source_name": source_name,
+            "source_kind": source_kind,
+            "imported_rows": len(rows),
+            "summary": summary,
+            "mappings": mappings,
+            "missing_fields": missing_fields,
+            "extra_columns": extra_columns,
+            "sample_rows": rows[:3],
+            "ready_to_generate": ready_to_generate,
+            "required_mappings": required_mappings,
+            "resolved_required_mappings": resolved_required_mappings,
+        }
+
     def get_client_bundle(self, tenant_id: str, client_id: str) -> dict[str, object]:
         with self._connect(tenant_id=tenant_id) as conn:
             client_row = conn.execute(
@@ -1026,13 +1167,481 @@ class InfrastructureEngine:
                 """,
                 (tenant_id, client_id),
             ).fetchall()
+            task_rows = conn.execute(
+                """
+                SELECT * FROM tasks
+                WHERE tenant_id = ? AND client_id = ?
+                ORDER BY created_at DESC
+                """,
+                (tenant_id, client_id),
+            ).fetchall()
+            blocker_rows = conn.execute(
+                """
+                SELECT * FROM blockers
+                WHERE tenant_id = ? AND client_id = ?
+                ORDER BY created_at DESC
+                """,
+                (tenant_id, client_id),
+            ).fetchall()
 
         return {
             "client": self.get_client(tenant_id, client_id),
             "tax_profiles": [self._client_tax_profile_from_row(dict(row)) for row in profile_rows],
             "jurisdictions": [self._client_jurisdiction_from_row(dict(row)) for row in jurisdiction_rows],
             "contacts": [self._client_contact_from_row(dict(row)) for row in contact_rows],
+            "tasks": [self._task_from_row(dict(row)) for row in task_rows],
+            "blockers": [self._blocker_from_row(dict(row)) for row in blocker_rows],
             "deadlines": self.list_deadlines(tenant_id, client_id),
+        }
+
+    def create_task(
+        self,
+        tenant_id: str,
+        client_id: str,
+        *,
+        title: str,
+        description: str | None = None,
+        task_type: str = "manual",
+        priority: str = "normal",
+        source_type: str = "manual",
+        source_id: str | None = None,
+        owner_user_id: str | None = None,
+        due_at: datetime | None = None,
+        actor: str = "system",
+        actor_ip: str = "127.0.0.1",
+    ) -> Task:
+        now = self.clock.now()
+        task = Task(
+            task_id=str(uuid4()),
+            tenant_id=tenant_id,
+            client_id=client_id,
+            title=title,
+            description=description,
+            task_type=task_type,
+            status=TaskStatus.OPEN,
+            priority=priority,
+            source_type=source_type,
+            source_id=source_id,
+            owner_user_id=owner_user_id,
+            due_at=due_at,
+            created_at=now,
+            updated_at=now,
+        )
+        correlation_id = str(uuid4())
+        with self._transaction(tenant_id=tenant_id) as conn:
+            client_row = conn.execute(
+                "SELECT client_id FROM clients WHERE tenant_id = ? AND client_id = ?",
+                (tenant_id, client_id),
+            ).fetchone()
+            if client_row is None:
+                raise KeyError(client_id)
+            conn.execute(
+                """
+                INSERT INTO tasks (
+                    task_id, tenant_id, client_id, title, description, task_type, status, priority,
+                    source_type, source_id, owner_user_id, due_at, created_at, updated_at, completed_at, dismissed_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    task.task_id,
+                    task.tenant_id,
+                    task.client_id,
+                    task.title,
+                    task.description,
+                    task.task_type,
+                    task.status.value,
+                    task.priority,
+                    task.source_type,
+                    task.source_id,
+                    task.owner_user_id,
+                    task.due_at.isoformat() if task.due_at else None,
+                    task.created_at.isoformat(),
+                    task.updated_at.isoformat(),
+                    None,
+                    None,
+                ),
+            )
+            self._insert_audit(
+                conn=conn,
+                tenant_id=tenant_id,
+                actor=actor,
+                actor_ip=actor_ip,
+                action_type="task_created",
+                object_type="task",
+                object_id=task.task_id,
+                before={},
+                after=self._audit_payload(task),
+                correlation_id=correlation_id,
+            )
+        return task
+
+    def list_tasks(
+        self,
+        tenant_id: str,
+        client_id: str | None = None,
+        *,
+        status: TaskStatus | None = None,
+        source_type: str | None = None,
+        limit: int | None = None,
+    ) -> list[Task]:
+        query = "SELECT * FROM tasks WHERE tenant_id = ?"
+        params: list[object] = [tenant_id]
+        if client_id is not None:
+            query += " AND client_id = ?"
+            params.append(client_id)
+        if status is not None:
+            query += " AND status = ?"
+            params.append(status.value)
+        if source_type is not None:
+            query += " AND source_type = ?"
+            params.append(source_type)
+        query += " ORDER BY created_at DESC"
+        if limit is not None:
+            query += " LIMIT ?"
+            params.append(limit)
+        with self._connect(tenant_id=tenant_id) as conn:
+            rows = conn.execute(query, tuple(params)).fetchall()
+        return [self._task_from_row(dict(row)) for row in rows]
+
+    def update_task_status(
+        self,
+        tenant_id: str,
+        task_id: str,
+        *,
+        status: TaskStatus,
+        actor: str = "system",
+        actor_ip: str = "127.0.0.1",
+    ) -> Task:
+        now = self.clock.now()
+        correlation_id = str(uuid4())
+        with self._transaction(tenant_id=tenant_id) as conn:
+            row = conn.execute(
+                "SELECT * FROM tasks WHERE tenant_id = ? AND task_id = ?",
+                (tenant_id, task_id),
+            ).fetchone()
+            if row is None:
+                raise KeyError(task_id)
+            existing = self._task_from_row(dict(row))
+            updated = Task(
+                task_id=existing.task_id,
+                tenant_id=existing.tenant_id,
+                client_id=existing.client_id,
+                title=existing.title,
+                description=existing.description,
+                task_type=existing.task_type,
+                status=status,
+                priority=existing.priority,
+                source_type=existing.source_type,
+                source_id=existing.source_id,
+                owner_user_id=existing.owner_user_id,
+                due_at=existing.due_at,
+                created_at=existing.created_at,
+                updated_at=now,
+                completed_at=now if status is TaskStatus.DONE else existing.completed_at,
+                dismissed_at=now if status is TaskStatus.DISMISSED else existing.dismissed_at,
+            )
+            conn.execute(
+                """
+                UPDATE tasks
+                SET status = ?, updated_at = ?, completed_at = ?, dismissed_at = ?
+                WHERE tenant_id = ? AND task_id = ?
+                """,
+                (
+                    updated.status.value,
+                    updated.updated_at.isoformat(),
+                    updated.completed_at.isoformat() if updated.completed_at else None,
+                    updated.dismissed_at.isoformat() if updated.dismissed_at else None,
+                    tenant_id,
+                    task_id,
+                ),
+            )
+            self._insert_audit(
+                conn=conn,
+                tenant_id=tenant_id,
+                actor=actor,
+                actor_ip=actor_ip,
+                action_type="task_status_updated",
+                object_type="task",
+                object_id=task_id,
+                before=self._audit_payload(existing),
+                after=self._audit_payload(updated),
+                correlation_id=correlation_id,
+            )
+        return updated
+
+    def create_blocker(
+        self,
+        tenant_id: str,
+        client_id: str,
+        *,
+        title: str,
+        description: str | None = None,
+        blocker_type: str = "missing_info",
+        source_type: str = "manual",
+        source_id: str | None = None,
+        owner_user_id: str | None = None,
+        actor: str = "system",
+        actor_ip: str = "127.0.0.1",
+    ) -> Blocker:
+        now = self.clock.now()
+        blocker = Blocker(
+            blocker_id=str(uuid4()),
+            tenant_id=tenant_id,
+            client_id=client_id,
+            title=title,
+            description=description,
+            blocker_type=blocker_type,
+            status=BlockerStatus.OPEN,
+            source_type=source_type,
+            source_id=source_id,
+            owner_user_id=owner_user_id,
+            created_at=now,
+            updated_at=now,
+        )
+        correlation_id = str(uuid4())
+        with self._transaction(tenant_id=tenant_id) as conn:
+            client_row = conn.execute(
+                "SELECT client_id FROM clients WHERE tenant_id = ? AND client_id = ?",
+                (tenant_id, client_id),
+            ).fetchone()
+            if client_row is None:
+                raise KeyError(client_id)
+            conn.execute(
+                """
+                INSERT INTO blockers (
+                    blocker_id, tenant_id, client_id, title, description, blocker_type, status,
+                    source_type, source_id, owner_user_id, created_at, updated_at, resolved_at, dismissed_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    blocker.blocker_id,
+                    blocker.tenant_id,
+                    blocker.client_id,
+                    blocker.title,
+                    blocker.description,
+                    blocker.blocker_type,
+                    blocker.status.value,
+                    blocker.source_type,
+                    blocker.source_id,
+                    blocker.owner_user_id,
+                    blocker.created_at.isoformat(),
+                    blocker.updated_at.isoformat(),
+                    None,
+                    None,
+                ),
+            )
+            self._insert_audit(
+                conn=conn,
+                tenant_id=tenant_id,
+                actor=actor,
+                actor_ip=actor_ip,
+                action_type="blocker_created",
+                object_type="blocker",
+                object_id=blocker.blocker_id,
+                before={},
+                after=self._audit_payload(blocker),
+                correlation_id=correlation_id,
+            )
+        return blocker
+
+    def list_blockers(
+        self,
+        tenant_id: str,
+        client_id: str | None = None,
+        *,
+        status: BlockerStatus | None = None,
+        source_type: str | None = None,
+        limit: int | None = None,
+    ) -> list[Blocker]:
+        query = "SELECT * FROM blockers WHERE tenant_id = ?"
+        params: list[object] = [tenant_id]
+        if client_id is not None:
+            query += " AND client_id = ?"
+            params.append(client_id)
+        if status is not None:
+            query += " AND status = ?"
+            params.append(status.value)
+        if source_type is not None:
+            query += " AND source_type = ?"
+            params.append(source_type)
+        query += " ORDER BY created_at DESC"
+        if limit is not None:
+            query += " LIMIT ?"
+            params.append(limit)
+        with self._connect(tenant_id=tenant_id) as conn:
+            rows = conn.execute(query, tuple(params)).fetchall()
+        return [self._blocker_from_row(dict(row)) for row in rows]
+
+    def update_blocker_status(
+        self,
+        tenant_id: str,
+        blocker_id: str,
+        *,
+        status: BlockerStatus,
+        actor: str = "system",
+        actor_ip: str = "127.0.0.1",
+    ) -> Blocker:
+        now = self.clock.now()
+        correlation_id = str(uuid4())
+        with self._transaction(tenant_id=tenant_id) as conn:
+            row = conn.execute(
+                "SELECT * FROM blockers WHERE tenant_id = ? AND blocker_id = ?",
+                (tenant_id, blocker_id),
+            ).fetchone()
+            if row is None:
+                raise KeyError(blocker_id)
+            existing = self._blocker_from_row(dict(row))
+            updated = Blocker(
+                blocker_id=existing.blocker_id,
+                tenant_id=existing.tenant_id,
+                client_id=existing.client_id,
+                title=existing.title,
+                description=existing.description,
+                blocker_type=existing.blocker_type,
+                status=status,
+                source_type=existing.source_type,
+                source_id=existing.source_id,
+                owner_user_id=existing.owner_user_id,
+                created_at=existing.created_at,
+                updated_at=now,
+                resolved_at=now if status is BlockerStatus.RESOLVED else existing.resolved_at,
+                dismissed_at=now if status is BlockerStatus.DISMISSED else existing.dismissed_at,
+            )
+            conn.execute(
+                """
+                UPDATE blockers
+                SET status = ?, updated_at = ?, resolved_at = ?, dismissed_at = ?
+                WHERE tenant_id = ? AND blocker_id = ?
+                """,
+                (
+                    updated.status.value,
+                    updated.updated_at.isoformat(),
+                    updated.resolved_at.isoformat() if updated.resolved_at else None,
+                    updated.dismissed_at.isoformat() if updated.dismissed_at else None,
+                    tenant_id,
+                    blocker_id,
+                ),
+            )
+            self._insert_audit(
+                conn=conn,
+                tenant_id=tenant_id,
+                actor=actor,
+                actor_ip=actor_ip,
+                action_type="blocker_status_updated",
+                object_type="blocker",
+                object_id=blocker_id,
+                before=self._audit_payload(existing),
+                after=self._audit_payload(updated),
+                correlation_id=correlation_id,
+            )
+        return updated
+
+    def generate_notice_work(
+        self,
+        tenant_id: str,
+        *,
+        notice_id: str,
+        title: str,
+        source_url: str,
+        affected_clients: list[dict[str, object]],
+        actor: str = "system",
+        actor_ip: str = "127.0.0.1",
+    ) -> dict[str, object]:
+        created_tasks: list[Task] = []
+        created_blockers: list[Blocker] = []
+        skipped_clients: list[dict[str, object]] = []
+        for impact in affected_clients:
+            client_id = str(impact["client_id"])
+            auto_updated = bool(impact.get("auto_updated", False))
+            needs_client_confirmation = bool(impact.get("needs_client_confirmation", False))
+            missing_context = bool(impact.get("missing_context", False))
+            reason = str(impact.get("reason") or "").strip()
+            client = self.get_client(tenant_id, client_id)
+
+            if auto_updated and not needs_client_confirmation and not missing_context:
+                skipped_clients.append(
+                    {
+                        "client_id": client_id,
+                        "client_name": client.name,
+                        "disposition": "auto_updated_only",
+                    }
+                )
+                continue
+
+            source_id = f"{notice_id}:{client_id}"
+            if needs_client_confirmation or missing_context:
+                existing_blocker = self._find_open_blocker_for_notice_client(tenant_id, client_id, source_id)
+                if existing_blocker is not None:
+                    skipped_clients.append(
+                        {
+                            "client_id": client_id,
+                            "client_name": client.name,
+                            "disposition": "existing_blocker",
+                        }
+                    )
+                    continue
+                blocker_title = f"Resolve notice follow-up for {client.name}"
+                blocker_description = self._build_notice_work_description(
+                    title=title,
+                    source_url=source_url,
+                    reason=reason,
+                    old_date=impact.get("old_date"),
+                    new_date=impact.get("new_date"),
+                )
+                created_blockers.append(
+                    self.create_blocker(
+                        tenant_id=tenant_id,
+                        client_id=client_id,
+                        title=blocker_title,
+                        description=blocker_description,
+                        blocker_type="policy_review" if needs_client_confirmation else "missing_info",
+                        source_type="notice",
+                        source_id=source_id,
+                        actor=actor,
+                        actor_ip=actor_ip,
+                    )
+                )
+                continue
+
+            existing_task = self._find_open_task_for_notice_client(tenant_id, client_id, source_id)
+            if existing_task is not None:
+                skipped_clients.append(
+                    {
+                        "client_id": client_id,
+                        "client_name": client.name,
+                        "disposition": "existing_task",
+                    }
+                )
+                continue
+            task_title = f"Review notice impact for {client.name}"
+            task_description = self._build_notice_work_description(
+                title=title,
+                source_url=source_url,
+                reason=reason,
+                old_date=impact.get("old_date"),
+                new_date=impact.get("new_date"),
+            )
+            created_tasks.append(
+                self.create_task(
+                    tenant_id=tenant_id,
+                    client_id=client_id,
+                    title=task_title,
+                    description=task_description,
+                    task_type="review",
+                    priority="high",
+                    source_type="notice",
+                    source_id=source_id,
+                    actor=actor,
+                    actor_ip=actor_ip,
+                )
+            )
+        return {
+            "notice_id": notice_id,
+            "title": title,
+            "source_url": source_url,
+            "tasks": created_tasks,
+            "blockers": created_blockers,
+            "skipped_clients": skipped_clients,
         }
 
     def update_client_tax_profile(
@@ -1815,6 +2424,193 @@ class InfrastructureEngine:
             created_at=self._parse_datetime(row["created_at"]),
             updated_at=self._parse_datetime(row["updated_at"]),
         )
+
+    def _task_from_row(self, row: dict) -> Task:
+        return Task(
+            task_id=row["task_id"],
+            tenant_id=row["tenant_id"],
+            client_id=row["client_id"],
+            title=row["title"],
+            description=row.get("description"),
+            task_type=row["task_type"],
+            status=TaskStatus(row["status"]),
+            priority=row["priority"],
+            source_type=row["source_type"],
+            source_id=row.get("source_id"),
+            owner_user_id=row.get("owner_user_id"),
+            due_at=self._parse_datetime(row["due_at"]) if row.get("due_at") else None,
+            created_at=self._parse_datetime(row["created_at"]),
+            updated_at=self._parse_datetime(row["updated_at"]),
+            completed_at=self._parse_datetime(row["completed_at"]) if row.get("completed_at") else None,
+            dismissed_at=self._parse_datetime(row["dismissed_at"]) if row.get("dismissed_at") else None,
+        )
+
+    def _blocker_from_row(self, row: dict) -> Blocker:
+        return Blocker(
+            blocker_id=row["blocker_id"],
+            tenant_id=row["tenant_id"],
+            client_id=row["client_id"],
+            title=row["title"],
+            description=row.get("description"),
+            blocker_type=row["blocker_type"],
+            status=BlockerStatus(row["status"]),
+            source_type=row["source_type"],
+            source_id=row.get("source_id"),
+            owner_user_id=row.get("owner_user_id"),
+            created_at=self._parse_datetime(row["created_at"]),
+            updated_at=self._parse_datetime(row["updated_at"]),
+            resolved_at=self._parse_datetime(row["resolved_at"]) if row.get("resolved_at") else None,
+            dismissed_at=self._parse_datetime(row["dismissed_at"]) if row.get("dismissed_at") else None,
+        )
+
+    def _normalize_import_row(self, headers: list[str], row: list[str]) -> list[str]:
+        if len(row) < len(headers):
+            return row + [""] * (len(headers) - len(row))
+        if len(row) > len(headers):
+            return row[: len(headers)]
+        return row
+
+    def _normalize_import_header(self, value: str) -> str:
+        return re.sub(r"[^a-z0-9]+", " ", value.strip().lower()).strip()
+
+    def _score_import_header_match(self, normalized_header: str, aliases: tuple[str, ...]) -> float:
+        best = 0.0
+        for alias in aliases:
+            normalized_alias = self._normalize_import_header(alias)
+            if normalized_header == normalized_alias:
+                best = max(best, 0.98)
+            elif normalized_alias and normalized_alias in normalized_header:
+                best = max(best, 0.91)
+            elif normalized_header and normalized_header in normalized_alias:
+                best = max(best, 0.86)
+        return best
+
+    def _build_import_missing_fields(self, rows: list[list[str]], matched_targets: dict[str, int]) -> list[str]:
+        messages: list[str] = []
+        required_specs = [spec for spec in IMPORT_FIELD_SPECS if spec["required"]]
+        for spec in required_specs:
+            if spec["key"] not in matched_targets:
+                messages.append(f"Map a column for {spec['target_field']}.")
+        if "home_jurisdiction" not in matched_targets:
+            sample_names = self._import_sample_client_names(rows, matched_targets.get("client_name"))
+            if sample_names:
+                messages.append(f"Confirm home jurisdiction for {sample_names[0]}.")
+        for target_key, label in (
+            ("client_name", "client name"),
+            ("entity_type", "entity type"),
+            ("operating_states", "operating states"),
+            ("home_jurisdiction", "home jurisdiction"),
+        ):
+            column_index = matched_targets.get(target_key)
+            if column_index is None:
+                continue
+            for row_index, row in enumerate(rows[:5]):
+                value = row[column_index].strip() if column_index < len(row) else ""
+                if value:
+                    continue
+                display_name = self._import_client_label_for_row(
+                    row=row,
+                    row_index=row_index,
+                    client_name_index=matched_targets.get("client_name"),
+                )
+                messages.append(f"Confirm {display_name} {label}.")
+                break
+        deduped: list[str] = []
+        seen: set[str] = set()
+        for message in messages:
+            if message in seen:
+                continue
+            seen.add(message)
+            deduped.append(message)
+        return deduped[:5]
+
+    def _import_sample_client_names(self, rows: list[list[str]], client_name_index: int | None) -> list[str]:
+        if client_name_index is None:
+            return []
+        names: list[str] = []
+        for row in rows:
+            if client_name_index >= len(row):
+                continue
+            name = row[client_name_index].strip()
+            if not name:
+                continue
+            names.append(name)
+            if len(names) == 3:
+                break
+        return names
+
+    def _import_client_label_for_row(self, *, row: list[str], row_index: int, client_name_index: int | None) -> str:
+        if client_name_index is not None and client_name_index < len(row):
+            name = row[client_name_index].strip()
+            if name:
+                return name
+        return f"row {row_index + 1}"
+
+    def _build_import_summary(
+        self,
+        *,
+        imported_rows: int,
+        resolved_required_mappings: int,
+        required_mappings: int,
+        missing_count: int,
+    ) -> str:
+        if imported_rows == 0:
+            return "No rows were imported yet."
+        if resolved_required_mappings == required_mappings and missing_count == 0:
+            return "The core filing-profile fields are mapped cleanly, so this file is ready to generate a dashboard."
+        if resolved_required_mappings == required_mappings:
+            return (
+                "The required columns are mapped, but a few client-level gaps still need CPA confirmation before the "
+                "queue should be trusted."
+            )
+        return (
+            f"The file has {imported_rows} client rows, but only {resolved_required_mappings} of the "
+            f"{required_mappings} required filing-profile fields are mapped so far."
+        )
+
+    def _build_notice_work_description(
+        self,
+        *,
+        title: str,
+        source_url: str,
+        reason: str,
+        old_date: object | None,
+        new_date: object | None,
+    ) -> str:
+        parts = [f"Notice: {title}", f"Source: {source_url}"]
+        if old_date or new_date:
+            parts.append(f"Date change: {old_date or 'unknown'} -> {new_date or 'unknown'}")
+        if reason:
+            parts.append(f"Why this needs attention: {reason}")
+        return "\n".join(parts)
+
+    def _find_open_task_for_notice_client(self, tenant_id: str, client_id: str, source_id: str) -> Task | None:
+        with self._connect(tenant_id=tenant_id) as conn:
+            row = conn.execute(
+                """
+                SELECT * FROM tasks
+                WHERE tenant_id = ? AND client_id = ? AND source_type = 'notice' AND source_id = ?
+                  AND status NOT IN (?, ?)
+                ORDER BY created_at DESC
+                LIMIT 1
+                """,
+                (tenant_id, client_id, source_id, TaskStatus.DONE.value, TaskStatus.DISMISSED.value),
+            ).fetchone()
+        return self._task_from_row(dict(row)) if row else None
+
+    def _find_open_blocker_for_notice_client(self, tenant_id: str, client_id: str, source_id: str) -> Blocker | None:
+        with self._connect(tenant_id=tenant_id) as conn:
+            row = conn.execute(
+                """
+                SELECT * FROM blockers
+                WHERE tenant_id = ? AND client_id = ? AND source_type = 'notice' AND source_id = ?
+                  AND status NOT IN (?, ?)
+                ORDER BY created_at DESC
+                LIMIT 1
+                """,
+                (tenant_id, client_id, source_id, BlockerStatus.RESOLVED.value, BlockerStatus.DISMISSED.value),
+            ).fetchone()
+        return self._blocker_from_row(dict(row)) if row else None
 
     def _rule_from_row(self, row: dict) -> RuleRecord:
         return RuleRecord(

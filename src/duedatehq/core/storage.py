@@ -111,6 +111,46 @@ class SQLiteStorage:
                     FOREIGN KEY (client_id) REFERENCES clients(client_id)
                 );
 
+                CREATE TABLE IF NOT EXISTS tasks (
+                    task_id TEXT PRIMARY KEY,
+                    tenant_id TEXT NOT NULL,
+                    client_id TEXT NOT NULL,
+                    title TEXT NOT NULL,
+                    description TEXT,
+                    task_type TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    priority TEXT NOT NULL,
+                    source_type TEXT NOT NULL,
+                    source_id TEXT,
+                    owner_user_id TEXT,
+                    due_at TEXT,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    completed_at TEXT,
+                    dismissed_at TEXT,
+                    FOREIGN KEY (tenant_id) REFERENCES tenants(tenant_id),
+                    FOREIGN KEY (client_id) REFERENCES clients(client_id)
+                );
+
+                CREATE TABLE IF NOT EXISTS blockers (
+                    blocker_id TEXT PRIMARY KEY,
+                    tenant_id TEXT NOT NULL,
+                    client_id TEXT NOT NULL,
+                    title TEXT NOT NULL,
+                    description TEXT,
+                    blocker_type TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    source_type TEXT NOT NULL,
+                    source_id TEXT,
+                    owner_user_id TEXT,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    resolved_at TEXT,
+                    dismissed_at TEXT,
+                    FOREIGN KEY (tenant_id) REFERENCES tenants(tenant_id),
+                    FOREIGN KEY (client_id) REFERENCES clients(client_id)
+                );
+
                 CREATE TABLE IF NOT EXISTS rules (
                     rule_id TEXT PRIMARY KEY,
                     tax_type TEXT NOT NULL,

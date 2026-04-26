@@ -105,6 +105,42 @@ CREATE TABLE IF NOT EXISTS duedatehq.client_contacts (
     updated_at timestamptz NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS duedatehq.tasks (
+    task_id text PRIMARY KEY,
+    tenant_id text NOT NULL REFERENCES duedatehq.tenants(tenant_id),
+    client_id text NOT NULL REFERENCES duedatehq.clients(client_id),
+    title text NOT NULL,
+    description text,
+    task_type text NOT NULL,
+    status text NOT NULL,
+    priority text NOT NULL,
+    source_type text NOT NULL,
+    source_id text,
+    owner_user_id text,
+    due_at timestamptz,
+    created_at timestamptz NOT NULL,
+    updated_at timestamptz NOT NULL,
+    completed_at timestamptz,
+    dismissed_at timestamptz
+);
+
+CREATE TABLE IF NOT EXISTS duedatehq.blockers (
+    blocker_id text PRIMARY KEY,
+    tenant_id text NOT NULL REFERENCES duedatehq.tenants(tenant_id),
+    client_id text NOT NULL REFERENCES duedatehq.clients(client_id),
+    title text NOT NULL,
+    description text,
+    blocker_type text NOT NULL,
+    status text NOT NULL,
+    source_type text NOT NULL,
+    source_id text,
+    owner_user_id text,
+    created_at timestamptz NOT NULL,
+    updated_at timestamptz NOT NULL,
+    resolved_at timestamptz,
+    dismissed_at timestamptz
+);
+
 CREATE TABLE IF NOT EXISTS duedatehq.rules (
     rule_id text PRIMARY KEY,
     tax_type text NOT NULL,
@@ -264,6 +300,8 @@ ALTER TABLE duedatehq.clients ENABLE ROW LEVEL SECURITY;
 ALTER TABLE duedatehq.client_tax_profiles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE duedatehq.client_jurisdictions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE duedatehq.client_contacts ENABLE ROW LEVEL SECURITY;
+ALTER TABLE duedatehq.tasks ENABLE ROW LEVEL SECURITY;
+ALTER TABLE duedatehq.blockers ENABLE ROW LEVEL SECURITY;
 ALTER TABLE duedatehq.deadlines ENABLE ROW LEVEL SECURITY;
 ALTER TABLE duedatehq.deadline_transitions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE duedatehq.reminders ENABLE ROW LEVEL SECURITY;
@@ -288,8 +326,18 @@ WITH CHECK (tenant_id = duedatehq.require_tenant_id());
 
 DROP POLICY IF EXISTS client_contacts_tenant_isolation ON duedatehq.client_contacts;
 CREATE POLICY client_contacts_tenant_isolation ON duedatehq.client_contacts
-USING (tenant_id = duedatehq.require_tenant_id())
-WITH CHECK (tenant_id = duedatehq.require_tenant_id());
+    USING (tenant_id = duedatehq.require_tenant_id())
+    WITH CHECK (tenant_id = duedatehq.require_tenant_id());
+
+DROP POLICY IF EXISTS tasks_tenant_isolation ON duedatehq.tasks;
+CREATE POLICY tasks_tenant_isolation ON duedatehq.tasks
+    USING (tenant_id = duedatehq.require_tenant_id())
+    WITH CHECK (tenant_id = duedatehq.require_tenant_id());
+
+DROP POLICY IF EXISTS blockers_tenant_isolation ON duedatehq.blockers;
+CREATE POLICY blockers_tenant_isolation ON duedatehq.blockers
+    USING (tenant_id = duedatehq.require_tenant_id())
+    WITH CHECK (tenant_id = duedatehq.require_tenant_id());
 
 DROP POLICY IF EXISTS deadlines_tenant_isolation ON duedatehq.deadlines;
 CREATE POLICY deadlines_tenant_isolation ON duedatehq.deadlines

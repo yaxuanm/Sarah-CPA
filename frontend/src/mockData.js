@@ -142,28 +142,28 @@ export const dashboardData = {
       label: "Track",
       title: "What the firm needs to move this week",
       description:
-        "This is the active working queue. Every row here is a filing, review, or deadline-related task that should be advanced now.",
+        "This is the active work queue. Every row here is a task that now requires CPA or staff attention.",
       helper: "Use this when you want to decide what gets worked first."
     },
     waiting: {
       label: "Waiting on info",
-      title: "Work that is blocked by missing data",
+      title: "Blockers that stop work from moving",
       description:
-        "These items are not ready to finish because a document, jurisdiction detail, or CPA confirmation is still missing.",
+        "These are blocker objects, not active tasks. They exist because a document, jurisdiction detail, or confirmation is still missing.",
       helper: "Use this to chase blockers instead of doing deadline work blindly."
     },
     notices: {
       label: "Notice",
       title: "Official source changes that may alter deadlines",
       description:
-        "A notice is a state or federal update from an official source. Some can be applied safely, and some need a human review first.",
+        "A notice is an official update, not a task. It only becomes active work after the CPA decides it should be escalated.",
       helper: "Use this when a legal or policy change may affect multiple clients."
     },
     watchlist: {
       label: "Watchlist",
       title: "Clients that deserve extra attention this week",
       description:
-        "The watchlist is not necessarily due today. It is the set of clients with elevated risk, uncertainty, or a meaningful upcoming decision.",
+        "The watchlist is a risk view, not an active work queue. Items only move into Track after a deliberate escalation.",
       helper: "Use this to monitor accounts that could become urgent soon."
     }
   },
@@ -175,31 +175,40 @@ export const dashboardData = {
   ],
   triage_queue: [
     {
-      deadline_id: "dl-001",
+      task_id: "task-001",
       client_id: "cl-001",
       client_name: "Northwind Services LLC",
-      task: "Q1 payroll filing",
-      due_date: "Apr 22",
-      status: "Waiting on documents",
-      priority: "Critical"
+      title: "Follow up on payroll filing package",
+      due_at: "Apr 22",
+      status: "Open",
+      priority: "Critical",
+      task_type: "follow_up",
+      source_type: "blocker",
+      source_id: "blocker-northwind-payroll"
     },
     {
-      deadline_id: "dl-002",
+      task_id: "task-002",
       client_id: "cl-002",
       client_name: "Harbor Studio Partners",
-      task: "PTE election review",
-      due_date: "Apr 24",
-      status: "Needs CPA decision",
-      priority: "Review"
+      title: "Review PTE election decision",
+      due_at: "Apr 24",
+      status: "Open",
+      priority: "Review",
+      task_type: "review",
+      source_type: "deadline",
+      source_id: "dl-002"
     },
     {
-      deadline_id: "dl-003",
+      task_id: "task-003",
       client_id: "cl-003",
       client_name: "Sierra Wholesale Inc.",
-      task: "Franchise tax notice",
-      due_date: "Apr 30",
-      status: "Pending",
-      priority: "Upcoming"
+      title: "Check California notice impact",
+      due_at: "Apr 30",
+      status: "Open",
+      priority: "Upcoming",
+      task_type: "review",
+      source_type: "notice",
+      source_id: "notice-002"
     }
   ],
   waiting_on_info: [

@@ -114,6 +114,7 @@ function App() {
   const [selectedClientId, setSelectedClientId] = useState("cl-001");
   const [selectedNoticeId, setSelectedNoticeId] = useState("notice-001");
   const [clientsData, setClientsData] = useState(clientRecords);
+  const [tasksData, setTasksData] = useState(dashboardData.triage_queue);
   const [journeyBanner, setJourneyBanner] = useState({
     title: "Start with the core workflow",
     body: "Import data, generate the weekly dashboard, then move through Track, Waiting on info, Notice, and Client Detail."
@@ -330,12 +331,14 @@ function App() {
             <MainContent
               activePage={activePage}
               clients={clientsData}
+              tasks={tasksData}
               selectedClient={selectedClient}
               selectedNotice={selectedNotice}
               onOpenClient={openClient}
               onOpenNotice={openNotice}
               onGenerateDashboard={generateDashboardFromImport}
               onClientDeadlineUpdate={applyClientDeadlineUpdate}
+              onTasksChange={setTasksData}
               onJourneyEvent={reportJourney}
             />
           </main>
@@ -398,16 +401,26 @@ function App() {
 function MainContent({
   activePage,
   clients,
+  tasks,
   selectedClient,
   selectedNotice,
   onOpenClient,
   onOpenNotice,
   onGenerateDashboard,
   onClientDeadlineUpdate,
+  onTasksChange,
   onJourneyEvent
 }) {
   if (activePage === "dashboard") {
-    return <DashboardPage onOpenClient={onOpenClient} onOpenNotice={onOpenNotice} onJourneyEvent={onJourneyEvent} />;
+    return (
+      <DashboardPage
+        tasks={tasks}
+        onTasksChange={onTasksChange}
+        onOpenClient={onOpenClient}
+        onOpenNotice={onOpenNotice}
+        onJourneyEvent={onJourneyEvent}
+      />
+    );
   }
 
   if (activePage === "clients") {
@@ -415,7 +428,14 @@ function MainContent({
   }
 
   if (activePage === "client") {
-    return <ClientDetailPage client={selectedClient} onDeadlineUpdate={onClientDeadlineUpdate} onJourneyEvent={onJourneyEvent} />;
+    return (
+      <ClientDetailPage
+        client={selectedClient}
+        tasks={tasks}
+        onDeadlineUpdate={onClientDeadlineUpdate}
+        onJourneyEvent={onJourneyEvent}
+      />
+    );
   }
 
   if (activePage === "import") {
@@ -433,9 +453,8 @@ function MainContent({
   return <RulesPage />;
 }
 
-function DashboardPage({ onOpenClient, onOpenNotice, onJourneyEvent }) {
+function DashboardPage({ tasks, onTasksChange, onOpenClient, onOpenNotice, onJourneyEvent }) {
   const [activeLane, setActiveLane] = useState("track");
-  const [triageQueue, setTriageQueue] = useState(dashboardData.triage_queue);
   const [waitingItems, setWaitingItems] = useState(dashboardData.waiting_on_info);
   const [noticeItems, setNoticeItems] = useState(
     dashboardData.notice_watchlist.map((item, index) => ({
@@ -448,7 +467,7 @@ function DashboardPage({ onOpenClient, onOpenNotice, onJourneyEvent }) {
     "Pick a lane on the dashboard. Each item now has a CPA action path instead of being a static card."
   );
   const [selectedIds, setSelectedIds] = useState({
-    track: dashboardData.triage_queue[0]?.deadline_id || null,
+    track: dashboardData.triage_queue[0]?.task_id || null,
     waiting: dashboardData.waiting_on_info[0]?.client_id || null,
     notices: dashboardData.notice_watchlist[0]?.notice_id || null,
     watchlist: dashboardData.client_watchlist[0]?.client_id || null
@@ -457,8 +476,8 @@ function DashboardPage({ onOpenClient, onOpenNotice, onJourneyEvent }) {
   const laneConfig = useMemo(
     () => ({
       track: {
-        items: triageQueue,
-        itemKey: "deadline_id"
+        items: tasks,
+        itemKey: "task_id"
       },
       waiting: {
         items: waitingItems,
@@ -473,15 +492,8 @@ function DashboardPage({ onOpenClient, onOpenNotice, onJourneyEvent }) {
         itemKey: "client_id"
       }
     }),
-    [noticeItems, triageQueue, waitingItems, watchItems]
+    [noticeItems, tasks, waitingItems, watchItems]
   );
-
-  const dashboardStats = [
-    { label: "Track", value: `${triageQueue.length}`, tone: "neutral" },
-    { label: "Need review", value: `${noticeItems.filter((item) => !item.read).length}`, tone: "review" },
-    { label: "Waiting on info", value: `${waitingItems.length}`, tone: "critical" },
-    { label: "Watchlist", value: `${watchItems.length}`, tone: "success" }
-  ];
 
   const currentLane = laneConfig[activeLane];
   const currentMeta = dashboardData.section_meta[activeLane];
@@ -507,22 +519,22 @@ function DashboardPage({ onOpenClient, onOpenNotice, onJourneyEvent }) {
     if (!currentItem) return;
 
     if (action === "complete") {
-      const nextItems = triageQueue.filter((item) => item.deadline_id !== currentItem.deadline_id);
-      setTriageQueue(nextItems);
-      replaceLaneSelection("track", nextItems, "deadline_id");
-      setActionMessage(`Marked ${currentItem.task} as done. It is removed from this week's active track queue.`);
-      onJourneyEvent("Track item completed", "Move to the next deadline in Track, or switch to Waiting on info if the queue is blocked.");
+      const nextItems = tasks.filter((item) => item.task_id !== currentItem.task_id);
+      onTasksChange(nextItems);
+      replaceLaneSelection("track", nextItems, "task_id");
+      setActionMessage(`Marked ${currentItem.title} as done. It is removed from this week's active work queue.`);
+      onJourneyEvent("Track item completed", "Move to the next work item in Track, or switch to Waiting on info if the queue is blocked.");
       return;
     }
 
-    const nextItems = triageQueue.map((item) =>
-      item.deadline_id === currentItem.deadline_id
-        ? { ...item, status: "Remind later", priority: "Upcoming", due_date: "Apr 28" }
+    const nextItems = tasks.map((item) =>
+      item.task_id === currentItem.task_id
+        ? { ...item, status: "Blocked", priority: "Upcoming", due_at: "Apr 28" }
         : item
     );
-    setTriageQueue(nextItems);
-    setActionMessage(`Snoozed ${currentItem.task}. It stays visible, but no longer sits at the top of the queue.`);
-    onJourneyEvent("Track item snoozed", "The item is still in the system, but you can now focus on another priority in this week's queue.");
+    onTasksChange(nextItems);
+    setActionMessage(`Deferred ${currentItem.title}. It stays visible, but no longer sits at the top of the active work queue.`);
+    onJourneyEvent("Track item deferred", "The item is still in the system, but you can now focus on another priority in this week's queue.");
   }
 
   function handleWaitingAction(action) {
@@ -532,7 +544,7 @@ function DashboardPage({ onOpenClient, onOpenNotice, onJourneyEvent }) {
       const nextItems = waitingItems.filter((item) => item.client_id !== currentItem.client_id);
       setWaitingItems(nextItems);
       replaceLaneSelection("waiting", nextItems, "client_id");
-      setActionMessage(`Marked the missing info as received for ${currentItem.client_name}. The blocker is cleared from the waiting queue.`);
+      setActionMessage(`Marked the missing info as received for ${currentItem.client_name}. The blocker is cleared, so active work can move again.`);
       onJourneyEvent("Blocker cleared", "Return to Track for active work, or open the client if you want to continue from the account view.");
       return;
     }
@@ -550,15 +562,15 @@ function DashboardPage({ onOpenClient, onOpenNotice, onJourneyEvent }) {
       );
       setNoticeItems(nextItems);
       setActionMessage(`Marked ${currentItem.title} as read. It stays on the notice queue until you either create work from it or remove it.`);
-      onJourneyEvent("Notice acknowledged", "If this notice still matters, create a task from it. Otherwise you can safely dismiss it from the queue.");
+      onJourneyEvent("Notice acknowledged", "If this notice still matters, add it to active work. Otherwise you can safely dismiss it from the queue.");
       return;
     }
 
-    if (action === "delete") {
+    if (action === "dismiss") {
       const nextItems = noticeItems.filter((item) => item.notice_id !== currentItem.notice_id);
       setNoticeItems(nextItems);
       replaceLaneSelection("notices", nextItems, "notice_id");
-      setActionMessage(`Removed ${currentItem.title} from the notice queue.`);
+      setActionMessage(`Dismissed ${currentItem.title} from the notice queue.`);
       onJourneyEvent("Notice dismissed", "This update no longer needs attention. Move to another notice or go back to Track.");
       return;
     }
@@ -567,21 +579,24 @@ function DashboardPage({ onOpenClient, onOpenNotice, onJourneyEvent }) {
     const impactedClient = fullNotice.affected_clients.find((client) => !client.auto_updated) || fullNotice.affected_clients[0];
     if (!impactedClient) return;
     const newTask = {
-      deadline_id: `task-${currentItem.notice_id}`,
+      task_id: `task-${currentItem.notice_id}`,
       client_id: impactedClient.client_id,
       client_name: impactedClient.client_name,
-      task: currentItem.title,
-      due_date: impactedClient.new_date,
-      status: "Created from notice",
-      priority: "Review"
+      title: `Review notice impact: ${currentItem.title}`,
+      due_at: impactedClient.new_date,
+      status: "Open",
+      priority: "Review",
+      task_type: "review",
+      source_type: "notice",
+      source_id: currentItem.notice_id
     };
-    setTriageQueue((current) => [newTask, ...current]);
-    setSelectedIds((current) => ({ ...current, track: newTask.deadline_id }));
+    onTasksChange([newTask, ...tasks]);
+    setSelectedIds((current) => ({ ...current, track: newTask.task_id }));
     setActiveLane("track");
     setNoticeItems((current) =>
       current.map((item) => (item.notice_id === currentItem.notice_id ? { ...item, read: true } : item))
     );
-    setActionMessage(`Created a trackable work item from ${currentItem.title} and moved you back to Track.`);
+    setActionMessage(`Created an active work item from ${currentItem.title} and moved you back to Track.`);
     onJourneyEvent("Task created from notice", "The next step is to open the impacted client or continue in Track where the new work item now belongs.");
   }
 
@@ -598,16 +613,19 @@ function DashboardPage({ onOpenClient, onOpenNotice, onJourneyEvent }) {
     }
 
     const newTask = {
-      deadline_id: `watch-${currentItem.client_id}`,
+      task_id: `watch-${currentItem.client_id}`,
       client_id: currentItem.client_id,
       client_name: currentItem.client_name,
-      task: currentItem.headline,
-      due_date: "Review this week",
-      status: "Escalated from watchlist",
-      priority: "Review"
+      title: currentItem.headline,
+      due_at: "Review this week",
+      status: "Open",
+      priority: "Review",
+      task_type: "review",
+      source_type: "watch_item",
+      source_id: currentItem.client_id
     };
-    setTriageQueue((current) => [newTask, ...current]);
-    setSelectedIds((current) => ({ ...current, track: newTask.deadline_id }));
+    onTasksChange([newTask, ...tasks]);
+    setSelectedIds((current) => ({ ...current, track: newTask.task_id }));
     setActiveLane("track");
     setActionMessage(`Escalated ${currentItem.client_name} from Watchlist into the active Track queue.`);
     onJourneyEvent("Watchlist item escalated", "This client now belongs in the active work queue. Review it in Track and decide the next concrete action.");
@@ -617,15 +635,15 @@ function DashboardPage({ onOpenClient, onOpenNotice, onJourneyEvent }) {
     if (lane === "track") {
       return (
         <button
-          key={item.deadline_id}
+          key={item.task_id}
           type="button"
-          className={`table-row ${currentItem?.deadline_id === item.deadline_id ? "selected" : ""}`}
-          onClick={() => selectItem("track", item.deadline_id)}
+          className={`table-row ${currentItem?.task_id === item.task_id ? "selected" : ""}`}
+          onClick={() => selectItem("track", item.task_id)}
         >
           <div>
-            <strong>{item.task}</strong>
+            <strong>{item.title}</strong>
             <span>
-              {item.client_name} · due {item.due_date}
+              {item.client_name} · due {item.due_at}
             </span>
           </div>
           <div className="row-meta">
@@ -693,15 +711,16 @@ function DashboardPage({ onOpenClient, onOpenNotice, onJourneyEvent }) {
       return (
         <>
           <div className="inspector-block">
-            <span className="panel-label">Selected item</span>
-            <h4>{currentItem.task}</h4>
-            <p>{currentItem.client_name} needs movement before {currentItem.due_date}. This row is here because it directly affects this week's filing queue.</p>
+            <span className="panel-label">Selected task</span>
+            <h4>{currentItem.title}</h4>
+            <p>{currentItem.client_name} has an active work item due by {currentItem.due_at}. This row exists because the system believes a person needs to take action now.</p>
           </div>
           <div className="detail-grid">
             <InfoBlock label="Client" value={currentItem.client_name} />
+            <InfoBlock label="Task type" value={readableTaskType(currentItem.task_type)} />
             <InfoBlock label="Priority" value={currentItem.priority} />
             <InfoBlock label="Current status" value={currentItem.status} />
-            <InfoBlock label="Due date" value={currentItem.due_date} />
+            <InfoBlock label="Due at" value={currentItem.due_at} />
           </div>
           <div className="inspector-actions">
             <button type="button" className="button button-primary" onClick={() => onOpenClient(currentItem.client_id)}>
@@ -722,13 +741,14 @@ function DashboardPage({ onOpenClient, onOpenNotice, onJourneyEvent }) {
       return (
         <>
           <div className="inspector-block">
-            <span className="panel-label">Blocked work</span>
+            <span className="panel-label">Selected blocker</span>
             <h4>{currentItem.client_name}</h4>
             <p>{currentItem.reason}</p>
           </div>
           <div className="detail-grid">
             <InfoBlock label="Waiting on" value={currentItem.requested_from} />
-            <InfoBlock label="Impact" value="Blocks deadline progress" />
+            <InfoBlock label="Object type" value="Blocker" />
+            <InfoBlock label="Impact" value="Stops active work from progressing" />
           </div>
           <div className="callout-card">
             <span className="panel-label">Next step</span>
@@ -773,10 +793,10 @@ function DashboardPage({ onOpenClient, onOpenNotice, onJourneyEvent }) {
               Mark read
             </button>
             <button type="button" className="button button-secondary" onClick={() => handleNoticeAction("create-task")}>
-              Create task
+              Add to active work
             </button>
-            <button type="button" className="button button-secondary" onClick={() => handleNoticeAction("delete")}>
-              Delete
+            <button type="button" className="button button-secondary" onClick={() => handleNoticeAction("dismiss")}>
+              Dismiss
             </button>
           </div>
         </>
@@ -787,7 +807,7 @@ function DashboardPage({ onOpenClient, onOpenNotice, onJourneyEvent }) {
       return (
         <>
           <div className="inspector-block">
-            <span className="panel-label">Watch item</span>
+            <span className="panel-label">Selected watch item</span>
             <h4>{currentItem.client_name}</h4>
             <p>{currentItem.headline}</p>
           </div>
@@ -804,7 +824,7 @@ function DashboardPage({ onOpenClient, onOpenNotice, onJourneyEvent }) {
               Open client
             </button>
             <button type="button" className="button button-secondary" onClick={() => handleWatchlistAction("escalate")}>
-              Create task
+              Add to active work
             </button>
             <button type="button" className="button button-secondary" onClick={() => handleWatchlistAction("dismiss")}>
               Remove
@@ -820,28 +840,16 @@ function DashboardPage({ onOpenClient, onOpenNotice, onJourneyEvent }) {
   return (
     <div className="stack">
       <section className="card">
-        <div className="stats-grid">
-          {dashboardStats.map((stat) => (
-            <article key={stat.label} className="stat-card">
-              <span className="stat-label">{stat.label}</span>
-              <strong>{stat.value}</strong>
-              <span className={`mini-badge ${stat.tone}`}>{stat.tone === "review" ? "Needs review" : stat.tone}</span>
-            </article>
-          ))}
-        </div>
-      </section>
-
-      <section className="card">
         <div className="section-head">
           <div>
             <div className="panel-label">Weekly workspace</div>
             <h3>Cross-state triage dashboard</h3>
+            <p className="section-note">Pick one lane to work from. The queue and decision panel below update together, so the CPA always knows what to do next.</p>
           </div>
-          <span className="soft-chip">Hover the ? icon for guidance, then use the decision panel to act.</span>
         </div>
         <div className="dashboard-lanes">
           {[
-            { key: "track", count: triageQueue.length },
+            { key: "track", count: tasks.length },
             { key: "waiting", count: waitingItems.length },
             { key: "notices", count: noticeItems.length },
             { key: "watchlist", count: watchItems.length }
@@ -853,17 +861,8 @@ function DashboardPage({ onOpenClient, onOpenNotice, onJourneyEvent }) {
                 <button type="button" className="lane-main" onClick={() => selectLane(lane.key)}>
                   <span className="panel-label">{meta.label}</span>
                   <strong>{lane.count}</strong>
-                  <p>{meta.helper}</p>
+                  <span className="lane-hint">{meta.title}</span>
                 </button>
-                <div className="tooltip-wrap">
-                  <button type="button" className="help-icon" aria-label={`Explain ${meta.label}`}>
-                    ?
-                  </button>
-                  <div className="lane-help-popover">
-                    <strong>{meta.title}</strong>
-                    <p>{meta.description}</p>
-                  </div>
-                </div>
               </div>
             );
           })}
@@ -959,10 +958,14 @@ function ClientsPage({ clients, onOpenClient }) {
   );
 }
 
-function ClientDetailPage({ client, onDeadlineUpdate, onJourneyEvent }) {
+function ClientDetailPage({ client, tasks, onDeadlineUpdate, onJourneyEvent }) {
   const [selectedDeadlineId, setSelectedDeadlineId] = useState(client.deadlines[0]?.deadline_id || null);
   const [detailMessage, setDetailMessage] = useState(
     "Pick the one obligation that matters most, then take one clear action before you go back to the dashboard."
+  );
+  const clientTasks = useMemo(
+    () => tasks.filter((task) => task.client_id === client.client_id && task.status !== "Done" && task.status !== "Dismissed"),
+    [client.client_id, tasks]
   );
 
   const selectedDeadline =
@@ -1070,10 +1073,44 @@ function ClientDetailPage({ client, onDeadlineUpdate, onJourneyEvent }) {
       <section className="card">
         <div className="section-head">
           <div>
+            <div className="panel-label">Active work</div>
+            <h3>Tasks linked to this client</h3>
+          </div>
+          <span className="soft-chip">Tasks are human work items. They are not the same thing as deadlines.</span>
+        </div>
+        {clientTasks.length ? (
+          <div className="table-list">
+            {clientTasks.map((task) => (
+              <article key={task.task_id} className="table-row static">
+                <div>
+                  <strong>{task.title}</strong>
+                  <span>
+                    {readableTaskType(task.task_type)} · source: {readableSourceType(task.source_type)}
+                  </span>
+                </div>
+                <div className="row-meta row-meta-actions">
+                  <span>{task.due_at}</span>
+                  <span className={`mini-badge ${toneFromPriority(task.priority)}`}>{task.priority}</span>
+                  <span className="soft-chip action-chip">{task.status}</span>
+                </div>
+              </article>
+            ))}
+          </div>
+        ) : (
+          <EmptyState
+            title="No active work items on this client"
+            body="That means the client may still have deadlines, but there is no separate human work item in Track right now."
+          />
+        )}
+      </section>
+
+      <section className="card">
+        <div className="section-head">
+          <div>
             <div className="panel-label">Deadlines</div>
             <h3>Open obligations</h3>
           </div>
-          <span className="soft-chip">Pick one obligation, then choose the next action.</span>
+          <span className="soft-chip">Deadlines are compliance facts. Choose one only when the CPA needs to change or confirm it.</span>
         </div>
         <div className="split-grid detail-action-grid">
           <div className="table-list">
@@ -1318,7 +1355,7 @@ function NoticesPage({ selectedNotice, onOpenClient, onOpenNotice, onJourneyEven
   const [noticeQueue, setNoticeQueue] = useState(notices);
   const [selectedNoticeId, setSelectedNoticeId] = useState(selectedNotice.notice_id);
   const [noticeMessage, setNoticeMessage] = useState(
-    "Open a notice, validate the source, then decide whether it should be read, dismissed, or turned into real work."
+    "Open a notice, validate the source, then decide whether it should be read, dismissed, or added to active work."
   );
 
   useEffect(() => {
@@ -1351,7 +1388,7 @@ function NoticesPage({ selectedNotice, onOpenClient, onOpenNotice, onJourneyEven
       );
       setNoticeQueue(nextQueue);
       setNoticeMessage(`${currentNotice.title} was marked as read. It stays visible until the CPA either creates work from it or dismisses it.`);
-      onJourneyEvent("Notice marked read", "If the notice still requires action, create a task from it. Otherwise dismiss it to keep the queue clean.");
+      onJourneyEvent("Notice marked read", "If the notice still requires action, add it to active work. Otherwise dismiss it to keep the queue clean.");
       return;
     }
 
@@ -1365,7 +1402,7 @@ function NoticesPage({ selectedNotice, onOpenClient, onOpenNotice, onJourneyEven
     }
 
     const nextQueue = noticeQueue.map((notice) =>
-      notice.notice_id === currentNotice.notice_id ? { ...notice, status: "Task created" } : notice
+      notice.notice_id === currentNotice.notice_id ? { ...notice, status: "Added to active work" } : notice
     );
     setNoticeQueue(nextQueue);
     setNoticeMessage(`${currentNotice.title} now needs follow-up work. The next step is to open an impacted client and continue from there.`);
@@ -1396,7 +1433,7 @@ function NoticesPage({ selectedNotice, onOpenClient, onOpenNotice, onJourneyEven
                     <strong>{notice.title}</strong>
                     <span>{notice.source_label}</span>
                   </div>
-                  <span className={`mini-badge ${notice.status === "Needs review" ? "review" : notice.status === "Task created" ? "success" : "neutral"}`}>
+                  <span className={`mini-badge ${notice.status === "Needs review" ? "review" : notice.status === "Added to active work" ? "success" : "neutral"}`}>
                     {notice.status}
                   </span>
                 </button>
@@ -1428,7 +1465,7 @@ function NoticesPage({ selectedNotice, onOpenClient, onOpenNotice, onJourneyEven
               Mark read
             </button>
             <button type="button" className="button button-secondary" onClick={() => handleNoticeWorkflow("create-task")} disabled={!currentNotice}>
-              Create task
+              Add to active work
             </button>
             <button type="button" className="button button-secondary" onClick={() => handleNoticeWorkflow("dismiss")} disabled={!currentNotice}>
               Dismiss
@@ -1436,7 +1473,7 @@ function NoticesPage({ selectedNotice, onOpenClient, onOpenNotice, onJourneyEven
           </div>
           <div className="callout-card top-gap">
             <span className="panel-label">How to decide</span>
-            <p>If the source is official and the impacted clients really need work, create a task. If the update is already absorbed or irrelevant, dismiss it. If you only want to acknowledge it for now, mark it read.</p>
+            <p>If the source is official and the impacted clients really need work, add it to active work. If the update is already absorbed or irrelevant, dismiss it. If you only want to acknowledge it for now, mark it read.</p>
           </div>
           {(currentNotice?.affected_clients || []).length ? (
             <div className="table-list">
@@ -1476,14 +1513,34 @@ function EmptyState({ title, body }) {
 }
 
 function HelpMenu({ guide }) {
+  const [open, setOpen] = useState(false);
+
   return (
-    <div className="help-menu">
-      <button type="button" className="button button-secondary help-trigger">
-        Help
+    <div className={`help-menu ${open ? "open" : ""}`}>
+      <button
+        type="button"
+        className="help-trigger"
+        aria-label="Open help"
+        aria-expanded={open}
+        onClick={() => setOpen((current) => !current)}
+      >
+        ?
       </button>
       <div className="help-panel">
-        <div className="panel-label">{guide.eyebrow}</div>
-        <h3>{guide.title}</h3>
+        <div className="help-panel-header">
+          <div>
+            <div className="panel-label">{guide.eyebrow}</div>
+            <h3>{guide.title}</h3>
+          </div>
+          <button
+            type="button"
+            className="help-close"
+            aria-label="Close help"
+            onClick={() => setOpen(false)}
+          >
+            ×
+          </button>
+        </div>
         <p>{guide.tip}</p>
         <div className="help-step-list">
           {guide.steps.map((step) => (
@@ -1607,6 +1664,25 @@ function toneFromRisk(risk) {
   if (risk === "High") return "critical";
   if (risk === "Watch") return "review";
   return "success";
+}
+
+function readableTaskType(taskType) {
+  return {
+    review: "Review",
+    follow_up: "Follow-up",
+    deadline_action: "Deadline action",
+    manual: "Manual"
+  }[taskType] || "General";
+}
+
+function readableSourceType(sourceType) {
+  return {
+    deadline: "Deadline",
+    notice: "Notice",
+    blocker: "Blocker",
+    watch_item: "Watch item",
+    manual: "Manual"
+  }[sourceType] || "System";
 }
 
 function actionLabel(action) {
