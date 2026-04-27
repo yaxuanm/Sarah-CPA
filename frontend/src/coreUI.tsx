@@ -295,6 +295,51 @@ export function SearchInput({
   );
 }
 
+// Toggle — accessible on/off switch used in Settings.
+export function Toggle({
+  checked,
+  onChange,
+  label
+}: {
+  checked: boolean;
+  onChange: (next: boolean) => void;
+  label?: string;
+}) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      aria-label={label}
+      className={`toggle ${checked ? "on" : "off"}`}
+      onClick={() => onChange(!checked)}
+    >
+      <span className="toggle-knob" />
+    </button>
+  );
+}
+
+// SettingField — label + control row for Settings forms.
+export function SettingField({
+  label,
+  hint,
+  children
+}: {
+  label: string;
+  hint?: string;
+  children: ReactNode;
+}) {
+  return (
+    <div className="setting-field">
+      <div className="setting-field-text">
+        <span>{label}</span>
+        {hint ? <small>{hint}</small> : null}
+      </div>
+      <div className="setting-field-control">{children}</div>
+    </div>
+  );
+}
+
 // IconButton — generic round icon button used in section headers (export, etc).
 export function IconButton({
   icon,

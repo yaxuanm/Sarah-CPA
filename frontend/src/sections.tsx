@@ -17,7 +17,9 @@ import {
   EmptyStateRow,
   EyebrowHeader,
   FilterPopover,
-  SearchInput
+  SearchInput,
+  SettingField,
+  Toggle
 } from "./coreUI";
 import {
   channelLabel,
@@ -308,24 +310,49 @@ export function TodaySection({ onAction, onPrompt, onExport }: SectionContext) {
         )}
       </section>
 
-      {/* Activity feed */}
-      <section className="card activity-card">
-        <EyebrowHeader
-          eyebrow="Activity"
-          title="What changed in the last few days"
-          subtitle="Filings, reminders, rule auto-applications, and imports."
-        />
-        <ul className="activity-list">
-          {mockActivity.map((entry) => (
-            <li key={entry.id} className={`activity-row category-${entry.category}`}>
-              <span className="activity-when">{entry.when}</span>
-              <span className="activity-actor">{entry.actor}</span>
-              <span className="activity-action">{entry.action}</span>
-              <span className="activity-detail">{entry.detail}</span>
-            </li>
-          ))}
-        </ul>
-      </section>
+      {/* Activity feed + recent exports */}
+      <div className="today-bottom-grid">
+        <section className="card activity-card">
+          <EyebrowHeader
+            eyebrow="Activity"
+            title="What changed in the last few days"
+            subtitle="Filings, reminders, rule auto-applications, and imports."
+          />
+          <ul className="activity-list">
+            {mockActivity.map((entry) => (
+              <li key={entry.id} className={`activity-row category-${entry.category}`}>
+                <span className="activity-when">{entry.when}</span>
+                <span className="activity-actor">{entry.actor}</span>
+                <span className="activity-action">{entry.action}</span>
+                <span className="activity-detail">{entry.detail}</span>
+              </li>
+            ))}
+          </ul>
+        </section>
+
+        <section className="card recent-exports-card">
+          <EyebrowHeader
+            eyebrow="Recent exports"
+            title="CSV / PDF generated for the firm"
+            subtitle="Latest 4 exports across the portfolio."
+          />
+          <ul className="recent-exports-list">
+            {mockExports.map((ex) => (
+              <li key={ex.id} className="recent-export-row">
+                <span className={`badge-pill ${ex.format === "csv" ? "blue" : "gold"}`}>
+                  {ex.format.toUpperCase()}
+                </span>
+                <div className="recent-export-text">
+                  <strong>{ex.scope}</strong>
+                  <span className="muted">
+                    {ex.generated_at} · {ex.size}
+                  </span>
+                </div>
+              </li>
+            ))}
+          </ul>
+        </section>
+      </div>
     </div>
   );
 }
@@ -707,6 +734,36 @@ export function UpdatesSection({ onAction, onPrompt }: SectionContext) {
 
   return (
     <div className="section-shell">
+      {/* 50-state DB sync status — moved here from Settings because it
+          describes the UPSTREAM signal that produces rule changes and
+          reminders. Belongs alongside the things it generates. */}
+      <section className="card sync-banner">
+        <div className="sync-banner-head">
+          <div>
+            <span className="eyebrow">50-state DB · auto-sync</span>
+            <h3>
+              {mockSyncStatus.jurisdictions_covered}/{mockSyncStatus.jurisdictions_total} jurisdictions covered ·
+              monitoring {mockSyncStatus.source_count} sources
+            </h3>
+          </div>
+          <span className="badge-pill green">Healthy</span>
+        </div>
+        <div className="sync-banner-row">
+          <span>
+            Last full sync <strong>{mockSyncStatus.last_full_sync}</strong>
+          </span>
+          <span>
+            Next sync <strong>{mockSyncStatus.next_scheduled_sync}</strong>
+          </span>
+          <span>
+            Auto-applied today <strong>{mockSyncStatus.rules_auto_applied_today}</strong>
+          </span>
+          <span>
+            Pending review <strong>{mockSyncStatus.pending_rule_changes}</strong>
+          </span>
+        </div>
+      </section>
+
       <section className="card section-tab-card">
         <EyebrowHeader eyebrow="Updates" title={activeMeta.label} subtitle={activeMeta.description} />
         <div className="section-tabs">
@@ -925,202 +982,292 @@ function BlockersList({ onPrompt }: { onAction: DirectActionHandler; onPrompt: (
 // Settings
 // ============================================================================
 
-export function SettingsSection({ tenantId, onPrompt, onExport }: SectionContext) {
+// SettingsSection — pure configuration. Status & history live elsewhere:
+//   - 50-state DB sync status → top of Updates (it produces what's in Updates)
+//   - Export history → Today (recent activity-adjacent panel)
+//   - Per-view export buttons → Today / Calendar / Clients toolbars
+// Settings only contains things you can flip, name, schedule, connect,
+// disconnect, invite, or remove.
+export function SettingsSection({ tenantId, onPrompt }: SectionContext) {
+  // Local-only state — these are mock toggles. They look real but don't
+  // round-trip to the backend yet (notify.config isn't whitelisted in
+  // PlanExecutor). When that endpoint lands, replace setState with a
+  // dispatch() call.
+  const [displayName, setDisplayName] = useState("Johnson CPA PLLC");
+  const [timezone, setTimezone] = useState("America/Los_Angeles");
+  const [fiscalYear, setFiscalYear] = useState("Calendar (Jan – Dec)");
+
+  const [channelEnabled, setChannelEnabled] = useState<Record<string, boolean>>(
+    Object.fromEntries(mockChannels.map((c) => [c.id, c.enabled]))
+  );
+
+  const [steps, setSteps] = useState({
+    30: { enabled: true, time: "08:00" },
+    14: { enabled: true, time: "08:00" },
+    7: { enabled: true, time: "08:00" },
+    1: { enabled: true, time: "07:30" }
+  });
+
+  const [integrationConnected, setIntegrationConnected] = useState<Record<string, boolean>>(
+    Object.fromEntries(mockIntegrations.map((i) => [i.id, i.status === "connected"]))
+  );
+
+  const [teamRoles, setTeamRoles] = useState<Record<string, string>>(
+    Object.fromEntries(mockTeam.map((m) => [m.id, m.role]))
+  );
+
+  const [defaultFormat, setDefaultFormat] = useState<"csv" | "pdf">("pdf");
+  const [defaultDestination, setDefaultDestination] = useState("Google Drive");
+  const [autoIncludeExtensions, setAutoIncludeExtensions] = useState(true);
+  const [namingPattern, setNamingPattern] = useState("{client}-{tax}-{quarter}");
+
+  const roleOptions = ["Owner / CPA", "Senior associate", "Tax associate", "Practice admin", "View-only"];
+
   return (
     <div className="section-shell">
-      <div className="settings-row-grid">
-        <article className="card">
-          <EyebrowHeader
-            eyebrow="Tenant"
-            title="Workspace identity"
-            subtitle="The tenant ID below is the value sent on every backend request."
-            pillLabel="Read-only"
-            pillTone="blue"
-          />
-          <div className="settings-grid">
-            <div className="settings-row">
-              <span>Display name</span>
-              <strong>Johnson CPA PLLC</strong>
-            </div>
-            <div className="settings-row">
-              <span>Tenant ID</span>
-              <code>{tenantId}</code>
-            </div>
-            <div className="settings-row">
-              <span>Today (anchored)</span>
-              <strong>Apr 26, 2026</strong>
-            </div>
-          </div>
-        </article>
-
-        <article className="card sync-card">
-          <EyebrowHeader
-            eyebrow="50-state DB"
-            title="Auto-maintained tax deadline coverage"
-            subtitle="Federal + 50 states + DC. Official extensions are pushed within 24 hours."
-            pillLabel="Healthy"
-            pillTone="green"
-          />
-          <div className="sync-grid">
-            <div>
-              <span>Coverage</span>
-              <strong>
-                {mockSyncStatus.jurisdictions_covered}/{mockSyncStatus.jurisdictions_total} jurisdictions
-              </strong>
-            </div>
-            <div>
-              <span>Last full sync</span>
-              <strong>{mockSyncStatus.last_full_sync}</strong>
-            </div>
-            <div>
-              <span>Next scheduled sync</span>
-              <strong>{mockSyncStatus.next_scheduled_sync}</strong>
-            </div>
-            <div>
-              <span>Sources monitored</span>
-              <strong>{mockSyncStatus.source_count}</strong>
-            </div>
-            <div>
-              <span>Auto-applied today</span>
-              <strong>{mockSyncStatus.rules_auto_applied_today}</strong>
-            </div>
-            <div>
-              <span>Pending review</span>
-              <strong>{mockSyncStatus.pending_rule_changes}</strong>
-            </div>
-          </div>
-        </article>
-      </div>
-
+      {/* Workspace */}
       <article className="card">
         <EyebrowHeader
-          eyebrow="Notifications"
-          title="Reminder channels"
-          subtitle="30/14/7/1 stepped reminders fan out across these channels."
+          eyebrow="Workspace"
+          title="Tenant identity"
+          subtitle="Display name, time zone, and fiscal year shown across the app."
         />
-        <div className="channel-grid">
-          {mockChannels.map((ch) => (
-            <div key={ch.id} className={`channel-tile ${ch.enabled ? "on" : "off"}`}>
-              <div className="channel-tile-head">
-                <strong>{ch.label}</strong>
-                <span className={`badge-pill ${ch.enabled ? "green" : ""}`}>
-                  {ch.enabled ? "Enabled" : "Off"}
-                </span>
-              </div>
-              <span className="muted">{ch.description}</span>
-              <span className="muted">Last send: {ch.last_send || "—"}</span>
-            </div>
-          ))}
+        <div className="setting-fields">
+          <SettingField label="Display name" hint="Shown in the topbar and on exports.">
+            <input
+              type="text"
+              className="setting-input"
+              value={displayName}
+              onChange={(e) => setDisplayName(e.target.value)}
+            />
+          </SettingField>
+          <SettingField label="Time zone" hint="Used for reminder send times.">
+            <select
+              className="setting-input"
+              value={timezone}
+              onChange={(e) => setTimezone(e.target.value)}
+            >
+              <option>America/Los_Angeles</option>
+              <option>America/Denver</option>
+              <option>America/Chicago</option>
+              <option>America/New_York</option>
+              <option>UTC</option>
+            </select>
+          </SettingField>
+          <SettingField label="Fiscal year" hint="Used to bucket extensions and YTD totals.">
+            <select
+              className="setting-input"
+              value={fiscalYear}
+              onChange={(e) => setFiscalYear(e.target.value)}
+            >
+              <option>Calendar (Jan – Dec)</option>
+              <option>Fiscal (Jul – Jun)</option>
+              <option>Fiscal (Oct – Sep)</option>
+            </select>
+          </SettingField>
+          <SettingField label="Tenant ID" hint="Sent on every backend request — read only.">
+            <code className="setting-code">{tenantId}</code>
+          </SettingField>
         </div>
-        <div className="settings-row">
-          <span>Configure via chat</span>
-          <button
-            className="primary"
-            type="button"
-            onClick={() => onPrompt("Show notification channel configuration")}
-          >
-            Open in chat
+        <div className="setting-foot">
+          <span className="muted">Anchored today: Apr 26, 2026</span>
+          <button type="button" className="primary">
+            Save changes
           </button>
         </div>
       </article>
 
+      {/* Notification channels */}
       <article className="card">
         <EyebrowHeader
-          eyebrow="Reminder schedule"
-          title="When clients hear from us"
-          subtitle="Stepped reminders happen automatically — adjust the cadence in chat."
+          eyebrow="Notifications"
+          title="Reminder channels"
+          subtitle="Toggle which channels carry the 30/14/7/1 stepped reminders."
         />
-        <div className="step-cadence">
-          {[30, 14, 7, 1].map((step) => (
-            <div key={step} className={`step-tile step-${step}`}>
-              <strong>{step}d</strong>
-              <span>{reminderStepLabel(step as ReminderStep)}</span>
+        <div className="setting-fields">
+          {mockChannels.map((ch) => (
+            <SettingField key={ch.id} label={ch.label} hint={ch.description}>
+              <Toggle
+                checked={!!channelEnabled[ch.id]}
+                onChange={(next) =>
+                  setChannelEnabled((current) => ({ ...current, [ch.id]: next }))
+                }
+                label={`Toggle ${ch.label}`}
+              />
+            </SettingField>
+          ))}
+        </div>
+      </article>
+
+      {/* Reminder cadence */}
+      <article className="card">
+        <EyebrowHeader
+          eyebrow="Reminder cadence"
+          title="When stepped reminders fire"
+          subtitle="Each step can be turned off. Time-of-day applies to all channels."
+        />
+        <div className="cadence-grid">
+          {([30, 14, 7, 1] as ReminderStep[]).map((step) => (
+            <div key={step} className={`cadence-row step-${step}`}>
+              <div className="cadence-row-head">
+                <strong>{step}d</strong>
+                <span>{reminderStepLabel(step)}</span>
+              </div>
+              <Toggle
+                checked={steps[step].enabled}
+                onChange={(next) =>
+                  setSteps((current) => ({
+                    ...current,
+                    [step]: { ...current[step], enabled: next }
+                  }))
+                }
+                label={`Toggle ${step}-day reminder`}
+              />
+              <input
+                type="time"
+                className="setting-input compact"
+                value={steps[step].time}
+                onChange={(e) =>
+                  setSteps((current) => ({
+                    ...current,
+                    [step]: { ...current[step], time: e.target.value }
+                  }))
+                }
+                disabled={!steps[step].enabled}
+              />
             </div>
           ))}
         </div>
       </article>
 
-      <div className="settings-row-grid">
-        <article className="card">
-          <EyebrowHeader eyebrow="Integrations" title="Connected systems" />
-          <ul className="integration-list">
-            {mockIntegrations.map((i) => (
-              <li key={i.id} className={`integration-row status-${i.status}`}>
+      {/* Integrations */}
+      <article className="card">
+        <EyebrowHeader
+          eyebrow="Integrations"
+          title="Connected systems"
+          subtitle="Connect or disconnect data sources and delivery carriers."
+        />
+        <ul className="integration-list">
+          {mockIntegrations.map((i) => {
+            const connected = integrationConnected[i.id];
+            return (
+              <li key={i.id} className={`integration-row status-${connected ? "connected" : "disconnected"}`}>
                 <div>
                   <strong>{i.name}</strong>
                   <span className="muted">{i.description}</span>
                 </div>
                 <div className="integration-meta">
-                  <span
-                    className={`badge-pill ${
-                      i.status === "connected" ? "green" : i.status === "error" ? "red" : ""
-                    }`}
-                  >
-                    {i.status}
+                  <span className={`badge-pill ${connected ? "green" : ""}`}>
+                    {connected ? "Connected" : "Not connected"}
                   </span>
-                  <span className="muted">{i.last_sync || "Not connected"}</span>
+                  <button
+                    type="button"
+                    className={connected ? "ghost-btn" : "primary"}
+                    onClick={() =>
+                      setIntegrationConnected((current) => ({ ...current, [i.id]: !connected }))
+                    }
+                  >
+                    {connected ? "Disconnect" : "Connect"}
+                  </button>
                 </div>
               </li>
-            ))}
-          </ul>
-        </article>
+            );
+          })}
+        </ul>
+      </article>
 
-        <article className="card">
-          <EyebrowHeader eyebrow="Team" title="Members" subtitle={`${mockTeam.length} seats in this tenant`} />
-          <ul className="team-list">
-            {mockTeam.map((m) => (
-              <li key={m.id} className="team-row">
-                <span className="avatar small">{m.initials}</span>
-                <div>
-                  <strong>{m.name}</strong>
-                  <span className="muted">{m.role}</span>
-                </div>
-                <span className="muted">{m.active_clients} clients</span>
-              </li>
-            ))}
-          </ul>
-        </article>
-      </div>
-
+      {/* Team & permissions */}
       <article className="card">
         <EyebrowHeader
-          eyebrow="Exports"
-          title="CSV & PDF deadline reports"
-          subtitle="Generate a portfolio-wide pack or a per-client export."
+          eyebrow="Team & permissions"
+          title="Members"
+          subtitle={`${mockTeam.length} seats in this tenant. Role determines what each member can edit.`}
         />
-        <div className="export-actions">
-          <button
-            type="button"
-            className="ghost-btn"
-            onClick={() => onExport?.("All clients — full deadline log", "csv")}
-          >
-            Export all clients (CSV)
-          </button>
-          <button
-            type="button"
-            className="ghost-btn"
-            onClick={() => onExport?.("All clients — quarterly deadline pack", "pdf")}
-          >
-            Quarterly pack (PDF)
-          </button>
-          <button
-            type="button"
-            className="primary"
-            onClick={() => onPrompt("Generate a deadline pack for a specific client")}
-          >
-            Per-client export
-          </button>
-        </div>
-        <ul className="export-history">
-          {mockExports.map((ex) => (
-            <li key={ex.id} className="export-row">
-              <span className={`badge-pill ${ex.format === "csv" ? "blue" : "gold"}`}>{ex.format.toUpperCase()}</span>
-              <span>{ex.scope}</span>
-              <span className="muted">{ex.generated_at}</span>
-              <span className="muted">{ex.size}</span>
+        <ul className="team-list">
+          {mockTeam.map((m) => (
+            <li key={m.id} className="team-row editable">
+              <span className="avatar small">{m.initials}</span>
+              <div>
+                <strong>{m.name}</strong>
+                <span className="muted">{m.email}</span>
+              </div>
+              <select
+                className="setting-input compact"
+                value={teamRoles[m.id]}
+                onChange={(e) =>
+                  setTeamRoles((current) => ({ ...current, [m.id]: e.target.value }))
+                }
+              >
+                {roleOptions.map((r) => (
+                  <option key={r}>{r}</option>
+                ))}
+              </select>
+              <button type="button" className="ghost-btn" aria-label={`Remove ${m.name}`}>
+                Remove
+              </button>
             </li>
           ))}
         </ul>
+        <div className="setting-foot">
+          <button type="button" className="primary" onClick={() => onPrompt("Invite a new team member")}>
+            + Invite member
+          </button>
+        </div>
+      </article>
+
+      {/* Export preferences */}
+      <article className="card">
+        <EyebrowHeader
+          eyebrow="Export preferences"
+          title="Defaults for CSV / PDF deadline reports"
+          subtitle="These defaults apply when you click Export from Today, Calendar, or Clients."
+        />
+        <div className="setting-fields">
+          <SettingField label="Default format">
+            <div className="radio-row">
+              {(["csv", "pdf"] as const).map((f) => (
+                <label key={f} className={`radio-pill ${defaultFormat === f ? "active" : ""}`}>
+                  <input
+                    type="radio"
+                    name="default-format"
+                    checked={defaultFormat === f}
+                    onChange={() => setDefaultFormat(f)}
+                  />
+                  {f.toUpperCase()}
+                </label>
+              ))}
+            </div>
+          </SettingField>
+          <SettingField label="Default destination" hint="Where new exports are saved.">
+            <select
+              className="setting-input"
+              value={defaultDestination}
+              onChange={(e) => setDefaultDestination(e.target.value)}
+            >
+              <option>Download to browser</option>
+              <option>Google Drive</option>
+              <option>Email to firm inbox</option>
+            </select>
+          </SettingField>
+          <SettingField
+            label="Auto-include extensions"
+            hint="Show pushed-out due dates next to original deadlines on every export."
+          >
+            <Toggle
+              checked={autoIncludeExtensions}
+              onChange={setAutoIncludeExtensions}
+              label="Auto-include extensions"
+            />
+          </SettingField>
+          <SettingField label="File naming pattern" hint="Tokens: {client} {tax} {quarter} {date}">
+            <input
+              type="text"
+              className="setting-input"
+              value={namingPattern}
+              onChange={(e) => setNamingPattern(e.target.value)}
+            />
+          </SettingField>
+        </div>
       </article>
     </div>
   );
