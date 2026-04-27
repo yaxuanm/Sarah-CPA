@@ -91,8 +91,8 @@ export const sectionMeta: Record<SectionId, { eyebrow: string; title: string; su
   },
   updates: {
     eyebrow: "Updates",
-    title: "Reminders, rule changes, and blockers",
-    subtitle: "External signals that may turn into work — review before escalating."
+    title: "Rule changes and system activity",
+    subtitle: "Track sync health, review rule changes, and monitor recent portfolio activity."
   },
   settings: {
     eyebrow: "Settings",
@@ -521,24 +521,44 @@ export function CalendarSection({ onPrompt, onExport, onAction }: SectionContext
 // Clients
 // ============================================================================
 
-export function ClientsSection({ onAction, onExport }: SectionContext) {
+export function ClientsSection({ onExport }: SectionContext) {
   const [importMode, setImportMode] = useState(false);
+  const [selectedClientId, setSelectedClientId] = useState<string | null>(null);
 
   if (importMode) {
     return <ImportWizard onClose={() => setImportMode(false)} />;
   }
 
-  return <ClientDirectory onAction={onAction} onExport={onExport} onImport={() => setImportMode(true)} />;
+  if (selectedClientId) {
+    const client = mockClients.find((entry) => entry.id === selectedClientId);
+    if (client) {
+      return (
+        <ClientDetailSurface
+          client={client}
+          onBack={() => setSelectedClientId(null)}
+          onExport={onExport}
+        />
+      );
+    }
+  }
+
+  return (
+    <ClientDirectory
+      onExport={onExport}
+      onImport={() => setImportMode(true)}
+      onOpenClient={setSelectedClientId}
+    />
+  );
 }
 
 function ClientDirectory({
-  onAction,
   onExport,
-  onImport
+  onImport,
+  onOpenClient
 }: {
-  onAction: DirectActionHandler;
   onExport?: (scope: string, format: "csv" | "pdf") => void;
   onImport: () => void;
+  onOpenClient: (clientId: string) => void;
 }) {
   const [query, setQuery] = useState("");
   const [stateFilter, setStateFilter] = useState<string>("All");
@@ -634,7 +654,9 @@ function ClientDirectory({
             />
           </div>
         ) : (
-          filtered.map((c) => <ClientCardTile key={c.id} client={c} onAction={onAction} />)
+          filtered.map((c) => (
+            <ClientCardTile key={c.id} client={c} onOpenClient={onOpenClient} />
+          ))
         )}
       </section>
     </div>
@@ -1002,13 +1024,19 @@ function ImportWizard({ onClose }: { onClose: () => void }) {
   );
 }
 
-function ClientCardTile({ client, onAction }: { client: MockClient; onAction: DirectActionHandler }) {
-  const action: DirectAction = {
-    type: "agent_input",
-    text: `Open ${client.name}`
-  };
+function ClientCardTile({
+  client,
+  onOpenClient
+}: {
+  client: MockClient;
+  onOpenClient: (clientId: string) => void;
+}) {
   return (
-    <article className={`card client-tile ${client.risk_label || ""}`}>
+    <button
+      type="button"
+      className={`card client-tile ${client.risk_label || ""}`}
+      onClick={() => onOpenClient(client.id)}
+    >
       <div className="client-tile-head">
         <div>
           <h3>{client.name}</h3>
@@ -1048,15 +1076,294 @@ function ClientCardTile({ client, onAction }: { client: MockClient; onAction: Di
       <p className="client-tile-notes">{client.notes}</p>
       <div className="client-tile-foot">
         <span className="muted">{client.primary_contact_name}</span>
-        <button
-          type="button"
-          className="primary"
-          onClick={() => onAction(action, `Open ${client.name}`)}
-        >
-          Open client
-        </button>
+        <span className="client-tile-link">View details</span>
       </div>
-    </article>
+    </button>
+  );
+}
+
+function ClientDetailSurface({
+  client,
+  onBack,
+  onExport
+}: {
+  client: MockClient;
+  onBack: () => void;
+  onExport?: (scope: string, format: "csv" | "pdf") => void;
+}) {
+  const deadlines = useMemo(
+    () =>
+      mockDeadlines
+        .filter((deadline) => deadline.client_id === client.id)
+        .sort((a, b) => a.days_remaining - b.days_remaining),
+    [client.id]
+  );
+
+  const blockers = useMemo(
+    () => mockBlockers.filter((blocker) => blocker.client_id === client.id),
+    [client.id]
+  );
+
+  const reminders = useMemo(
+    () =>
+      mockReminders
+        .filter((reminder) => reminder.client_id === client.id)
+        .sort((a, b) => a.send_at.localeCompare(b.send_at)),
+    [client.id]
+  );
+
+  const extensionDeadlines = useMemo(
+    () => deadlines.filter((deadline) => deadline.extension_status),
+    [deadlines]
+  );
+
+  const recentActivity = useMemo(() => {
+    const nameNeedles = [
+      client.name,
+      client.name.split(" ").slice(0, 2).join(" "),
+      client.name.split(" ")[0]
+    ].filter(Boolean);
+    return mockActivity.filter((entry) =>
+      nameNeedles.some((needle) => entry.detail.includes(needle))
+    );
+  }, [client.name]);
+
+  return (
+    <div className="section-shell client-detail-shell">
+      <section className="card section-toolbar detail-toolbar">
+        <div className="detail-toolbar-left">
+          <button type="button" className="ghost-btn" onClick={onBack}>
+            Back to clients
+          </button>
+          <div className="detail-toolbar-copy">
+            <div className="eyebrow">Client detail</div>
+            <strong>{client.name}</strong>
+          </div>
+        </div>
+        <div className="detail-toolbar-actions">
+          <button
+            type="button"
+            className="ghost-btn"
+            onClick={() => onExport?.(`${client.name} — full deadline pack`, "csv")}
+          >
+            Export CSV
+          </button>
+          <button
+            type="button"
+            className="ghost-btn"
+            onClick={() => onExport?.(`${client.name} — full deadline pack`, "pdf")}
+          >
+            Export PDF
+          </button>
+        </div>
+      </section>
+
+      <div className="client-detail-grid">
+        <div className="client-detail-main">
+          <section className="card client-profile-card">
+            <EyebrowHeader
+              eyebrow="Profile"
+              title={client.name}
+              subtitle="Entity type, state footprint, filing scope, and primary contact."
+            />
+            <div className="profile-grid">
+              <div className="profile-block">
+                <span className="profile-label">Entity type</span>
+                <strong>{client.entity_type}</strong>
+              </div>
+              <div className="profile-block">
+                <span className="profile-label">Registered states</span>
+                <strong>{client.states.join(", ")}</strong>
+              </div>
+              <div className="profile-block">
+                <span className="profile-label">Primary contact</span>
+                <strong>{client.primary_contact_name}</strong>
+                <span className="muted">{client.primary_contact_email}</span>
+              </div>
+              <div className="profile-block">
+                <span className="profile-label">Applicable taxes</span>
+                <div className="client-tile-taxes">
+                  {client.applicable_taxes.map((tax) => (
+                    <span key={tax} className="badge-pill thin">
+                      {tax}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            </div>
+            <p className="client-tile-notes">{client.notes}</p>
+          </section>
+
+          <section className="card deadlines-card">
+            <EyebrowHeader
+              eyebrow="Deadline calendar"
+              title={`${deadlines.length} deadline${deadlines.length === 1 ? "" : "s"}`}
+              subtitle="Derived from entity type, state footprint, and filing scope."
+            />
+            {deadlines.length === 0 ? (
+              <EmptyStateRow
+                title="No deadlines yet"
+                body="This client has no generated deadlines in the current demo dataset."
+              />
+            ) : (
+              <div className="deadlines-table" role="table">
+                <div className="deadlines-table-head" role="row">
+                  <span role="columnheader">Tax type</span>
+                  <span role="columnheader">Jurisdiction</span>
+                  <span role="columnheader">Due</span>
+                  <span role="columnheader">Status</span>
+                  <span role="columnheader">Extension</span>
+                  <span role="columnheader">Source</span>
+                </div>
+                {deadlines.map((deadline) => (
+                  <div key={deadline.id} className="deadlines-table-row" role="row">
+                    <span className="deadlines-cell" role="cell">
+                      {deadline.tax_type}
+                    </span>
+                    <span className="deadlines-cell" role="cell">
+                      {deadline.jurisdiction}
+                    </span>
+                    <span className="deadlines-cell due" role="cell">
+                      <strong>{deadline.due_label}</strong>
+                      <span className="muted">{formatDaysRemaining(deadline)}</span>
+                    </span>
+                    <span className="deadlines-cell" role="cell">
+                      <StatusBadge deadline={deadline} />
+                    </span>
+                    <span className="deadlines-cell" role="cell">
+                      {deadline.extension_status ? (
+                        <span className={`badge-pill ${deadline.extension_status === "approved" ? "green" : "blue"}`}>
+                          {deadline.extension_status === "approved"
+                            ? `Approved → ${deadline.extended_due_date}`
+                            : deadline.extension_status === "submitted"
+                              ? `Filed → ${deadline.extended_due_date}`
+                              : "Denied"}
+                        </span>
+                      ) : (
+                        <span className="muted">—</span>
+                      )}
+                    </span>
+                    <span className="deadlines-cell source" role="cell">
+                      {deadline.source}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </section>
+
+          <section className="card activity-card">
+            <EyebrowHeader
+              eyebrow="Recent activity"
+              title="What changed for this client"
+              subtitle="Imports, reminders, filings, and rule-driven changes tied to this client."
+            />
+            {recentActivity.length === 0 ? (
+              <EmptyStateRow
+                title="No recent activity"
+                body="This client has no matching recent activity in the current demo dataset."
+              />
+            ) : (
+              <ul className="activity-list">
+                {recentActivity.map((entry) => (
+                  <li key={entry.id} className={`activity-row category-${entry.category}`}>
+                    <span className="activity-when">{entry.when}</span>
+                    <span className="activity-actor">{entry.actor}</span>
+                    <span className="activity-action">{entry.action}</span>
+                    <span className="activity-detail">{entry.detail}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
+        </div>
+
+        <div className="client-detail-rail">
+          <section className="card detail-side-card">
+            <EyebrowHeader
+              eyebrow="Extensions"
+              title="Extension log"
+              subtitle="Original due dates, filed status, and effective extended dates."
+            />
+            {extensionDeadlines.length === 0 ? (
+              <EmptyStateRow
+                title="No extensions"
+                body="This client has no extension history in the current demo dataset."
+              />
+            ) : (
+              <ul className="mini-log">
+                {extensionDeadlines.map((deadline) => (
+                  <li key={deadline.id} className="mini-log-row">
+                    <strong>{deadline.tax_type} · {deadline.jurisdiction}</strong>
+                    <span className="muted">Original {deadline.due_label}</span>
+                    <span className={`badge-pill ${deadline.extension_status === "approved" ? "green" : "blue"}`}>
+                      {deadline.extension_status === "approved" ? "Approved" : "Filed"}
+                    </span>
+                    <span className="muted">Extended to {deadline.extended_due_date}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
+
+          <section className="card detail-side-card">
+            <EyebrowHeader
+              eyebrow="Blockers"
+              title="Open blocker timeline"
+              subtitle="What is still stopping work from moving for this client."
+            />
+            {blockers.length === 0 ? (
+              <EmptyStateRow
+                title="No blockers"
+                body="This client has no open blockers right now."
+              />
+            ) : (
+              <ul className="mini-log">
+                {blockers.map((blocker) => (
+                  <li key={blocker.id} className="mini-log-row">
+                    <strong>{blocker.deadline_label}</strong>
+                    <span>{blocker.reason}</span>
+                    <span className="muted">Waiting on {blocker.waiting_on}</span>
+                    <span className="muted">{blocker.next_step}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
+
+          <section className="card detail-side-card">
+            <EyebrowHeader
+              eyebrow="Reminders"
+              title="Queued reminders"
+              subtitle="Upcoming notifications already scheduled for this client."
+            />
+            {reminders.length === 0 ? (
+              <EmptyStateRow
+                title="No reminders queued"
+                body="This client has no queued reminders in the current demo dataset."
+              />
+            ) : (
+              <ul className="mini-log">
+                {reminders.map((reminder) => (
+                  <li key={reminder.id} className="mini-log-row">
+                    <strong>{reminder.tax_type} · {reminder.jurisdiction}</strong>
+                    <span className="muted">{reminderStepLabel(reminder.step)} · {channelLabel(reminder.channel)}</span>
+                    <span className="muted">
+                      {new Date(reminder.send_at).toLocaleString("en-US", {
+                        month: "short",
+                        day: "numeric",
+                        hour: "numeric",
+                        minute: "2-digit"
+                      })}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -1064,34 +1371,24 @@ function ClientCardTile({ client, onAction }: { client: MockClient; onAction: Di
 // Updates
 // ============================================================================
 
-type UpdatesTab = "reminders" | "rules" | "blockers" | "activity";
+type UpdatesTab = "rules" | "activity";
 
 const updatesTabs: Array<{ key: UpdatesTab; label: string; description: string }> = [
-  {
-    key: "reminders",
-    label: "Reminder pipeline",
-    description: "30/14/7/1 stepped reminders across email, SMS, in-app, and Slack."
-  },
   {
     key: "rules",
     label: "Rule review",
     description: "Pending tax-rule changes from the 50-state DB sync that need a CPA decision."
   },
   {
-    key: "blockers",
-    label: "Open blockers",
-    description: "Clients waiting on documents or confirmations across the portfolio."
-  },
-  {
     key: "activity",
     label: "Activity",
-    description:
+      description:
       "Admin monitoring: filings, reminder sends, rule applications, imports, and recent exports."
   }
 ];
 
 export function UpdatesSection({ onAction, onPrompt }: SectionContext) {
-  const [tab, setTab] = useState<UpdatesTab>("reminders");
+  const [tab, setTab] = useState<UpdatesTab>("rules");
   const activeMeta = updatesTabs.find((entry) => entry.key === tab)!;
 
   return (
@@ -1142,9 +1439,7 @@ export function UpdatesSection({ onAction, onPrompt }: SectionContext) {
         </div>
       </section>
 
-      {tab === "reminders" ? <ReminderPipeline /> : null}
       {tab === "rules" ? <RulesReview onAction={onAction} onPrompt={onPrompt} /> : null}
-      {tab === "blockers" ? <BlockersList onAction={onAction} onPrompt={onPrompt} /> : null}
       {tab === "activity" ? <ActivityMonitor /> : null}
     </div>
   );
@@ -1194,58 +1489,6 @@ function ActivityMonitor() {
         </ul>
       </section>
     </>
-  );
-}
-
-function ReminderPipeline() {
-  const stepBuckets: ReminderStep[] = [30, 14, 7, 1];
-  return (
-    <section className="card reminder-pipeline">
-      <div className="reminder-step-grid">
-        {stepBuckets.map((step) => {
-          const items = mockReminders.filter((r) => r.step === step);
-          return (
-            <div key={step} className="reminder-step-col">
-              <div className="reminder-step-head">
-                <strong>{reminderStepLabel(step)}</strong>
-                <span className="muted">{items.length} queued</span>
-              </div>
-              <ul className="reminder-step-list">
-                {items.length === 0 ? (
-                  <li className="reminder-empty">Nothing scheduled</li>
-                ) : (
-                  items.map((r) => (
-                    <li key={r.id} className={`reminder-row status-${r.status}`}>
-                      <div className="reminder-row-head">
-                        <strong>{r.client_name}</strong>
-                        <span className={`badge-pill thin channel-${r.channel}`}>
-                          {channelLabel(r.channel)}
-                        </span>
-                      </div>
-                      <span className="muted">
-                        {r.tax_type} · {r.jurisdiction}
-                      </span>
-                      <span className="reminder-meta">
-                        {new Date(r.send_at).toLocaleString("en-US", {
-                          month: "short",
-                          day: "numeric",
-                          hour: "numeric",
-                          minute: "2-digit"
-                        })}{" "}
-                        · {r.recipient}
-                      </span>
-                      <span className={`badge-pill thin ${r.status === "sent" ? "green" : r.status === "queued" ? "gold" : "blue"}`}>
-                        {r.status}
-                      </span>
-                    </li>
-                  ))
-                )}
-              </ul>
-            </div>
-          );
-        })}
-      </div>
-    </section>
   );
 }
 
@@ -1333,57 +1576,6 @@ function RulesReview({ onAction, onPrompt }: { onAction: DirectActionHandler; on
           </li>
         ))}
       </ul>
-    </section>
-  );
-}
-
-function BlockersList({ onPrompt }: { onAction: DirectActionHandler; onPrompt: (prompt: string) => void }) {
-  return (
-    <section className="card blockers-card">
-      {mockBlockers.length === 0 ? (
-        <EmptyStateRow title="No blockers" body="All clients are responsive right now." />
-      ) : (
-        <ul className="blocker-list">
-          {mockBlockers.map((b) => (
-            <li key={b.id} className="blocker-row">
-              <div className="blocker-head">
-                <h3>{b.client_name}</h3>
-                <span className={`badge-pill ${b.days_open >= 7 ? "red" : "gold"}`}>
-                  {b.days_open} day{b.days_open === 1 ? "" : "s"} open
-                </span>
-              </div>
-              <div className="muted">{b.deadline_label}</div>
-              <p className="blocker-reason">{b.reason}</p>
-              <div className="blocker-meta">
-                <span>
-                  Waiting on <strong>{b.waiting_on}</strong>
-                </span>
-                <span>Asked {b.asked_at}</span>
-              </div>
-              <div className="blocker-next">
-                <span className="muted">Next step</span>
-                <span>{b.next_step}</span>
-              </div>
-              <div className="blocker-actions">
-                <button
-                  type="button"
-                  className="ghost-btn"
-                  onClick={() => onPrompt(`Send a follow-up to ${b.waiting_on} about ${b.client_name}'s ${b.deadline_label}`)}
-                >
-                  Send follow-up
-                </button>
-                <button
-                  type="button"
-                  className="primary"
-                  onClick={() => onPrompt(`Escalate ${b.client_name} blocker to the firm owner`)}
-                >
-                  Escalate
-                </button>
-              </div>
-            </li>
-          ))}
-        </ul>
-      )}
     </section>
   );
 }
