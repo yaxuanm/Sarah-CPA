@@ -52,6 +52,12 @@ export type MockDeadline = {
   source: string;
   blocker_reason: string | null;
   assignee: string;
+  // When set, this deadline is flagged into the Notice bucket because
+  // the referenced rule (in mockRules) materially changed something
+  // about it. Independent of days_remaining — a deadline 19 days out
+  // can still be in Notice if a pending-review rule changes how it
+  // should be filed.
+  notice_rule_id?: string;
 };
 
 export type MockReminder = {
@@ -377,7 +383,8 @@ export const mockDeadlines: MockDeadline[] = [
     extended_due_date: null,
     source: "TX Comptroller — Franchise tax annual",
     blocker_reason: null,
-    assignee: "Sarah Johnson"
+    assignee: "Sarah Johnson",
+    notice_rule_id: "rule-002"
   },
   {
     id: "dl-004",
@@ -537,7 +544,8 @@ export const mockDeadlines: MockDeadline[] = [
     extended_due_date: null,
     source: "OR DOR — construction excise",
     blocker_reason: null,
-    assignee: "Maya Chen"
+    assignee: "Maya Chen",
+    notice_rule_id: "rule-005"
   },
   {
     id: "dl-014",
@@ -697,7 +705,8 @@ export const mockDeadlines: MockDeadline[] = [
     extended_due_date: null,
     source: "FTB Form 100 — minimum franchise",
     blocker_reason: null,
-    assignee: "Sarah Johnson"
+    assignee: "Sarah Johnson",
+    notice_rule_id: "rule-001"
   },
   {
     id: "dl-024",
@@ -1280,4 +1289,97 @@ export function channelLabel(kind: ChannelKind): string {
   if (kind === "sms") return "SMS";
   if (kind === "inapp") return "In-app";
   return "Slack";
+}
+
+// ---------- Triage buckets (Today portfolio board) ----------
+//
+// The 4 buckets give the firm one place to triage every active deadline
+// across every client. Each deadline is in exactly one bucket.
+//
+//   Notice          → needs attention NOW. (a) overdue, (b) ≤ 3 days out,
+//                     or (c) a pending-review rule is reshaping how it
+//                     should be filed.
+//   Waiting on info → blocked on the client. Status=blocked.
+//   Track           → active firm work, normal pace (4–30 days out,
+//                     status=pending, not blocked, no rule notice).
+//   Watchlist       → already extended, completed, or > 30 days out.
+//
+// Completed deadlines are intentionally hidden from the board — they
+// belong to history, not today.
+
+export type TriageBucket = "notice" | "waiting" | "track" | "watchlist";
+
+export const mockRulesById: Record<string, MockRule> = Object.fromEntries(
+  mockRules.map((r) => [r.id, r])
+);
+
+export function bucketOfDeadline(d: MockDeadline): TriageBucket | "completed" {
+  if (d.status === "completed") return "completed";
+  if (d.status === "blocked") return "waiting";
+  if (d.notice_rule_id) return "notice";
+  if (d.status === "extension-filed" || d.status === "extension-approved") return "watchlist";
+  if (d.days_remaining < 0) return "notice";
+  if (d.days_remaining <= 3) return "notice";
+  if (d.days_remaining <= 30) return "track";
+  return "watchlist";
+}
+
+export function noticeReason(d: MockDeadline): string {
+  if (d.notice_rule_id) {
+    const rule = mockRulesById[d.notice_rule_id];
+    if (rule) return `Rule change: ${rule.title}`;
+    return "Rule change pending review";
+  }
+  if (d.days_remaining < 0) return `${Math.abs(d.days_remaining)}d overdue`;
+  if (d.days_remaining === 0) return "Due today";
+  if (d.days_remaining === 1) return "Due tomorrow";
+  if (d.days_remaining <= 3) return `Danger zone — ${d.days_remaining}d out`;
+  return "Needs review";
+}
+
+export type TriageBucketMeta = {
+  id: TriageBucket;
+  title: string;
+  helper: string;
+  tone: "red" | "gold" | "ink" | "blue";
+};
+
+export const triageBucketMeta: Record<TriageBucket, TriageBucketMeta> = {
+  notice: {
+    id: "notice",
+    title: "Notice",
+    helper: "Overdue, in the danger zone, or reshaped by a pending rule change. Look here first.",
+    tone: "red"
+  },
+  waiting: {
+    id: "waiting",
+    title: "Waiting on info",
+    helper: "Blocked until the client sends documents or confirms a decision.",
+    tone: "gold"
+  },
+  track: {
+    id: "track",
+    title: "Track",
+    helper: "Active firm work moving on schedule. No special attention required.",
+    tone: "ink"
+  },
+  watchlist: {
+    id: "watchlist",
+    title: "Watchlist",
+    helper: "Extended, far out, or otherwise just being monitored.",
+    tone: "blue"
+  }
+};
+
+export const triageOrder: TriageBucket[] = ["notice", "waiting", "track", "watchlist"];
+
+export type TriageCounts = Record<TriageBucket, number>;
+
+export function triageCounts(deadlines: MockDeadline[]): TriageCounts {
+  const counts: TriageCounts = { notice: 0, waiting: 0, track: 0, watchlist: 0 };
+  deadlines.forEach((d) => {
+    const b = bucketOfDeadline(d);
+    if (b !== "completed") counts[b] += 1;
+  });
+  return counts;
 }

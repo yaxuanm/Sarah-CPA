@@ -22,6 +22,7 @@ import {
   Toggle
 } from "./coreUI";
 import {
+  bucketOfDeadline,
   channelLabel,
   groupDeadlinesByWeek,
   mockActivity,
@@ -35,17 +36,21 @@ import {
   mockRules,
   mockSyncStatus,
   mockTeam,
+  noticeReason,
   quickViewOptions,
   reminderStepLabel,
   stateOptions,
   statusBadgeLabel,
   statusBadgeTone,
   taxTypeOptions,
-  todayKpis,
+  triageBucketMeta,
+  triageCounts,
+  triageOrder,
   urgencyOf,
   type MockClient,
   type MockDeadline,
-  type ReminderStep
+  type ReminderStep,
+  type TriageBucket
 } from "./mockData";
 
 export type SectionId = "today" | "calendar" | "clients" | "updates" | "settings";
@@ -70,8 +75,9 @@ export type SectionContext = {
 export const sectionMeta: Record<SectionId, { eyebrow: string; title: string; subtitle: string }> = {
   today: {
     eyebrow: "Today",
-    title: "Work that should move now",
-    subtitle: "Active deadlines, blockers, and the activity feed for the current portfolio."
+    title: "Portfolio board",
+    subtitle:
+      "Every active deadline triaged into Notice, Waiting on info, Track, or Watchlist — one place to scan."
   },
   calendar: {
     eyebrow: "Calendar",
@@ -91,7 +97,8 @@ export const sectionMeta: Record<SectionId, { eyebrow: string; title: string; su
   settings: {
     eyebrow: "Settings",
     title: "Workspace settings",
-    subtitle: "Tenant, notification channels, 50-state coverage, and exports."
+    subtitle:
+      "Workspace identity, notification channels, reminder cadence, integrations, team, and export defaults."
   }
 };
 
@@ -123,70 +130,83 @@ function formatDaysRemaining(d: MockDeadline) {
 }
 
 // ============================================================================
-// Today
+// Today — portfolio board (4-bucket triage)
+//
+// Single-page mental model: every active deadline across every client lands
+// in one of four buckets — Notice / Waiting on info / Track / Watchlist —
+// determined by `bucketOfDeadline()` in mockData. The CPA scans top to
+// bottom and never has to switch tabs to know what's on fire.
+//
+// Design moves:
+//   - KPI strip = the 4 bucket counts (not generic metrics).
+//   - Body = 4 grouped sections, with bucket header (title + helper) and
+//     the deadlines as table rows. Notice rows surface the reason chip.
+//   - Filter popover (state / tax) reduces the whole board at once.
+//   - Activity feed + recent exports are admin monitoring; they live
+//     under Updates → Activity tab now, not on this board.
 // ============================================================================
 
-const todayQuickViews = [
-  { id: "all", label: "All open" },
-  { id: "due-this-week", label: "Due this week" },
-  { id: "danger-zone", label: "Danger zone (≤3d)" },
-  { id: "blocked", label: "Blocked" },
-  { id: "extensions", label: "Extensions" }
-] as const;
-
-type TodayQuickView = (typeof todayQuickViews)[number]["id"];
-
-export function TodaySection({ onAction, onPrompt, onExport }: SectionContext) {
-  const [view, setView] = useState<TodayQuickView>("all");
+export function TodaySection({ onAction, onExport }: SectionContext) {
   const [stateFilter, setStateFilter] = useState<string>("All");
   const [taxFilter, setTaxFilter] = useState<string>("All");
 
   const filtered = useMemo(() => {
     return mockDeadlines.filter((d) => {
-      // quick view
-      if (view === "due-this-week" && d.days_remaining > 7) return false;
-      if (view === "due-this-week" && d.days_remaining < 0) return false;
-      if (view === "danger-zone" && (d.days_remaining > 3 || d.days_remaining < 0)) return false;
-      if (view === "blocked" && d.status !== "blocked") return false;
-      if (view === "extensions" && d.status !== "extension-filed" && d.status !== "extension-approved") return false;
-      if (view === "all" && d.status === "completed") return false;
-      // state filter (jurisdiction may be Federal — keep only when state filter is All)
+      if (d.status === "completed") return false;
       if (stateFilter !== "All" && d.jurisdiction !== stateFilter) return false;
       if (taxFilter !== "All" && d.tax_type !== taxFilter) return false;
       return true;
-    }).sort((a, b) => a.days_remaining - b.days_remaining);
-  }, [view, stateFilter, taxFilter]);
+    });
+  }, [stateFilter, taxFilter]);
+
+  const counts = useMemo(() => triageCounts(filtered), [filtered]);
+
+  // Group by bucket. Within each bucket, sort by days_remaining ascending
+  // (most urgent first).
+  const grouped = useMemo(() => {
+    const map: Record<TriageBucket, MockDeadline[]> = {
+      notice: [],
+      waiting: [],
+      track: [],
+      watchlist: []
+    };
+    filtered.forEach((d) => {
+      const b = bucketOfDeadline(d);
+      if (b !== "completed") map[b].push(d);
+    });
+    triageOrder.forEach((b) => {
+      map[b].sort((a, b2) => a.days_remaining - b2.days_remaining);
+    });
+    return map;
+  }, [filtered]);
 
   const activeCount = (stateFilter !== "All" ? 1 : 0) + (taxFilter !== "All" ? 1 : 0);
 
   return (
     <div className="section-shell">
-      {/* KPI strip */}
+      {/* KPI strip = the 4 bucket counts */}
       <div className="kpi-strip">
-        {todayKpis.map((kpi) => (
-          <div key={kpi.id} className={`kpi-tile tone-${kpi.tone}`}>
-            <span className="kpi-label">{kpi.label}</span>
-            <span className="kpi-value">{kpi.value}</span>
-            <span className="kpi-delta">{kpi.delta}</span>
-          </div>
-        ))}
+        {triageOrder.map((b) => {
+          const meta = triageBucketMeta[b];
+          return (
+            <div key={b} className={`kpi-tile bucket bucket-${b} tone-${meta.tone}`}>
+              <span className="kpi-label">{meta.title}</span>
+              <span className="kpi-value">{counts[b]}</span>
+              <span className="kpi-delta">{meta.helper}</span>
+            </div>
+          );
+        })}
       </div>
 
-      {/* Toolbar: quick views + filter icon + export */}
+      {/* Toolbar: filter + export. No quick-view tabs — the board IS the
+          quick view. */}
       <section className="card section-toolbar">
-        <div className="quick-view-tabs" role="tablist">
-          {todayQuickViews.map((q) => (
-            <button
-              key={q.id}
-              type="button"
-              role="tab"
-              aria-selected={q.id === view}
-              className={`quick-view-tab ${q.id === view ? "active" : ""}`}
-              onClick={() => setView(q.id)}
-            >
-              {q.label}
-            </button>
-          ))}
+        <div className="board-toolbar-label">
+          <strong>Portfolio board</strong>
+          <span className="muted">
+            {filtered.length} active deadline{filtered.length === 1 ? "" : "s"} across{" "}
+            {new Set(filtered.map((d) => d.client_id)).size} clients
+          </span>
         </div>
         <div className="toolbar-spacer" />
         <FilterPopover
@@ -215,144 +235,105 @@ export function TodaySection({ onAction, onPrompt, onExport }: SectionContext) {
         <button
           type="button"
           className="ghost-btn"
-          onClick={() => onExport?.("Today's open deadlines", "csv")}
+          onClick={() => onExport?.("Portfolio board — all active deadlines", "csv")}
         >
           Export CSV
         </button>
-        <button
-          type="button"
-          className="primary"
-          onClick={() => onPrompt("Draft a status update I can send to the team about today's open work")}
-        >
-          Draft team update
-        </button>
       </section>
 
-      {/* Deadlines table */}
-      <section className="card deadlines-card">
-        <EyebrowHeader
-          eyebrow="Active deadlines"
-          title={`${filtered.length} item${filtered.length === 1 ? "" : "s"} match`}
-          subtitle="Sorted by urgency. Extensions surface their pushed-out date."
-        />
-        {filtered.length === 0 ? (
-          <EmptyStateRow
-            title="Nothing matches that view"
-            body="Loosen the filters or pick a different quick view above."
-          />
-        ) : (
-          <div className="deadlines-table" role="table">
-            <div className="deadlines-table-head" role="row">
-              <span role="columnheader">Client</span>
-              <span role="columnheader">Tax type</span>
-              <span role="columnheader">Jurisdiction</span>
-              <span role="columnheader">Due</span>
-              <span role="columnheader">Status</span>
-              <span role="columnheader">Extension</span>
-              <span role="columnheader">Assignee</span>
-              <span role="columnheader" aria-label="Actions" />
-            </div>
-            {filtered.map((d) => (
-              <div key={d.id} className="deadlines-table-row" role="row">
-                <span className="deadlines-cell client" role="cell">
-                  <UrgencyDot deadline={d} />
-                  <span>{d.client_name}</span>
-                </span>
-                <span className="deadlines-cell" role="cell">
-                  {d.tax_type}
-                </span>
-                <span className="deadlines-cell" role="cell">
-                  {d.jurisdiction}
-                </span>
-                <span className="deadlines-cell due" role="cell">
-                  <strong>{d.due_label}</strong>
-                  <span className="muted">{formatDaysRemaining(d)}</span>
-                </span>
-                <span className="deadlines-cell" role="cell">
-                  <StatusBadge deadline={d} />
-                </span>
-                <span className="deadlines-cell" role="cell">
-                  {d.extension_status ? (
-                    <span className={`badge-pill ${d.extension_status === "approved" ? "green" : "blue"}`}>
-                      {d.extension_status === "approved"
-                        ? `Approved → ${d.extended_due_date}`
-                        : d.extension_status === "submitted"
-                          ? `Filed → ${d.extended_due_date}`
-                          : "Denied"}
-                    </span>
-                  ) : (
-                    <span className="muted">—</span>
-                  )}
-                </span>
-                <span className="deadlines-cell" role="cell">
-                  {d.assignee}
-                </span>
-                <span className="deadlines-cell actions" role="cell">
-                  <button
-                    type="button"
-                    className="link-btn"
-                    onClick={() =>
-                      onAction(
-                        {
-                          type: "agent_input",
-                          text: `Open ${d.client_name} ${d.tax_type} ${d.jurisdiction} deadline`
-                        },
-                        `Open ${d.client_name} deadline`
-                      )
-                    }
-                  >
-                    Open
-                  </button>
+      {/* The board: 4 buckets stacked top-to-bottom. */}
+      {triageOrder.map((b) => {
+        const meta = triageBucketMeta[b];
+        const items = grouped[b];
+        return (
+          <section key={b} className={`card bucket-card bucket-${b} tone-${meta.tone}`}>
+            <div className="bucket-head">
+              <div>
+                <span className={`bucket-tag tone-${meta.tone}`}>{meta.title}</span>
+                <span className="bucket-count">
+                  {items.length} item{items.length === 1 ? "" : "s"}
                 </span>
               </div>
-            ))}
-          </div>
-        )}
-      </section>
-
-      {/* Activity feed + recent exports */}
-      <div className="today-bottom-grid">
-        <section className="card activity-card">
-          <EyebrowHeader
-            eyebrow="Activity"
-            title="What changed in the last few days"
-            subtitle="Filings, reminders, rule auto-applications, and imports."
-          />
-          <ul className="activity-list">
-            {mockActivity.map((entry) => (
-              <li key={entry.id} className={`activity-row category-${entry.category}`}>
-                <span className="activity-when">{entry.when}</span>
-                <span className="activity-actor">{entry.actor}</span>
-                <span className="activity-action">{entry.action}</span>
-                <span className="activity-detail">{entry.detail}</span>
-              </li>
-            ))}
-          </ul>
-        </section>
-
-        <section className="card recent-exports-card">
-          <EyebrowHeader
-            eyebrow="Recent exports"
-            title="CSV / PDF generated for the firm"
-            subtitle="Latest 4 exports across the portfolio."
-          />
-          <ul className="recent-exports-list">
-            {mockExports.map((ex) => (
-              <li key={ex.id} className="recent-export-row">
-                <span className={`badge-pill ${ex.format === "csv" ? "blue" : "gold"}`}>
-                  {ex.format.toUpperCase()}
-                </span>
-                <div className="recent-export-text">
-                  <strong>{ex.scope}</strong>
-                  <span className="muted">
-                    {ex.generated_at} · {ex.size}
-                  </span>
+              <span className="bucket-helper">{meta.helper}</span>
+            </div>
+            {items.length === 0 ? (
+              <EmptyStateRow
+                title="Empty bucket"
+                body={`No deadlines currently classified as ${meta.title.toLowerCase()}.`}
+              />
+            ) : (
+              <div className="bucket-table" role="table">
+                <div className="bucket-table-head" role="row">
+                  <span role="columnheader">Client</span>
+                  <span role="columnheader">Tax type</span>
+                  <span role="columnheader">Jurisdiction</span>
+                  <span role="columnheader">Due</span>
+                  <span role="columnheader">Status / reason</span>
+                  <span role="columnheader">Assignee</span>
+                  <span role="columnheader" aria-label="Actions" />
                 </div>
-              </li>
-            ))}
-          </ul>
-        </section>
-      </div>
+                {items.map((d) => (
+                  <div key={d.id} className="bucket-table-row" role="row">
+                    <span className="bucket-cell client" role="cell">
+                      <UrgencyDot deadline={d} />
+                      <span>{d.client_name}</span>
+                    </span>
+                    <span className="bucket-cell" role="cell">
+                      {d.tax_type}
+                    </span>
+                    <span className="bucket-cell" role="cell">
+                      {d.jurisdiction}
+                    </span>
+                    <span className="bucket-cell due" role="cell">
+                      <strong>{d.due_label}</strong>
+                      <span className="muted">{formatDaysRemaining(d)}</span>
+                    </span>
+                    <span className="bucket-cell reason" role="cell">
+                      {b === "notice" ? (
+                        <span className="badge-pill red">{noticeReason(d)}</span>
+                      ) : b === "waiting" ? (
+                        <span className="badge-pill gold">
+                          {d.blocker_reason || "Waiting on client"}
+                        </span>
+                      ) : b === "watchlist" && d.extension_status ? (
+                        <span className="badge-pill blue">
+                          {d.extension_status === "approved"
+                            ? `Extended → ${d.extended_due_date}`
+                            : d.extension_status === "submitted"
+                              ? `Filed → ${d.extended_due_date}`
+                              : "Extension denied"}
+                        </span>
+                      ) : (
+                        <StatusBadge deadline={d} />
+                      )}
+                    </span>
+                    <span className="bucket-cell" role="cell">
+                      {d.assignee}
+                    </span>
+                    <span className="bucket-cell actions" role="cell">
+                      <button
+                        type="button"
+                        className="link-btn"
+                        onClick={() =>
+                          onAction(
+                            {
+                              type: "agent_input",
+                              text: `Open ${d.client_name} ${d.tax_type} ${d.jurisdiction} deadline`
+                            },
+                            `Open ${d.client_name} deadline`
+                          )
+                        }
+                      >
+                        Open
+                      </button>
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </section>
+        );
+      })}
     </div>
   );
 }
@@ -540,7 +521,25 @@ export function CalendarSection({ onPrompt, onExport, onAction }: SectionContext
 // Clients
 // ============================================================================
 
-export function ClientsSection({ onAction, onPrompt, onExport }: SectionContext) {
+export function ClientsSection({ onAction, onExport }: SectionContext) {
+  const [importMode, setImportMode] = useState(false);
+
+  if (importMode) {
+    return <ImportWizard onClose={() => setImportMode(false)} />;
+  }
+
+  return <ClientDirectory onAction={onAction} onExport={onExport} onImport={() => setImportMode(true)} />;
+}
+
+function ClientDirectory({
+  onAction,
+  onExport,
+  onImport
+}: {
+  onAction: DirectActionHandler;
+  onExport?: (scope: string, format: "csv" | "pdf") => void;
+  onImport: () => void;
+}) {
   const [query, setQuery] = useState("");
   const [stateFilter, setStateFilter] = useState<string>("All");
   const [entityFilter, setEntityFilter] = useState<string>("All");
@@ -621,11 +620,7 @@ export function ClientsSection({ onAction, onPrompt, onExport }: SectionContext)
         >
           Export PDF
         </button>
-        <button
-          type="button"
-          className="primary"
-          onClick={() => onPrompt("I want to import a client portfolio CSV")}
-        >
+        <button type="button" className="primary" onClick={onImport}>
           Import clients
         </button>
       </section>
@@ -642,6 +637,367 @@ export function ClientsSection({ onAction, onPrompt, onExport }: SectionContext)
           filtered.map((c) => <ClientCardTile key={c.id} client={c} onAction={onAction} />)
         )}
       </section>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Structured Import wizard (no chat handoff).
+//
+// 4 stops: choose file → map columns → preview rows → apply. The CSV upload
+// step only resolves the parse locally; the actual rows then flow through
+// the column-map / preview / apply screens. State is local-only — the
+// backend hook (client.import) will be added in a follow-up.
+// ---------------------------------------------------------------------------
+
+const importFields = [
+  { key: "name", label: "Client name", required: true },
+  { key: "entity_type", label: "Entity type", required: true },
+  { key: "states", label: "Registered states", required: true },
+  { key: "primary_contact_name", label: "Primary contact name", required: false },
+  { key: "primary_contact_email", label: "Primary contact email", required: false },
+  { key: "applicable_taxes", label: "Applicable taxes", required: false },
+  { key: "notes", label: "Notes", required: false }
+] as const;
+
+type ImportFieldKey = (typeof importFields)[number]["key"];
+
+const sampleCsvHeaders = [
+  "Company",
+  "Type",
+  "States",
+  "Contact",
+  "Email",
+  "Taxes",
+  "Notes",
+  "Internal ID"
+];
+
+const sampleCsvRows: string[][] = [
+  [
+    "Westlake Restaurants Group",
+    "S-Corp",
+    "CA;NV",
+    "Marisol Vega",
+    "marisol@westlakerg.com",
+    "Federal income;State income;Sales/Use;Payroll (941)",
+    "Restaurant chain — 4 locations",
+    "WLR-001"
+  ],
+  [
+    "Northwind Services LLC",
+    "LLC",
+    "CA;TX;NV",
+    "Maya Chen",
+    "maya@northwindservices.com",
+    "Federal income;State income;Payroll (941);Sales/Use",
+    "Existing client — same EIN",
+    "DUP-NW-001"
+  ],
+  [
+    "Cedar Creek Vineyards",
+    "Partnership",
+    "OR",
+    "James Holloway",
+    "james@cedarcreek.wine",
+    "Federal income;State income;Excise",
+    "Bonded winery; OBLP excise filings monthly",
+    "CCV-001"
+  ],
+  [
+    "Beacon Coastal Realty",
+    "S-Corp",
+    "FL",
+    "Aniya Brooks",
+    "aniya@beaconcoastal.com",
+    "Federal income",
+    "FL has no state income tax",
+    "BCR-001"
+  ],
+  [
+    "Polaris Robotics Inc.",
+    "C-Corp",
+    "WA;CA;MA",
+    "Henry Tanaka",
+    "henry@polarisrobotics.com",
+    "Federal income;State income;Franchise;Payroll (941)",
+    "VC-backed; multi-state nexus review needed",
+    "POL-001"
+  ]
+];
+
+function ImportWizard({ onClose }: { onClose: () => void }) {
+  const [step, setStep] = useState<1 | 2 | 3 | 4>(1);
+  const [fileName, setFileName] = useState<string | null>(null);
+  const [delimiter, setDelimiter] = useState(",");
+  const [hasHeader, setHasHeader] = useState(true);
+
+  // Auto-detect column → field mapping. Re-derive when CSV changes; user can
+  // override.
+  const autoMap: Record<ImportFieldKey, string | null> = {
+    name: "Company",
+    entity_type: "Type",
+    states: "States",
+    primary_contact_name: "Contact",
+    primary_contact_email: "Email",
+    applicable_taxes: "Taxes",
+    notes: "Notes"
+  };
+  const [mapping, setMapping] = useState<Record<ImportFieldKey, string | null>>(autoMap);
+
+  // Per-row decision (keep / merge / skip). The duplicate row index 1 is
+  // pre-flagged as merge.
+  const initialDecisions = sampleCsvRows.map((_, i) =>
+    i === 1 ? "merge" : ("keep" as "keep" | "merge" | "skip")
+  );
+  const [decisions, setDecisions] = useState<Array<"keep" | "merge" | "skip">>(initialDecisions);
+
+  const stepLabels = [
+    { id: 1, label: "Choose file" },
+    { id: 2, label: "Map columns" },
+    { id: 3, label: "Review rows" },
+    { id: 4, label: "Done" }
+  ] as const;
+
+  function chooseSampleFile() {
+    setFileName("client-portfolio-2026-Q2.csv");
+    setStep(2);
+  }
+
+  const created = decisions.filter((d) => d === "keep").length;
+  const merged = decisions.filter((d) => d === "merge").length;
+  const skipped = decisions.filter((d) => d === "skip").length;
+
+  return (
+    <div className="section-shell">
+      <section className="card import-header">
+        <div>
+          <span className="eyebrow">Clients · Import</span>
+          <h2>Bring a portfolio of clients into DueDateHQ</h2>
+          <p className="muted">
+            Upload a CSV, confirm how its columns map to our client fields, and review duplicate detection before
+            anything is written. No chat — every decision is structured.
+          </p>
+        </div>
+        <button type="button" className="ghost-btn" onClick={onClose}>
+          Cancel & back to clients
+        </button>
+      </section>
+
+      <section className="card import-stepper">
+        <ol className="stepper">
+          {stepLabels.map((s, i) => (
+            <li key={s.id} className={`stepper-step ${step === s.id ? "active" : ""} ${step > s.id ? "done" : ""}`}>
+              <span className="stepper-num">{i + 1}</span>
+              <span className="stepper-label">{s.label}</span>
+            </li>
+          ))}
+        </ol>
+      </section>
+
+      {step === 1 ? (
+        <section className="card import-step">
+          <EyebrowHeader
+            eyebrow="Step 1"
+            title="Choose a CSV file"
+            subtitle="The file should have one client per row. Headers are optional but recommended."
+          />
+          <div className="import-drop">
+            <div className="import-drop-text">
+              <strong>Drag a CSV here, or click to browse</strong>
+              <span className="muted">
+                Up to 5,000 rows per import. We recommend including state, entity type, and applicable taxes.
+              </span>
+            </div>
+            <button type="button" className="primary" onClick={chooseSampleFile}>
+              Use sample file
+            </button>
+          </div>
+
+          <div className="import-options">
+            <SettingField label="Delimiter" hint="Almost always a comma; some firms export with semicolons.">
+              <select className="setting-input compact" value={delimiter} onChange={(e) => setDelimiter(e.target.value)}>
+                <option value=",">, (comma)</option>
+                <option value=";">; (semicolon)</option>
+                <option value="\t">tab</option>
+              </select>
+            </SettingField>
+            <SettingField label="First row is a header" hint="Uncheck if the file starts with data.">
+              <Toggle checked={hasHeader} onChange={setHasHeader} label="First row is a header" />
+            </SettingField>
+          </div>
+
+          <div className="setting-foot">
+            <span className="muted">{fileName ? `Loaded: ${fileName}` : "No file selected"}</span>
+            <button
+              type="button"
+              className="primary"
+              disabled={!fileName}
+              onClick={() => setStep(2)}
+            >
+              Next: map columns
+            </button>
+          </div>
+        </section>
+      ) : null}
+
+      {step === 2 ? (
+        <section className="card import-step">
+          <EyebrowHeader
+            eyebrow="Step 2"
+            title="Map CSV columns to client fields"
+            subtitle="We auto-detected the matches we could; review and adjust before continuing."
+          />
+          <div className="import-map-table">
+            <div className="import-map-row head">
+              <span>Field</span>
+              <span>CSV column</span>
+              <span>Sample value</span>
+            </div>
+            {importFields.map((f) => {
+              const csvHeader = mapping[f.key];
+              const csvIndex = csvHeader ? sampleCsvHeaders.indexOf(csvHeader) : -1;
+              const sampleValue = csvIndex >= 0 ? sampleCsvRows[0][csvIndex] : "—";
+              return (
+                <div key={f.key} className="import-map-row">
+                  <span>
+                    {f.label}
+                    {f.required ? <span className="required-mark">*</span> : null}
+                  </span>
+                  <select
+                    className="setting-input compact"
+                    value={csvHeader || ""}
+                    onChange={(e) =>
+                      setMapping((current) => ({
+                        ...current,
+                        [f.key]: e.target.value || null
+                      }))
+                    }
+                  >
+                    <option value="">— skip —</option>
+                    {sampleCsvHeaders.map((h) => (
+                      <option key={h}>{h}</option>
+                    ))}
+                  </select>
+                  <span className="muted">{sampleValue}</span>
+                </div>
+              );
+            })}
+          </div>
+          <div className="setting-foot">
+            <button type="button" className="ghost-btn" onClick={() => setStep(1)}>
+              Back
+            </button>
+            <button type="button" className="primary" onClick={() => setStep(3)}>
+              Next: review rows
+            </button>
+          </div>
+        </section>
+      ) : null}
+
+      {step === 3 ? (
+        <section className="card import-step">
+          <EyebrowHeader
+            eyebrow="Step 3"
+            title={`Review ${sampleCsvRows.length} rows`}
+            subtitle="One duplicate detected (matched by company name and EIN). Pick how to resolve each row."
+          />
+          <div className="import-review-table">
+            <div className="import-review-row head">
+              <span>Client</span>
+              <span>Entity</span>
+              <span>States</span>
+              <span>Status</span>
+              <span>Decision</span>
+            </div>
+            {sampleCsvRows.map((row, idx) => {
+              const isDuplicate = idx === 1;
+              const decision = decisions[idx];
+              return (
+                <div key={idx} className={`import-review-row ${isDuplicate ? "duplicate" : ""}`}>
+                  <span>
+                    <strong>{row[0]}</strong>
+                    <span className="muted">{row[3]}</span>
+                  </span>
+                  <span>{row[1]}</span>
+                  <span>{row[2]}</span>
+                  <span>
+                    {isDuplicate ? (
+                      <span className="badge-pill gold">Duplicate of Northwind Services LLC</span>
+                    ) : (
+                      <span className="badge-pill green">New</span>
+                    )}
+                  </span>
+                  <span className="import-decision">
+                    {(["keep", "merge", "skip"] as const).map((opt) => {
+                      const disabled = !isDuplicate && opt === "merge";
+                      return (
+                        <label
+                          key={opt}
+                          className={`radio-pill ${decision === opt ? "active" : ""} ${disabled ? "disabled" : ""}`}
+                        >
+                          <input
+                            type="radio"
+                            name={`decision-${idx}`}
+                            checked={decision === opt}
+                            disabled={disabled}
+                            onChange={() =>
+                              setDecisions((current) => current.map((d, i) => (i === idx ? opt : d)))
+                            }
+                          />
+                          {opt[0].toUpperCase() + opt.slice(1)}
+                        </label>
+                      );
+                    })}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+          <div className="setting-foot">
+            <button type="button" className="ghost-btn" onClick={() => setStep(2)}>
+              Back
+            </button>
+            <button type="button" className="primary" onClick={() => setStep(4)}>
+              Apply import
+            </button>
+          </div>
+        </section>
+      ) : null}
+
+      {step === 4 ? (
+        <section className="card import-step">
+          <EyebrowHeader
+            eyebrow="Step 4"
+            title="Import complete"
+            subtitle="The portfolio has been written to DueDateHQ. Each new client is now visible on the directory."
+            pillLabel="Done"
+            pillTone="green"
+          />
+          <div className="import-summary">
+            <div>
+              <strong>{created}</strong>
+              <span>Created</span>
+            </div>
+            <div>
+              <strong>{merged}</strong>
+              <span>Merged</span>
+            </div>
+            <div>
+              <strong>{skipped}</strong>
+              <span>Skipped</span>
+            </div>
+          </div>
+          <div className="setting-foot">
+            <button type="button" className="ghost-btn" onClick={() => setStep(1)}>
+              Import another file
+            </button>
+            <button type="button" className="primary" onClick={onClose}>
+              Back to clients
+            </button>
+          </div>
+        </section>
+      ) : null}
     </div>
   );
 }
@@ -708,7 +1064,7 @@ function ClientCardTile({ client, onAction }: { client: MockClient; onAction: Di
 // Updates
 // ============================================================================
 
-type UpdatesTab = "reminders" | "rules" | "blockers";
+type UpdatesTab = "reminders" | "rules" | "blockers" | "activity";
 
 const updatesTabs: Array<{ key: UpdatesTab; label: string; description: string }> = [
   {
@@ -725,6 +1081,12 @@ const updatesTabs: Array<{ key: UpdatesTab; label: string; description: string }
     key: "blockers",
     label: "Open blockers",
     description: "Clients waiting on documents or confirmations across the portfolio."
+  },
+  {
+    key: "activity",
+    label: "Activity",
+    description:
+      "Admin monitoring: filings, reminder sends, rule applications, imports, and recent exports."
   }
 ];
 
@@ -783,7 +1145,55 @@ export function UpdatesSection({ onAction, onPrompt }: SectionContext) {
       {tab === "reminders" ? <ReminderPipeline /> : null}
       {tab === "rules" ? <RulesReview onAction={onAction} onPrompt={onPrompt} /> : null}
       {tab === "blockers" ? <BlockersList onAction={onAction} onPrompt={onPrompt} /> : null}
+      {tab === "activity" ? <ActivityMonitor /> : null}
     </div>
+  );
+}
+
+function ActivityMonitor() {
+  return (
+    <>
+      <section className="card activity-card">
+        <EyebrowHeader
+          eyebrow="Activity"
+          title="What changed in the last few days"
+          subtitle="Filings, reminders, rule auto-applications, and imports."
+        />
+        <ul className="activity-list">
+          {mockActivity.map((entry) => (
+            <li key={entry.id} className={`activity-row category-${entry.category}`}>
+              <span className="activity-when">{entry.when}</span>
+              <span className="activity-actor">{entry.actor}</span>
+              <span className="activity-action">{entry.action}</span>
+              <span className="activity-detail">{entry.detail}</span>
+            </li>
+          ))}
+        </ul>
+      </section>
+
+      <section className="card recent-exports-card">
+        <EyebrowHeader
+          eyebrow="Recent exports"
+          title="CSV / PDF generated for the firm"
+          subtitle="Most recent exports across the portfolio."
+        />
+        <ul className="recent-exports-list">
+          {mockExports.map((ex) => (
+            <li key={ex.id} className="recent-export-row">
+              <span className={`badge-pill ${ex.format === "csv" ? "blue" : "gold"}`}>
+                {ex.format.toUpperCase()}
+              </span>
+              <div className="recent-export-text">
+                <strong>{ex.scope}</strong>
+                <span className="muted">
+                  {ex.generated_at} · {ex.size}
+                </span>
+              </div>
+            </li>
+          ))}
+        </ul>
+      </section>
+    </>
   );
 }
 
