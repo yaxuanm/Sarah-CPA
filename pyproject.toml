@@ -11,6 +11,8 @@ requires-python = ">=3.11"
 license = {text = "Proprietary"}
 
 [project.optional-dependencies]
+api = ["fastapi>=0.115", "uvicorn>=0.30"]
+agent = ["anthropic>=0.74"]
 postgres = ["psycopg[binary]>=3.2"]
 workers = ["celery>=5.4", "redis>=5.0"]
 

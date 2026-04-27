@@ -1,0 +1,420 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>DueDateHQ — Component Reference</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet"/>
+<style>
+/* ── TOKENS ── */
+:root {
+  --ink:       #0e1a2b;
+  --ink-2:     #2c3e55;
+  --ink-3:     #5a6f87;
+  --ink-4:     #94a3b5;
+  --paper:     #f5f3ee;
+  --paper-2:   #edeae3;
+  --paper-3:   #e3dfd7;
+  --white:     #ffffff;
+  --gold:      #c8953a;
+  --gold-soft: #fdf3e3;
+  --red:       #c0392b;
+  --red-soft:  #fdf0ee;
+  --green:     #1a7a4a;
+  --green-soft:#e8f5ee;
+  --blue:      #1a4f8a;
+  --blue-soft: #e8f0fa;
+  --serif:     'DM Serif Display', Georgia, serif;
+  --sans:      'DM Sans', sans-serif;
+  --mono:      'DM Mono', monospace;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+button { cursor: pointer; font: inherit; }
+
+body {
+  font-family: var(--sans);
+  background: var(--paper);
+  color: var(--ink);
+  padding: 40px;
+  display: flex;
+  flex-direction: column;
+  gap: 32px;
+  max-width: 800px;
+  margin: 0 auto;
+}
+
+@keyframes slideIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes popIn {
+  from { opacity: 0; transform: scale(0.5); }
+  to   { opacity: 1; transform: scale(1); }
+}
+@keyframes pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50%       { opacity: 0.5; transform: scale(0.85); }
+}
+
+.section-label {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-4);
+  margin-bottom: 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--paper-3);
+}
+
+/* ── BADGE PILLS ── */
+.badge-pill {
+  display: inline-block;
+  padding: 2px 9px;
+  border-radius: 999px;
+  font-size: 11.5px;
+  font-weight: 600;
+}
+.badge-pill.urgent { background: var(--red-soft);   color: var(--red);   }
+.badge-pill.medium { background: var(--gold-soft);  color: var(--gold);  }
+.badge-pill.low    { background: var(--green-soft); color: var(--green); }
+.badge-pill.done   { background: var(--paper-2);   color: var(--ink-4); }
+.badge-pill.info   { background: var(--blue-soft);  color: var(--blue);  }
+.pills-row { display: flex; gap: 8px; flex-wrap: wrap; }
+
+/* ── BUTTONS ── */
+.btn-primary {
+  height: 42px; padding: 0 20px;
+  border-radius: 8px; border: 1.5px solid var(--ink);
+  background: var(--ink); color: var(--white);
+  font-size: 14px; font-weight: 600; transition: all 0.15s;
+}
+.btn-primary:hover { background: var(--gold); border-color: var(--gold); color: var(--ink); }
+
+.btn-secondary {
+  height: 42px; padding: 0 20px;
+  border-radius: 8px; border: 1.5px solid var(--paper-3);
+  background: var(--white); color: var(--ink-2);
+  font-size: 14px; font-weight: 600; transition: all 0.15s;
+}
+.btn-secondary:hover { border-color: var(--ink-3); color: var(--ink); }
+
+.btn-action {
+  height: 30px; padding: 0 13px;
+  border-radius: 6px; border: 1px solid var(--paper-3);
+  background: var(--white); color: var(--ink-2);
+  font-size: 12.5px; font-weight: 500; transition: all 0.15s;
+}
+.btn-action:hover { border-color: var(--ink); color: var(--ink); }
+.btn-action.primary { background: var(--ink); border-color: var(--ink); color: var(--white); }
+.btn-action.primary:hover { background: var(--gold); border-color: var(--gold); color: var(--ink); }
+
+.btn-quick {
+  height: 32px; padding: 0 13px;
+  border: 1px solid var(--paper-3); border-radius: 999px;
+  background: var(--white); color: var(--ink-2);
+  font-size: 13px; font-weight: 500; transition: all 0.15s;
+}
+.btn-quick:hover { border-color: var(--gold); color: var(--gold); background: var(--gold-soft); }
+
+.btns-row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+
+/* ── LIST CARD ── */
+.card {
+  background: var(--white);
+  border: 1px solid var(--paper-3);
+  border-radius: 12px;
+  overflow: hidden;
+  animation: slideIn 0.25s ease both;
+}
+.card-header {
+  padding: 18px 24px 14px;
+  border-bottom: 1px solid var(--paper-2);
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+}
+.card-title { font-family: var(--serif); font-size: 24px; color: var(--ink); }
+.card-meta  { font-size: 13px; color: var(--ink-4); }
+
+.deadline-row {
+  display: grid;
+  grid-template-columns: 4px 1fr auto;
+  gap: 0 16px;
+  align-items: center;
+  padding: 14px 24px;
+  border-bottom: 1px solid var(--paper-2);
+  cursor: pointer;
+  transition: background 0.12s;
+}
+.deadline-row:last-child { border-bottom: none; }
+.deadline-row:hover { background: var(--paper); }
+.deadline-row.urgent .row-accent { background: var(--red); }
+.deadline-row.medium .row-accent { background: var(--gold); }
+.deadline-row.low    .row-accent { background: var(--green); }
+.row-accent { width: 4px; height: 40px; border-radius: 2px; align-self: center; }
+.row-client { font-size: 15px; font-weight: 600; color: var(--ink); margin-bottom: 3px; }
+.row-detail { font-size: 13px; color: var(--ink-3); }
+.row-right  { text-align: right; }
+.row-due    { font-family: var(--mono); font-size: 12.5px; color: var(--ink-3); margin-bottom: 5px; }
+
+/* ── CONFIRM CARD ── */
+.confirm-card {
+  background: var(--white);
+  border: 1.5px solid var(--gold);
+  border-radius: 12px;
+  overflow: hidden;
+  animation: slideIn 0.25s ease both;
+}
+.confirm-header {
+  padding: 20px 26px;
+  background: var(--gold-soft);
+  border-bottom: 1px solid #f0ddb0;
+}
+.confirm-eyebrow {
+  font-size: 11px; font-weight: 700;
+  letter-spacing: 0.1em; text-transform: uppercase;
+  color: var(--gold); margin-bottom: 7px;
+}
+.confirm-title { font-family: var(--serif); font-size: 20px; color: var(--ink); }
+.confirm-body  { padding: 18px 26px; font-size: 14px; color: var(--ink-3); line-height: 1.55; }
+.confirm-consequence {
+  margin-top: 10px; padding: 10px 14px;
+  background: var(--paper); border-left: 3px solid var(--gold);
+  border-radius: 0 6px 6px 0; font-size: 13px; color: var(--ink-2);
+}
+.confirm-options { padding: 14px 26px 20px; display: flex; gap: 10px; }
+.confirm-btn {
+  flex: 1; height: 42px; border-radius: 8px;
+  border: 1.5px solid var(--paper-3); background: var(--white);
+  color: var(--ink-2); font-size: 14px; font-weight: 600; transition: all 0.15s;
+}
+.confirm-btn.primary { background: var(--ink); border-color: var(--ink); color: var(--white); }
+.confirm-btn.primary:hover { background: var(--gold); border-color: var(--gold); color: var(--ink); }
+.confirm-btn:not(.primary):hover { border-color: var(--ink-3); color: var(--ink); }
+
+/* ── WEAK NOTICE ── */
+.weak-notice {
+  display: flex; align-items: flex-start; gap: 8px;
+  padding: 8px 12px;
+  background: var(--paper); border: 1px solid var(--paper-2);
+  border-radius: 8px; animation: fadeUp 0.2s ease both;
+}
+.weak-notice .dot {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: var(--green); flex-shrink: 0; margin-top: 5px;
+}
+.weak-notice .text { font-size: 13px; color: var(--ink-4); line-height: 1.45; }
+.weak-notice .text strong { color: var(--ink-3); font-weight: 600; }
+
+/* ── CRITICAL CARD ── */
+.critical-card {
+  background: var(--white); border: 2px solid var(--red);
+  border-radius: 12px; overflow: hidden; animation: slideIn 0.25s ease both;
+}
+.critical-header { padding: 18px 26px; background: var(--red-soft); border-bottom: 1px solid #f5c5c2; }
+.critical-eyebrow {
+  display: flex; align-items: center; gap: 7px;
+  font-size: 11px; font-weight: 700; letter-spacing: 0.1em;
+  text-transform: uppercase; color: var(--red); margin-bottom: 7px;
+}
+.critical-dot {
+  width: 8px; height: 8px; border-radius: 50%;
+  background: var(--red); animation: pulse 1.2s ease infinite;
+}
+.critical-title { font-family: var(--serif); font-size: 20px; color: var(--ink); }
+.critical-body  { padding: 16px 26px; font-size: 14px; color: var(--ink-2); line-height: 1.6; }
+.critical-consequence {
+  margin-top: 10px; padding: 10px 14px;
+  background: var(--red-soft); border-left: 3px solid var(--red);
+  border-radius: 0 6px 6px 0; font-size: 13px; color: var(--red); font-weight: 500;
+}
+.critical-options { padding: 14px 26px 20px; display: flex; gap: 10px; }
+.critical-btn {
+  flex: 1; height: 42px; border-radius: 8px;
+  border: 1.5px solid var(--paper-3); background: var(--white);
+  color: var(--ink-2); font-size: 14px; font-weight: 600; transition: all 0.15s;
+}
+.critical-btn.primary { background: var(--red); border-color: var(--red); color: var(--white); }
+.critical-btn.primary:hover { background: #a82320; }
+.critical-btn:not(.primary):hover { border-color: var(--ink-3); color: var(--ink); }
+
+/* ── DONE STATE ── */
+.done-state {
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  text-align: center; padding: 48px 40px;
+  animation: fadeUp 0.35s ease both;
+}
+.done-mark {
+  width: 64px; height: 64px; border-radius: 50%;
+  background: var(--green-soft); display: grid;
+  place-items: center; font-size: 28px; margin-bottom: 20px;
+  animation: popIn 0.4s cubic-bezier(0.34,1.56,0.64,1) both;
+}
+.done-title { font-family: var(--serif); font-size: 26px; color: var(--ink); margin-bottom: 8px; }
+.done-sub   { font-size: 15px; color: var(--ink-4); max-width: 300px; line-height: 1.55; }
+
+/* ── ANNOTATION ── */
+.annotation {
+  padding: 10px 14px; background: #fffbf0;
+  border: 1px dashed var(--gold); border-radius: 7px;
+  font-size: 12px; color: var(--ink-3); line-height: 1.55;
+}
+.annotation strong { color: var(--gold); }
+.annotation code {
+  font-family: var(--mono); font-size: 11px;
+  background: var(--paper-2); padding: 1px 5px; border-radius: 3px;
+}
+</style>
+</head>
+<body>
+
+<!-- ── BADGE PILLS ── -->
+<div>
+  <div class="section-label">Badge Pills — 状态标签</div>
+  <div class="pills-row">
+    <span class="badge-pill urgent">Today</span>
+    <span class="badge-pill medium">5d</span>
+    <span class="badge-pill low">12d</span>
+    <span class="badge-pill done">Completed</span>
+    <span class="badge-pill info">Updated</span>
+  </div>
+</div>
+
+<!-- ── BUTTONS ── -->
+<div>
+  <div class="section-label">Buttons — 按钮层级</div>
+  <div class="btns-row">
+    <button class="btn-primary">Mark complete</button>
+    <button class="btn-secondary">Cancel</button>
+    <button class="btn-action primary">Mark complete</button>
+    <button class="btn-action">Snooze</button>
+    <button class="btn-action">Waive</button>
+    <button class="btn-quick">Acme Dental</button>
+    <button class="btn-quick">What's urgent?</button>
+  </div>
+</div>
+
+<!-- ── LIST CARD ── -->
+<div>
+  <div class="section-label">ListCard — 今日待办列表</div>
+  <div class="card">
+    <div class="card-header">
+      <div class="card-title">Today's Deadlines</div>
+      <div class="card-meta">3 pending</div>
+    </div>
+    <div class="deadline-row urgent">
+      <div class="row-accent"></div>
+      <div>
+        <div class="row-client">Acme Dental LLC</div>
+        <div class="row-detail">Q2 Sales Tax Return · California</div>
+      </div>
+      <div class="row-right">
+        <div class="row-due">Apr 19, 2025</div>
+        <span class="badge-pill urgent">Today</span>
+      </div>
+    </div>
+    <div class="deadline-row medium">
+      <div class="row-accent"></div>
+      <div>
+        <div class="row-client">Greenway Consulting LLC</div>
+        <div class="row-detail">CA Pass-Through Withholding · California</div>
+      </div>
+      <div class="row-right">
+        <div class="row-due">Apr 24, 2025</div>
+        <span class="badge-pill medium">5d</span>
+      </div>
+    </div>
+    <div class="deadline-row low">
+      <div class="row-accent"></div>
+      <div>
+        <div class="row-client">Brighton Manufacturing LLC</div>
+        <div class="row-detail">TX Sales Tax Return · Texas</div>
+      </div>
+      <div class="row-right">
+        <div class="row-due">May 1, 2025</div>
+        <span class="badge-pill low">12d</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── CONFIRM CARD ── -->
+<div>
+  <div class="section-label">ConfirmCard — 写操作确认（金色边框）</div>
+  <div class="confirm-card">
+    <div class="confirm-header">
+      <div class="confirm-eyebrow">Confirm action</div>
+      <div class="confirm-title">Mark as complete — Acme Dental LLC?</div>
+    </div>
+    <div class="confirm-body">
+      Q2 Sales Tax Return · California · Due Apr 19, 2025
+      <div class="confirm-consequence">This deadline will be marked as completed. The status will update immediately.</div>
+    </div>
+    <div class="confirm-options">
+      <button class="confirm-btn primary">Confirm</button>
+      <button class="confirm-btn">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── CRITICAL CARD ── -->
+<div>
+  <div class="section-label">CriticalCard — 强提醒（红色边框 + 脉冲）</div>
+  <div class="critical-card">
+    <div class="critical-header">
+      <div class="critical-eyebrow">
+        <div class="critical-dot"></div>
+        Action required today
+      </div>
+      <div class="critical-title">Greenway Consulting LLC — CA PTE Election</div>
+    </div>
+    <div class="critical-body">
+      This election must be made today. Once the window closes, it cannot be reopened for this tax year.
+      <div class="critical-consequence">⚠ Missing this deadline voids the entire year's pass-through entity tax credit.</div>
+    </div>
+    <div class="critical-options">
+      <button class="critical-btn primary">Election made — mark complete</button>
+      <button class="critical-btn">Not applicable</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── WEAK NOTICE ── -->
+<div>
+  <div class="section-label">Weak Notice — 弱提醒（出现在对话区）</div>
+  <div class="weak-notice">
+    <div class="dot"></div>
+    <div class="text"><strong>Updated overnight:</strong> 2 clients' CA deadlines extended to Oct 15 following IRS Notice 2025-23.</div>
+  </div>
+</div>
+
+<!-- ── DONE STATE ── -->
+<div>
+  <div class="section-label">Done State — 全部完成状态</div>
+  <div class="card">
+    <div class="done-state">
+      <div class="done-mark">✓</div>
+      <div class="done-title">All caught up.</div>
+      <div class="done-sub">Nothing else needs your attention today. DueDateHQ will let you know if anything changes.</div>
+    </div>
+  </div>
+</div>
+
+<!-- ── ANNOTATION ── -->
+<div>
+  <div class="section-label">Annotation — Demo 注释框</div>
+  <div class="annotation">
+    <strong>In production:</strong> NLU maps "next month" → <code>deadline list --within-days 60 --enrich</code>, filtered to days 31–60. The list updates in real time as deadlines are added or modified.
+  </div>
+</div>
+
+</body>
+</html>

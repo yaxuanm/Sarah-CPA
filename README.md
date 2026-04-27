@@ -1,6 +1,7 @@
 # Sarah-CPA
 
-DueDateHQ first-phase infrastructure, validated without any frontend.
+DueDateHQ first-phase infrastructure plus a React validation shell for the
+conversation-driven, on-demand rendering experience.
 
 ## What Works
 
@@ -19,6 +20,7 @@ DueDateHQ first-phase infrastructure, validated without any frontend.
 - Notification delivery routing for email, SMS, and Slack
 - Celery dispatch hooks for fetch, reminder scheduling, and notification delivery
 - Interactive chat mode with text-first realtime view rendering and a voice-ready input mode
+- React/Vite frontend validation shell for left-side conversation and right-side `view.type` rendering
 - CLI commands for create/list/update/export/worker flows
 
 ## Database
@@ -139,6 +141,35 @@ The current render contract is:
 
 - one short language conclusion
 - one or more structured render blocks such as `Today`, `Deadlines`, `Rule Review Queue`, or `Pending Notifications`
+
+## Frontend Validation
+
+The browser validation shell lives in:
+
+```bash
+frontend/
+```
+
+Run it with:
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+It has one runtime path: user input streams to the AI backend through
+`/chat/stream`, and the right-side work surface is fed back as context for the
+next turn. Assistant text streams via `message_delta` and renders lightweight
+markdown in the conversation. There is no local validation mode.
+
+Frontend checks:
+
+```bash
+cd frontend
+npm run build
+npm run test:render-spec
+```
 
 ## Verification
 

@@ -227,6 +227,18 @@ def build_parser() -> argparse.ArgumentParser:
     chat_parser.add_argument("--prompt")
     chat_parser.add_argument("--transcript-file")
 
+    flywheel_parser = subparsers.add_parser("flywheel")
+    flywheel_subparsers = flywheel_parser.add_subparsers(dest="flywheel_command", required=True)
+    flywheel_subparsers.add_parser("stats")
+    flywheel_templates = flywheel_subparsers.add_parser("templates")
+    flywheel_templates.add_argument("--status")
+    flywheel_templates.add_argument("--limit", type=int, default=50)
+    flywheel_feedback = flywheel_subparsers.add_parser("feedback")
+    flywheel_feedback.add_argument("--signal")
+    flywheel_feedback.add_argument("--limit", type=int, default=50)
+    flywheel_review = flywheel_subparsers.add_parser("review-queue")
+    flywheel_review.add_argument("--limit", type=int, default=50)
+
     notify_parser = subparsers.add_parser("notify")
     notify_subparsers = notify_parser.add_subparsers(dest="notify_command", required=True)
     notify_config = notify_subparsers.add_parser("config")
@@ -656,6 +668,37 @@ def main() -> int:
             print_chat_response(response)
             return 0
         return run_chat_loop(conversation, session, mode)
+
+    if args.command == "flywheel":
+        if args.flywheel_command == "stats":
+            print_json(app.intent_library.stats(), default=str)
+            return 0
+        if args.flywheel_command == "templates":
+            templates = [
+                {
+                    "intent_id": template.intent_id,
+                    "intent_label": template.intent_label,
+                    "status": template.status,
+                    "hit_count": template.hit_count,
+                    "success_rate": template.success_rate,
+                    "example_count": len(template.example_inputs),
+                    "correction_count": template.correction_count,
+                    "missing_info_count": template.missing_info_count,
+                    "view_type": template.view_type,
+                    "updated_at": template.updated_at.isoformat(),
+                }
+                for template in app.intent_library.all()
+                if args.status is None or template.status == args.status
+            ]
+            templates.sort(key=lambda item: item["updated_at"], reverse=True)
+            print_json(templates[: args.limit], default=str)
+            return 0
+        if args.flywheel_command == "feedback":
+            print_json(app.intent_library.feedback_events(signal=args.signal, limit=args.limit), default=str)
+            return 0
+        if args.flywheel_command == "review-queue":
+            print_json(app.intent_library.review_queue(limit=args.limit), default=str)
+            return 0
 
     if args.command == "notify":
         if args.notify_command == "config":

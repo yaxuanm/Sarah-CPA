@@ -1,0 +1,2829 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>DueDateHQ</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet"/>
+<style>
+:root {
+  --ink:       #0e1a2b;
+  --ink-2:     #2c3e55;
+  --ink-3:     #5a6f87;
+  --ink-4:     #94a3b5;
+  --paper:     #f5f3ee;
+  --paper-2:   #edeae3;
+  --paper-3:   #e3dfd7;
+  --white:     #ffffff;
+  --gold:      #c8953a;
+  --gold-soft: #fdf3e3;
+  --red:       #c0392b;
+  --red-soft:  #fdf0ee;
+  --green:     #1a7a4a;
+  --green-soft:#e8f5ee;
+  --blue:      #1a4f8a;
+  --blue-soft: #e8f0fa;
+  --serif:     'DM Serif Display', Georgia, serif;
+  --sans:      'DM Sans', sans-serif;
+  --mono:      'DM Mono', monospace;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: var(--sans);
+  background: var(--paper);
+  color: var(--ink);
+  height: 100vh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ── TOP BAR ── */
+.topbar {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 28px;
+  height: 56px;
+  background: var(--ink);
+  border-bottom: 1px solid #1e2e42;
+}
+
+.brand {
+  font-family: var(--serif);
+  font-size: 22px;
+  color: var(--white);
+  letter-spacing: -0.02em;
+}
+
+.brand em {
+  color: var(--gold);
+  font-style: normal;
+}
+
+.topbar-right {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+}
+
+.tenant-name {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--ink-4);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.avatar {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: var(--gold);
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 600;
+  display: grid;
+  place-items: center;
+}
+
+/* ── WORKSPACE ── */
+.workspace {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 380px 1fr;
+}
+
+/* ── LEFT: CONVERSATION ── */
+.conv-panel {
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid var(--paper-3);
+  background: var(--white);
+  min-height: 0;
+}
+
+.conv-header {
+  flex: 0 0 auto;
+  padding: 18px 22px 14px;
+  border-bottom: 1px solid var(--paper-2);
+}
+
+.conv-header-label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-4);
+  margin-bottom: 2px;
+}
+
+.conv-header-date {
+  font-family: var(--serif);
+  font-size: 19px;
+  color: var(--ink);
+}
+
+.stream {
+  flex: 1;
+  overflow-y: auto;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  scroll-behavior: smooth;
+}
+
+.stream::-webkit-scrollbar { width: 4px; }
+.stream::-webkit-scrollbar-track { background: transparent; }
+.stream::-webkit-scrollbar-thumb { background: var(--paper-3); border-radius: 2px; }
+
+.msg {
+  display: flex;
+  gap: 10px;
+  animation: fadeUp 0.2s ease both;
+}
+
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.msg.user { flex-direction: row-reverse; }
+
+.msg-badge {
+  flex: 0 0 28px;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  margin-top: 2px;
+}
+
+.msg-badge.sys {
+  background: var(--ink);
+  color: var(--gold);
+}
+
+.msg-badge.usr {
+  background: var(--gold);
+  color: var(--ink);
+}
+
+.msg-bubble {
+  max-width: 280px;
+  padding: 11px 15px;
+  border-radius: 2px 10px 10px 10px;
+  font-size: 14.5px;
+  line-height: 1.5;
+  color: var(--ink-2);
+  background: var(--paper);
+  border: 1px solid var(--paper-2);
+}
+
+.msg.user .msg-bubble {
+  background: var(--ink);
+  color: rgba(255,255,255,0.9);
+  border-color: transparent;
+  border-radius: 10px 2px 10px 10px;
+}
+
+.msg-bubble strong {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink-3);
+  margin-bottom: 4px;
+  letter-spacing: 0.02em;
+}
+
+.msg.user .msg-bubble strong { color: rgba(255,255,255,0.55); }
+
+/* ── QUICK ACTIONS ── */
+.quick-actions {
+  flex: 0 0 auto;
+  padding: 10px 20px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  border-top: 1px solid var(--paper-2);
+  background: var(--paper);
+  min-height: 52px;
+}
+
+.quick-btn {
+  height: 32px;
+  padding: 0 13px;
+  border: 1px solid var(--paper-3);
+  border-radius: 16px;
+  background: var(--white);
+  color: var(--ink-2);
+  font-family: var(--sans);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s;
+  white-space: nowrap;
+}
+
+.quick-btn:hover {
+  border-color: var(--gold);
+  color: var(--gold);
+  background: var(--gold-soft);
+}
+
+/* ── INPUT ── */
+.composer {
+  flex: 0 0 auto;
+  padding: 14px 20px 18px;
+  background: var(--white);
+  border-top: 1px solid var(--paper-2);
+}
+
+.input-wrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: 1.5px solid var(--paper-3);
+  border-radius: 8px;
+  padding: 6px 8px 6px 14px;
+  transition: border-color 0.15s;
+  background: var(--paper);
+}
+
+.input-wrap:focus-within {
+  border-color: var(--gold);
+  background: var(--white);
+}
+
+.input-wrap input {
+  flex: 1;
+  border: none;
+  background: transparent;
+  font-family: var(--sans);
+  font-size: 14.5px;
+  color: var(--ink);
+  outline: none;
+}
+
+.input-wrap input::placeholder { color: var(--ink-4); }
+
+.send-btn {
+  width: 34px;
+  height: 34px;
+  border-radius: 6px;
+  border: none;
+  background: var(--ink);
+  color: var(--gold);
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  font-size: 16px;
+  transition: background 0.15s;
+  flex-shrink: 0;
+}
+
+.send-btn:hover { background: var(--gold); color: var(--ink); }
+
+.input-hint {
+  margin-top: 8px;
+  font-size: 11.5px;
+  color: var(--ink-4);
+  text-align: center;
+}
+
+/* ── RIGHT: SURFACE ── */
+.surface-panel {
+  min-height: 0;
+  overflow-y: auto;
+  background: var(--paper);
+  padding: 32px 36px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.surface-panel::-webkit-scrollbar { width: 4px; }
+.surface-panel::-webkit-scrollbar-track { background: transparent; }
+.surface-panel::-webkit-scrollbar-thumb { background: var(--paper-3); border-radius: 2px; }
+
+/* ── LIST CARD ── */
+.list-card {
+  background: var(--white);
+  border: 1px solid var(--paper-3);
+  border-radius: 12px;
+  overflow: hidden;
+  animation: slideIn 0.25s ease both;
+}
+
+@keyframes slideIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.list-card-header {
+  padding: 20px 24px 16px;
+  border-bottom: 1px solid var(--paper-2);
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+}
+
+.list-card-title {
+  font-family: var(--serif);
+  font-size: 26px;
+  color: var(--ink);
+  line-height: 1;
+}
+
+.list-card-meta {
+  font-size: 13px;
+  color: var(--ink-4);
+  font-weight: 400;
+}
+
+.deadline-row {
+  display: grid;
+  grid-template-columns: 4px 1fr auto;
+  gap: 0 16px;
+  align-items: center;
+  padding: 16px 24px;
+  border-bottom: 1px solid var(--paper-2);
+  cursor: pointer;
+  transition: background 0.12s;
+}
+
+.deadline-row:last-child { border-bottom: none; }
+.deadline-row:hover { background: var(--paper); }
+
+.deadline-row.urgent .row-accent { background: var(--red); }
+.deadline-row.medium .row-accent { background: var(--gold); }
+.deadline-row.low    .row-accent { background: var(--green); }
+
+.row-accent {
+  width: 4px;
+  height: 40px;
+  border-radius: 2px;
+  align-self: center;
+}
+
+.row-body {}
+
+.row-client {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--ink);
+  margin-bottom: 3px;
+}
+
+.row-detail {
+  font-size: 13px;
+  color: var(--ink-3);
+}
+
+.row-right {
+  text-align: right;
+}
+
+.row-due {
+  font-family: var(--mono);
+  font-size: 12.5px;
+  color: var(--ink-3);
+  margin-bottom: 5px;
+}
+
+.badge-pill {
+  display: inline-block;
+  padding: 2px 9px;
+  border-radius: 99px;
+  font-size: 11.5px;
+  font-weight: 600;
+}
+
+.badge-pill.urgent { background: var(--red-soft); color: var(--red); }
+.badge-pill.medium { background: var(--gold-soft); color: var(--gold); }
+.badge-pill.low    { background: var(--green-soft); color: var(--green); }
+.badge-pill.done   { background: var(--paper-2); color: var(--ink-4); }
+
+/* ── CLIENT CARD ── */
+.client-card {
+  background: var(--white);
+  border: 1px solid var(--paper-3);
+  border-radius: 12px;
+  overflow: hidden;
+  animation: slideIn 0.25s ease both;
+}
+
+.client-card-header {
+  padding: 24px 28px 20px;
+  border-bottom: 1px solid var(--paper-2);
+  background: var(--ink);
+}
+
+.client-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-4);
+  cursor: pointer;
+  margin-bottom: 14px;
+  transition: color 0.15s;
+  background: none;
+  border: none;
+  padding: 0;
+  font-family: var(--sans);
+}
+
+.client-back:hover { color: var(--gold); }
+
+.client-name {
+  font-family: var(--serif);
+  font-size: 28px;
+  color: var(--white);
+  margin-bottom: 6px;
+}
+
+.client-tags {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.client-tag {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--ink-4);
+  background: rgba(255,255,255,0.08);
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 4px;
+  padding: 2px 10px;
+  letter-spacing: 0.02em;
+}
+
+.dl-item {
+  padding: 18px 28px;
+  border-bottom: 1px solid var(--paper-2);
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 12px;
+  align-items: start;
+}
+
+.dl-item:last-child { border-bottom: none; }
+
+.dl-item-tax {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--ink);
+  margin-bottom: 4px;
+}
+
+.dl-item-jurisdiction {
+  font-size: 13px;
+  color: var(--ink-3);
+  margin-bottom: 10px;
+}
+
+.dl-item-actions {
+  display: flex;
+  gap: 7px;
+  flex-wrap: wrap;
+}
+
+.action-btn {
+  height: 30px;
+  padding: 0 13px;
+  border-radius: 6px;
+  border: 1px solid var(--paper-3);
+  background: var(--white);
+  color: var(--ink-2);
+  font-family: var(--sans);
+  font-size: 12.5px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.action-btn:hover {
+  border-color: var(--ink);
+  color: var(--ink);
+}
+
+.action-btn.primary {
+  background: var(--ink);
+  border-color: var(--ink);
+  color: var(--white);
+}
+
+.action-btn.primary:hover {
+  background: var(--gold);
+  border-color: var(--gold);
+  color: var(--ink);
+}
+
+.dl-item-right {
+  text-align: right;
+  flex-shrink: 0;
+}
+
+.dl-due {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--ink-4);
+  margin-bottom: 6px;
+}
+
+/* ── CONFIRM CARD ── */
+.confirm-card {
+  background: var(--white);
+  border: 1.5px solid var(--gold);
+  border-radius: 12px;
+  overflow: hidden;
+  animation: slideIn 0.25s ease both;
+}
+
+.confirm-header {
+  padding: 22px 26px;
+  border-bottom: 1px solid var(--gold-soft);
+  background: var(--gold-soft);
+}
+
+.confirm-eyebrow {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--gold);
+  margin-bottom: 8px;
+}
+
+.confirm-title {
+  font-family: var(--serif);
+  font-size: 22px;
+  color: var(--ink);
+  line-height: 1.25;
+}
+
+.confirm-body {
+  padding: 20px 26px;
+  font-size: 14px;
+  color: var(--ink-3);
+  line-height: 1.55;
+}
+
+.confirm-body .consequence {
+  margin-top: 10px;
+  padding: 10px 14px;
+  background: var(--paper);
+  border-left: 3px solid var(--gold);
+  border-radius: 0 6px 6px 0;
+  font-size: 13px;
+  color: var(--ink-2);
+}
+
+.confirm-options {
+  padding: 16px 26px 22px;
+  display: flex;
+  gap: 10px;
+}
+
+.confirm-btn {
+  flex: 1;
+  height: 42px;
+  border-radius: 8px;
+  border: 1.5px solid var(--paper-3);
+  background: var(--white);
+  color: var(--ink-2);
+  font-family: var(--sans);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.confirm-btn.primary {
+  background: var(--ink);
+  border-color: var(--ink);
+  color: var(--white);
+}
+
+.confirm-btn.primary:hover {
+  background: var(--gold);
+  border-color: var(--gold);
+  color: var(--ink);
+}
+
+.confirm-btn:not(.primary):hover {
+  border-color: var(--ink-3);
+  color: var(--ink);
+}
+
+/* ── STATE SUMMARY ── */
+.state-summary {
+  font-size: 13px;
+  color: var(--ink-4);
+  text-align: center;
+  padding: 6px 0;
+  font-style: italic;
+}
+
+/* ── CHANGE NOTICE CARD ── */
+.change-card {
+  background: var(--white);
+  border: 1px solid var(--paper-3);
+  border-radius: 12px;
+  overflow: hidden;
+  animation: slideIn 0.25s ease both;
+}
+
+.change-banner {
+  padding: 18px 26px;
+  background: var(--ink);
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+}
+
+.change-banner-icon {
+  flex-shrink: 0;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: rgba(255,255,255,0.10);
+  display: grid;
+  place-items: center;
+  font-size: 16px;
+  margin-top: 2px;
+}
+
+.change-banner-text {}
+
+.change-eyebrow {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--gold);
+  margin-bottom: 5px;
+}
+
+.change-title {
+  font-family: var(--serif);
+  font-size: 20px;
+  color: var(--white);
+  line-height: 1.2;
+  margin-bottom: 4px;
+}
+
+.change-source-link {
+  font-size: 12px;
+  color: rgba(255,255,255,0.4);
+  font-family: var(--mono);
+}
+
+/* what-happened block */
+.change-what {
+  padding: 18px 26px;
+  border-bottom: 1px solid var(--paper-2);
+  background: var(--paper);
+}
+
+.change-what-label {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-4);
+  margin-bottom: 10px;
+}
+
+.change-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.change-step {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  font-size: 13.5px;
+  color: var(--ink-2);
+  line-height: 1.4;
+}
+
+.change-step-num {
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--green-soft);
+  color: var(--green);
+  font-size: 11px;
+  font-weight: 700;
+  display: grid;
+  place-items: center;
+  margin-top: 1px;
+}
+
+.change-step strong { color: var(--ink); font-weight: 600; }
+
+/* without-us callout */
+.change-without {
+  padding: 14px 26px;
+  border-bottom: 1px solid var(--paper-2);
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  background: var(--gold-soft);
+}
+
+.change-without-icon { font-size: 16px; flex-shrink: 0; margin-top: 1px; }
+
+.change-without-text {
+  font-size: 13px;
+  color: var(--ink-2);
+  line-height: 1.5;
+}
+
+.change-without-text strong { color: var(--ink); }
+
+/* affected clients */
+.change-clients { padding: 6px 0; }
+
+.change-clients-label {
+  padding: 10px 26px 6px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-4);
+}
+
+.change-client-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 16px;
+  padding: 12px 26px;
+  border-top: 1px solid var(--paper-2);
+}
+
+.change-client-name {
+  font-size: 14.5px;
+  font-weight: 600;
+  color: var(--ink);
+  margin-bottom: 3px;
+}
+
+.change-dates {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+}
+
+.change-old-date {
+  font-family: var(--mono);
+  color: var(--ink-4);
+  text-decoration: line-through;
+  font-size: 12px;
+}
+
+.change-arrow { color: var(--green); font-size: 11px; font-weight: 700; }
+
+.change-new-date {
+  font-family: var(--mono);
+  color: var(--green);
+  font-weight: 600;
+  font-size: 12px;
+}
+
+.change-footer {
+  padding: 14px 26px;
+  border-top: 1px solid var(--paper-2);
+  background: var(--paper);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.change-footer-note {
+  font-size: 13px;
+  color: var(--ink-4);
+}
+
+/* ── DONE STATE ── */
+.done-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 64px 40px;
+  animation: fadeUp 0.35s ease both;
+}
+
+.done-mark {
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  background: var(--green-soft);
+  display: grid;
+  place-items: center;
+  font-size: 28px;
+  margin-bottom: 22px;
+  animation: popIn 0.4s cubic-bezier(0.34,1.56,0.64,1) both;
+}
+
+@keyframes popIn {
+  from { opacity: 0; transform: scale(0.5); }
+  to   { opacity: 1; transform: scale(1); }
+}
+
+.done-title {
+  font-family: var(--serif);
+  font-size: 28px;
+  color: var(--ink);
+  margin-bottom: 10px;
+}
+
+.done-sub {
+  font-size: 15px;
+  color: var(--ink-4);
+  line-height: 1.55;
+  max-width: 320px;
+  margin-bottom: 28px;
+}
+
+.done-stats {
+  display: flex;
+  gap: 24px;
+  margin-bottom: 32px;
+}
+
+.done-stat {
+  text-align: center;
+}
+
+.done-stat-num {
+  font-family: var(--serif);
+  font-size: 32px;
+  color: var(--ink);
+  line-height: 1;
+  margin-bottom: 4px;
+}
+
+.done-stat-label {
+  font-size: 12px;
+  color: var(--ink-4);
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.done-divider {
+  width: 1px;
+  height: 40px;
+  background: var(--paper-3);
+  align-self: center;
+}
+
+/* ── WEAK NOTICE (inline in stream) ── */
+.weak-notice {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: var(--paper);
+  border: 1px solid var(--paper-2);
+  animation: fadeUp 0.2s ease both;
+}
+
+.weak-notice-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--green);
+  flex-shrink: 0;
+  margin-top: 5px;
+}
+
+.weak-notice-text {
+  font-size: 13px;
+  color: var(--ink-4);
+  line-height: 1.45;
+}
+
+.weak-notice-text strong {
+  color: var(--ink-3);
+  font-weight: 600;
+}
+
+/* ── CRITICAL CARD (strong alert) ── */
+.critical-card {
+  background: var(--white);
+  border: 2px solid var(--red);
+  border-radius: 12px;
+  overflow: hidden;
+  animation: slideIn 0.25s ease both;
+}
+
+.critical-header {
+  padding: 20px 26px;
+  background: var(--red-soft);
+  border-bottom: 1px solid #f5c5c2;
+}
+
+.critical-eyebrow {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--red);
+  margin-bottom: 8px;
+}
+
+.critical-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--red);
+  animation: pulse 1.2s ease infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.5; transform: scale(0.85); }
+}
+
+.critical-title {
+  font-family: var(--serif);
+  font-size: 22px;
+  color: var(--ink);
+  line-height: 1.2;
+  margin-bottom: 6px;
+}
+
+.critical-body {
+  padding: 18px 26px;
+  font-size: 14px;
+  color: var(--ink-2);
+  line-height: 1.6;
+  border-bottom: 1px solid var(--paper-2);
+}
+
+.critical-consequence {
+  margin-top: 10px;
+  padding: 10px 14px;
+  background: var(--red-soft);
+  border-left: 3px solid var(--red);
+  border-radius: 0 6px 6px 0;
+  font-size: 13px;
+  color: var(--red);
+  font-weight: 500;
+}
+
+.critical-options {
+  padding: 16px 26px 20px;
+  display: flex;
+  gap: 10px;
+}
+
+.critical-btn {
+  flex: 1;
+  height: 42px;
+  border-radius: 8px;
+  border: 1.5px solid var(--paper-3);
+  background: var(--white);
+  color: var(--ink-2);
+  font-family: var(--sans);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.critical-btn.primary {
+  background: var(--red);
+  border-color: var(--red);
+  color: var(--white);
+}
+
+.critical-btn.primary:hover { background: #a82320; border-color: #a82320; }
+.critical-btn:not(.primary):hover { border-color: var(--ink-3); color: var(--ink); }
+
+/* ── CLIENT ADD FLOW ── */
+.add-client-card {
+  background: var(--white);
+  border: 1px solid var(--paper-3);
+  border-radius: 12px;
+  overflow: hidden;
+  animation: slideIn 0.25s ease both;
+}
+
+.add-client-header {
+  padding: 22px 26px 18px;
+  border-bottom: 1px solid var(--paper-2);
+}
+
+.add-client-title {
+  font-family: var(--serif);
+  font-size: 24px;
+  color: var(--ink);
+  margin-bottom: 6px;
+}
+
+.add-client-sub {
+  font-size: 14px;
+  color: var(--ink-4);
+}
+
+.add-client-body {
+  padding: 22px 26px;
+}
+
+.field-group {
+  margin-bottom: 18px;
+}
+
+.field-label {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  margin-bottom: 8px;
+}
+
+.field-value {
+  font-size: 16px;
+  font-weight: 500;
+  color: var(--ink);
+  padding: 10px 14px;
+  background: var(--paper);
+  border: 1px solid var(--paper-3);
+  border-radius: 7px;
+}
+
+.field-tags {
+  display: flex;
+  gap: 7px;
+  flex-wrap: wrap;
+}
+
+.field-tag {
+  padding: 6px 13px;
+  border-radius: 6px;
+  background: var(--blue-soft);
+  color: var(--blue);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.add-client-dl-preview {
+  margin-top: 4px;
+  padding: 14px;
+  background: var(--paper);
+  border: 1px solid var(--paper-2);
+  border-radius: 8px;
+}
+
+.add-client-dl-preview-title {
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--ink-4);
+  margin-bottom: 10px;
+}
+
+.dl-preview-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--paper-2);
+  font-size: 13px;
+}
+
+.dl-preview-row:last-child { border-bottom: none; }
+
+.dl-preview-tax { color: var(--ink-2); }
+.dl-preview-date { font-family: var(--mono); color: var(--ink-4); font-size: 12px; }
+
+.add-client-footer {
+  padding: 16px 26px 20px;
+  border-top: 1px solid var(--paper-2);
+  display: flex;
+  gap: 10px;
+}
+
+/* ── HISTORY CARD ── */
+.history-card {
+  background: var(--white);
+  border: 1px solid var(--paper-3);
+  border-radius: 12px;
+  overflow: hidden;
+  animation: slideIn 0.25s ease both;
+}
+
+.history-header {
+  padding: 20px 26px 16px;
+  border-bottom: 1px solid var(--paper-2);
+}
+
+.history-title {
+  font-family: var(--serif);
+  font-size: 22px;
+  color: var(--ink);
+  margin-bottom: 4px;
+}
+
+.history-sub { font-size: 13px; color: var(--ink-4); }
+
+.history-row {
+  display: grid;
+  grid-template-columns: 36px 1fr auto;
+  gap: 12px;
+  align-items: start;
+  padding: 14px 26px;
+  border-bottom: 1px solid var(--paper-2);
+}
+
+.history-row:last-child { border-bottom: none; }
+
+.history-icon {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-size: 13px;
+  margin-top: 2px;
+  flex-shrink: 0;
+}
+
+.history-icon.auto { background: var(--blue-soft); color: var(--blue); }
+.history-icon.user-action { background: var(--green-soft); color: var(--green); }
+.history-icon.system { background: var(--paper-2); color: var(--ink-3); }
+
+.history-row-title { font-size: 14px; font-weight: 600; color: var(--ink); margin-bottom: 3px; }
+.history-row-detail { font-size: 12.5px; color: var(--ink-3); line-height: 1.4; }
+.history-row-time { font-family: var(--mono); font-size: 11px; color: var(--ink-4); white-space: nowrap; margin-top: 3px; }
+
+/* ── DEMO NAV PANEL ── */
+.demo-nav {
+  flex: 0 0 auto;
+  border-bottom: 1px solid var(--paper-2);
+  background: var(--paper);
+  padding: 0 36px;
+  display: flex;
+  align-items: center;
+  gap: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.demo-nav::-webkit-scrollbar { display: none; }
+
+.demo-nav-label {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-4);
+  white-space: nowrap;
+  margin-right: 14px;
+  flex-shrink: 0;
+}
+
+.demo-tab {
+  height: 38px;
+  padding: 0 14px;
+  border: none;
+  background: transparent;
+  color: var(--ink-3);
+  font-family: var(--sans);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+  border-bottom: 2px solid transparent;
+  transition: all 0.15s;
+  flex-shrink: 0;
+}
+
+.demo-tab:hover { color: var(--ink); }
+.demo-tab.active { color: var(--gold); border-bottom-color: var(--gold); font-weight: 600; }
+
+/* ── SYSTEM ANNOTATION ── */
+.annotation {
+  margin: 12px 0 4px;
+  padding: 10px 14px;
+  background: #fffbf0;
+  border: 1px dashed var(--gold);
+  border-radius: 7px;
+  font-size: 12px;
+  color: var(--ink-3);
+  line-height: 1.55;
+  animation: fadeUp 0.2s ease both;
+}
+
+.annotation strong { color: var(--gold); font-weight: 700; }
+.annotation code {
+  font-family: var(--mono);
+  font-size: 11px;
+  background: var(--paper-2);
+  padding: 1px 5px;
+  border-radius: 3px;
+  color: var(--ink-2);
+}
+
+/* ── COMPARE CARD ── */
+.compare-card {
+  background: var(--white);
+  border: 1px solid var(--paper-3);
+  border-radius: 12px;
+  overflow: hidden;
+  animation: slideIn 0.25s ease both;
+}
+
+.compare-header {
+  padding: 18px 26px;
+  border-bottom: 1px solid var(--paper-2);
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+}
+
+.compare-title {
+  font-family: var(--serif);
+  font-size: 22px;
+  color: var(--ink);
+}
+
+.compare-verdict {
+  font-size: 13px;
+  color: var(--ink-4);
+}
+
+.compare-verdict strong { color: var(--red); font-weight: 600; }
+
+.compare-cols {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+}
+
+.compare-col {
+  padding: 20px 22px;
+  border-right: 1px solid var(--paper-2);
+}
+
+.compare-col:last-child { border-right: none; }
+
+.compare-col-name {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--ink);
+  margin-bottom: 14px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--paper-2);
+}
+
+.compare-dl-row {
+  margin-bottom: 12px;
+}
+
+.compare-dl-tax {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink-2);
+  margin-bottom: 3px;
+}
+
+.compare-dl-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.compare-dl-date {
+  font-family: var(--mono);
+  font-size: 11.5px;
+  color: var(--ink-4);
+}
+
+/* ── COMPLETED LIST ── */
+.completed-card {
+  background: var(--white);
+  border: 1px solid var(--paper-3);
+  border-radius: 12px;
+  overflow: hidden;
+  animation: slideIn 0.25s ease both;
+}
+
+.completed-header {
+  padding: 18px 24px 14px;
+  border-bottom: 1px solid var(--paper-2);
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+}
+
+.completed-title {
+  font-family: var(--serif);
+  font-size: 22px;
+  color: var(--ink);
+}
+
+.completed-row {
+  display: grid;
+  grid-template-columns: 20px 1fr auto;
+  gap: 12px;
+  align-items: center;
+  padding: 13px 24px;
+  border-bottom: 1px solid var(--paper-2);
+  opacity: 0.7;
+}
+
+.completed-row:last-child { border-bottom: none; }
+
+.completed-check {
+  color: var(--green);
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.completed-client {
+  font-size: 14.5px;
+  font-weight: 500;
+  color: var(--ink-3);
+  text-decoration: line-through;
+}
+
+.completed-sub {
+  font-size: 12px;
+  color: var(--ink-4);
+  margin-top: 2px;
+}
+
+.completed-time {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--ink-4);
+  white-space: nowrap;
+}
+
+/* ── BULK CONFIRM ── */
+.bulk-card {
+  background: var(--white);
+  border: 1.5px solid var(--gold);
+  border-radius: 12px;
+  overflow: hidden;
+  animation: slideIn 0.25s ease both;
+}
+
+.bulk-header {
+  padding: 18px 26px;
+  background: var(--gold-soft);
+  border-bottom: 1px solid #f0ddb0;
+}
+
+.bulk-eyebrow {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--gold);
+  margin-bottom: 6px;
+}
+
+.bulk-title {
+  font-family: var(--serif);
+  font-size: 20px;
+  color: var(--ink);
+}
+
+.bulk-items {
+  padding: 6px 0;
+}
+
+.bulk-item-row {
+  display: grid;
+  grid-template-columns: 18px 1fr auto;
+  gap: 10px;
+  align-items: center;
+  padding: 11px 26px;
+  border-bottom: 1px solid var(--paper-2);
+  font-size: 13.5px;
+}
+
+.bulk-item-row:last-child { border-bottom: none; }
+.bulk-item-check { color: var(--ink-4); font-size: 12px; }
+.bulk-item-name { color: var(--ink-2); font-weight: 500; }
+.bulk-item-days { font-family: var(--mono); font-size: 12px; color: var(--ink-4); }
+
+.bulk-footer {
+  padding: 14px 26px 18px;
+  border-top: 1px solid var(--paper-2);
+  display: flex;
+  gap: 10px;
+}
+
+/* ── PRIORITIZE CARD ── */
+.prioritize-card {
+  background: var(--white);
+  border: 1px solid var(--paper-3);
+  border-radius: 12px;
+  overflow: hidden;
+  animation: slideIn 0.25s ease both;
+}
+
+.prioritize-header {
+  padding: 18px 26px;
+  border-bottom: 1px solid var(--paper-2);
+  background: var(--ink);
+}
+
+.prioritize-eyebrow {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--gold);
+  margin-bottom: 6px;
+}
+
+.prioritize-title {
+  font-family: var(--serif);
+  font-size: 22px;
+  color: var(--white);
+}
+
+.prioritize-item {
+  padding: 18px 26px;
+  border-bottom: 1px solid var(--paper-2);
+  display: grid;
+  grid-template-columns: 28px 1fr;
+  gap: 14px;
+  align-items: start;
+}
+
+.prioritize-item:last-child { border-bottom: none; }
+
+.prioritize-rank {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-size: 13px;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.prioritize-rank.r1 { background: var(--red-soft); color: var(--red); }
+.prioritize-rank.r2 { background: var(--gold-soft); color: var(--gold); }
+.prioritize-rank.r3 { background: var(--paper-2); color: var(--ink-3); }
+
+.prioritize-item-name {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--ink);
+  margin-bottom: 4px;
+}
+
+.prioritize-item-reason {
+  font-size: 13px;
+  color: var(--ink-3);
+  line-height: 1.45;
+}
+
+.prioritize-item-reason em {
+  font-style: normal;
+  color: var(--gold);
+  font-weight: 600;
+}
+
+.prioritize-item-blocked {
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--red);
+  font-weight: 500;
+}
+
+.guidance-card {
+  background: var(--white);
+  border: 1px solid var(--paper-3);
+  border-radius: 12px;
+  padding: 22px 26px;
+  animation: slideIn 0.25s ease both;
+}
+
+.guidance-title {
+  font-size: 15px;
+  color: var(--ink-3);
+  margin-bottom: 14px;
+}
+
+.guidance-options {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.guidance-opt {
+  width: 100%;
+  text-align: left;
+  padding: 12px 16px;
+  border: 1px solid var(--paper-3);
+  border-radius: 8px;
+  background: var(--paper);
+  color: var(--ink-2);
+  font-family: var(--sans);
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.guidance-opt:hover {
+  border-color: var(--gold);
+  color: var(--ink);
+  background: var(--gold-soft);
+}
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">DueDate<em>HQ</em></div>
+  <div class="topbar-right">
+    <span class="tenant-name">Johnson CPA PLLC</span>
+    <div class="avatar">SJ</div>
+  </div>
+</header>
+
+<nav class="demo-nav" id="demo-nav">
+  <span class="demo-nav-label">Scenarios</span>
+  <button class="demo-tab active" data-scene="today">Today's list</button>
+  <button class="demo-tab" data-scene="next-month">Next month</button>
+  <button class="demo-tab" data-scene="compare">Compare clients</button>
+  <button class="demo-tab" data-scene="completed">Completed</button>
+  <button class="demo-tab" data-scene="bulk-snooze">Bulk snooze</button>
+  <button class="demo-tab" data-scene="prioritize">What to do first</button>
+  <button class="demo-tab" data-scene="irs">IRS rule change</button>
+  <button class="demo-tab" data-scene="pte">PTE critical</button>
+</nav>
+
+
+<div class="workspace">
+
+  <!-- LEFT: CONVERSATION -->
+  <aside class="conv-panel">
+    <div class="conv-header">
+      <div class="conv-header-label">Today</div>
+      <div class="conv-header-date">Saturday, April 19</div>
+    </div>
+
+    <div class="stream" id="stream"></div>
+
+    <div class="quick-actions" id="quick-actions"></div>
+
+    <div class="composer">
+      <div class="input-wrap">
+        <input id="user-input" type="text" placeholder="Say anything…" autocomplete="off"/>
+        <button class="send-btn" id="send-btn" title="Send">↑</button>
+      </div>
+      <div class="input-hint">DueDateHQ may make mistakes. Verify important details.</div>
+    </div>
+  </aside>
+
+  <!-- RIGHT: SURFACE -->
+  <main class="surface-panel" id="surface"></main>
+
+</div>
+
+<script>
+// ── DATA ──────────────────────────────────────────────────────────────────────
+const DEADLINES = [
+  {
+    id: "acme-q2-sales",
+    client_id: "acme",
+    client_name: "Acme Dental LLC",
+    tax_type: "Q2 Sales Tax Return",
+    jurisdiction: "California",
+    due_date: "Apr 19, 2025",
+    days_remaining: 0,
+    status: "pending",
+    available_actions: ["complete", "snooze", "waive"],
+    note: "Missing client documents — cannot file without them."
+  },
+  {
+    id: "greenway-ca-pte",
+    client_id: "greenway",
+    client_name: "Greenway Consulting LLC",
+    tax_type: "CA Pass-Through Withholding",
+    jurisdiction: "California",
+    due_date: "Apr 24, 2025",
+    days_remaining: 5,
+    status: "pending",
+    available_actions: ["complete", "snooze", "waive"],
+    note: "Entity type not confirmed — withholding applicability unclear."
+  },
+  {
+    id: "sunset-payroll",
+    client_id: "sunset",
+    client_name: "Sunset Retail Inc.",
+    tax_type: "Q2 Payroll Tax Return",
+    jurisdiction: "Arizona",
+    due_date: "Apr 26, 2025",
+    days_remaining: 7,
+    status: "pending",
+    available_actions: ["complete", "snooze", "waive"],
+    note: "Payroll summary not yet reviewed."
+  },
+  {
+    id: "brighton-tx-sales",
+    client_id: "brighton",
+    client_name: "Brighton Manufacturing LLC",
+    tax_type: "TX Sales Tax Return",
+    jurisdiction: "Texas",
+    due_date: "May 1, 2025",
+    days_remaining: 12,
+    status: "pending",
+    available_actions: ["complete", "snooze", "waive"],
+    note: "Extension on file. Verify record before closing."
+  }
+]
+
+const CLIENTS = {
+  acme: { name: "Acme Dental LLC", entity_type: "LLC", states: ["CA"] },
+  greenway: { name: "Greenway Consulting LLC", entity_type: "LLC", states: ["CA", "TX"] },
+  sunset: { name: "Sunset Retail Inc.", entity_type: "S-Corp", states: ["AZ"] },
+  brighton: { name: "Brighton Manufacturing LLC", entity_type: "LLC", states: ["TX", "DE"] }
+}
+
+// ── STATE ─────────────────────────────────────────────────────────────────────
+const state = {
+  view: null,           // current rendered view
+  selectable: [],       // selectable_items for current view
+  deadlines: DEADLINES.map(d => ({...d})),  // mutable copy
+  pendingConfirm: null  // pending write operation
+}
+
+// ── UTILS ─────────────────────────────────────────────────────────────────────
+function urgency(dl) {
+  if (dl.days_remaining === 0) return "urgent"
+  if (dl.days_remaining <= 7) return "medium"
+  return "low"
+}
+
+function urgencyLabel(dl) {
+  if (dl.days_remaining === 0) return "Today"
+  if (dl.days_remaining === 1) return "Tomorrow"
+  return `${dl.days_remaining}d`
+}
+
+function activeDls() {
+  return state.deadlines.filter(d => d.status === "pending")
+}
+
+// ── RENDER VIEWS ──────────────────────────────────────────────────────────────
+function renderListCard(dls) {
+  const surface = document.getElementById("surface")
+  state.selectable = dls.map((d, i) => ({
+    ref: `item_${i+1}`, deadline_id: d.id,
+    client_id: d.client_id, client_name: d.client_name
+  }))
+  surface.innerHTML = ""
+
+  const card = document.createElement("div")
+  card.className = "list-card"
+  card.innerHTML = `
+    <div class="list-card-header">
+      <div class="list-card-title">Today's Deadlines</div>
+      <div class="list-card-meta">${dls.length} pending</div>
+    </div>
+  `
+
+  dls.forEach((dl, i) => {
+    const row = document.createElement("div")
+    row.className = `deadline-row ${urgency(dl)}`
+    row.dataset.ref = `item_${i+1}`
+    row.innerHTML = `
+      <div class="row-accent"></div>
+      <div class="row-body">
+        <div class="row-client">${dl.client_name}</div>
+        <div class="row-detail">${dl.tax_type} · ${dl.jurisdiction}</div>
+      </div>
+      <div class="row-right">
+        <div class="row-due">${dl.due_date}</div>
+        <span class="badge-pill ${urgency(dl)}">${urgencyLabel(dl)}</span>
+      </div>
+    `
+    row.addEventListener("click", () => {
+      addMsg("user", dl.client_name)
+      openClient(dl.client_id)
+    })
+    card.appendChild(row)
+  })
+
+  surface.appendChild(card)
+  state.view = { type: "ListCard", data: dls }
+
+  setQuickActions(dls.slice(0,3).map(d => ({
+    label: d.client_name.split(" ")[0],
+    action: () => {
+      addMsg("user", d.client_name)
+      openClient(d.client_id)
+    }
+  })).concat([{ label: "What's most urgent?", action: () => routeInput("what's most urgent") }]))
+}
+
+function openClient(client_id) {
+  const client = CLIENTS[client_id]
+  const dls = state.deadlines.filter(d => d.client_id === client_id)
+
+  state.selectable = dls.map((d, i) => ({
+    ref: `item_${i+1}`, deadline_id: d.id,
+    client_id, client_name: client.name
+  }))
+
+  const surface = document.getElementById("surface")
+  surface.innerHTML = ""
+
+  const card = document.createElement("div")
+  card.className = "client-card"
+
+  const header = document.createElement("div")
+  header.className = "client-card-header"
+  header.innerHTML = `
+    <button class="client-back" id="back-btn">← Today</button>
+    <div class="client-name">${client.name}</div>
+    <div class="client-tags">
+      <span class="client-tag">${client.entity_type}</span>
+      ${client.states.map(s => `<span class="client-tag">${s}</span>`).join("")}
+    </div>
+  `
+  card.appendChild(header)
+
+  dls.forEach(dl => {
+    const item = document.createElement("div")
+    item.className = "dl-item"
+
+    const actionBtns = dl.available_actions.map(a => {
+      const labels = { complete: "Mark complete", snooze: "Snooze", waive: "Waive" }
+      const primary = a === "complete"
+      return `<button class="action-btn ${primary ? "primary" : ""}" data-action="${a}" data-dlid="${dl.id}">${labels[a]}</button>`
+    }).join("")
+
+    item.innerHTML = `
+      <div>
+        <div class="dl-item-tax">${dl.tax_type}</div>
+        <div class="dl-item-jurisdiction">${dl.jurisdiction}${dl.note ? ` · ${dl.note}` : ""}</div>
+        <div class="dl-item-actions">
+          ${actionBtns}
+          <button class="action-btn" data-action="history" data-dlid="${dl.id}" data-clientid="${dl.client_id}">Why this date?</button>
+        </div>
+      </div>
+      <div class="dl-item-right">
+        <div class="dl-due">${dl.due_date}</div>
+        <span class="badge-pill ${urgency(dl)}">${urgencyLabel(dl)}</span>
+      </div>
+    `
+    card.appendChild(item)
+  })
+
+  surface.appendChild(card)
+  state.view = { type: "ClientCard", client_id, data: dls }
+
+  document.getElementById("back-btn").addEventListener("click", () => {
+    addMsg("user", "Back to today")
+    goToday()
+  })
+
+  card.querySelectorAll(".action-btn").forEach(btn => {
+    btn.addEventListener("click", () => {
+      if (btn.dataset.action === "history") {
+        addMsg("user", "Why this date?")
+        addMsg("system", `Here's the full change history for ${CLIENTS[btn.dataset.clientid]?.name}.`)
+        renderHistoryCard(btn.dataset.clientid)
+        return
+      }
+      const dl = state.deadlines.find(d => d.id === btn.dataset.dlid)
+      requestAction(dl, btn.dataset.action)
+    })
+  })
+
+  setQuickActions([
+    { label: "Mark all complete", action: () => routeInput("mark all complete") },
+    { label: "Back to today", action: () => { addMsg("user", "Back to today"); goToday() } }
+  ])
+}
+
+function renderConfirmCard(dl, action) {
+  const labels = { complete: "Mark as complete", snooze: "Snooze 7 days", waive: "Waive this deadline" }
+  const consequences = {
+    complete: "This deadline will be marked as completed. The status will update immediately.",
+    snooze: "This deadline will be snoozed for 7 days. You'll be reminded again on Apr 26.",
+    waive: "This deadline will be waived. No further reminders will be sent."
+  }
+
+  const surface = document.getElementById("surface")
+  surface.innerHTML = ""
+
+  const card = document.createElement("div")
+  card.className = "confirm-card"
+  card.innerHTML = `
+    <div class="confirm-header">
+      <div class="confirm-eyebrow">Confirm action</div>
+      <div class="confirm-title">${labels[action]} — ${dl.client_name}?</div>
+    </div>
+    <div class="confirm-body">
+      <div>${dl.tax_type} · ${dl.jurisdiction} · Due ${dl.due_date}</div>
+      <div class="consequence">${consequences[action]}</div>
+    </div>
+    <div class="confirm-options">
+      <button class="confirm-btn primary" id="confirm-yes">Confirm</button>
+      <button class="confirm-btn" id="confirm-no">Cancel</button>
+    </div>
+  `
+  surface.appendChild(card)
+  state.view = { type: "ConfirmCard" }
+  state.pendingConfirm = { dl, action }
+
+  document.getElementById("confirm-yes").addEventListener("click", executeAction)
+  document.getElementById("confirm-no").addEventListener("click", () => {
+    addMsg("system", "Cancelled. No changes made.")
+    openClient(dl.client_id)
+  })
+
+  setQuickActions([
+    { label: "Confirm", action: executeAction },
+    { label: "Cancel", action: () => {
+      addMsg("user", "Cancel")
+      addMsg("system", "Cancelled. No changes made.")
+      openClient(dl.client_id)
+    }}
+  ])
+}
+
+function renderGuidanceCard(message, options) {
+  const surface = document.getElementById("surface")
+  surface.innerHTML = ""
+  const card = document.createElement("div")
+  card.className = "guidance-card"
+  card.innerHTML = `
+    <div class="guidance-title">${message}</div>
+    <div class="guidance-options">
+      ${options.map(o => `<button class="guidance-opt" data-opt="${o}">${o}</button>`).join("")}
+    </div>
+  `
+  surface.appendChild(card)
+  card.querySelectorAll(".guidance-opt").forEach(btn => {
+    btn.addEventListener("click", () => routeInput(btn.dataset.opt))
+  })
+  state.view = { type: "GuidanceCard" }
+  setQuickActions([])
+}
+
+// ── ANNOTATION HELPER ────────────────────────────────────────────────────────
+function addAnnotation(html) {
+  const stream = document.getElementById("stream")
+  const div = document.createElement("div")
+  div.className = "annotation"
+  div.innerHTML = html
+  stream.appendChild(div)
+  stream.scrollTop = stream.scrollHeight
+}
+
+// ── SCENE 1: NEXT MONTH ───────────────────────────────────────────────────────
+function renderNextMonth() {
+  const futureDls = [
+    { client_name: "Brighton Manufacturing LLC", tax_type: "TX Sales Tax Return", jurisdiction: "Texas", due_date: "May 1, 2025", days_remaining: 12, status: "pending" },
+    { client_name: "Acme Dental LLC", tax_type: "Q2 Estimated Tax", jurisdiction: "Federal", due_date: "May 15, 2025", days_remaining: 26, status: "pending" },
+    { client_name: "Sunset Retail Inc.", tax_type: "AZ Withholding Return", jurisdiction: "Arizona", due_date: "May 20, 2025", days_remaining: 31, status: "pending" },
+    { client_name: "Greenway Consulting LLC", tax_type: "TX Franchise Tax", jurisdiction: "Texas", due_date: "May 15, 2025", days_remaining: 26, status: "pending" },
+  ]
+
+  const surface = document.getElementById("surface")
+  surface.innerHTML = ""
+
+  const card = document.createElement("div")
+  card.className = "list-card"
+  card.innerHTML = `
+    <div class="list-card-header">
+      <div class="list-card-title">Next 30 Days</div>
+      <div class="list-card-meta">${futureDls.length} upcoming</div>
+    </div>
+  `
+  futureDls.forEach(dl => {
+    const row = document.createElement("div")
+    row.className = `deadline-row low`
+    row.innerHTML = `
+      <div class="row-accent"></div>
+      <div class="row-body">
+        <div class="row-client">${dl.client_name}</div>
+        <div class="row-detail">${dl.tax_type} · ${dl.jurisdiction}</div>
+      </div>
+      <div class="row-right">
+        <div class="row-due">${dl.due_date}</div>
+        <span class="badge-pill low">${dl.days_remaining}d</span>
+      </div>
+    `
+    card.appendChild(row)
+  })
+
+  surface.appendChild(card)
+  state.view = { type: "ListCard" }
+
+  setQuickActions([
+    { label: "Back to today", action: () => { addMsg("user", "Back to today"); goToday() } },
+    { label: "Brighton details", action: () => { addMsg("user", "Brighton"); openClient("brighton") } }
+  ])
+}
+
+// ── SCENE 2: COMPARE CLIENTS ──────────────────────────────────────────────────
+function renderCompareCard(idA, idB) {
+  const dlsA = state.deadlines.filter(d => d.client_id === idA && d.status === "pending")
+  const dlsB = state.deadlines.filter(d => d.client_id === idB && d.status === "pending")
+  const clientA = CLIENTS[idA], clientB = CLIENTS[idB]
+  const moreUrgentName = dlsA[0]?.days_remaining <= (dlsB[0]?.days_remaining ?? 99)
+    ? clientA.name.split(" ")[0] : clientB.name.split(" ")[0]
+
+  const surface = document.getElementById("surface")
+  surface.innerHTML = ""
+
+  const renderCol = (dls) => dls.map(dl => `
+    <div class="compare-dl-row">
+      <div class="compare-dl-tax">${dl.tax_type}</div>
+      <div class="compare-dl-meta">
+        <span class="compare-dl-date">${dl.due_date}</span>
+        <span class="badge-pill ${urgency(dl)}">${urgencyLabel(dl)}</span>
+      </div>
+    </div>
+  `).join("")
+
+  const card = document.createElement("div")
+  card.className = "compare-card"
+  card.innerHTML = `
+    <div class="compare-header">
+      <div class="compare-title">Side by side</div>
+      <div class="compare-verdict"><strong>${moreUrgentName}</strong> is more urgent</div>
+    </div>
+    <div class="compare-cols">
+      <div class="compare-col">
+        <div class="compare-col-name">${clientA.name}</div>
+        ${renderCol(dlsA)}
+        ${dlsA.length === 0 ? '<div style="font-size:13px;color:var(--ink-4)">No pending deadlines</div>' : ""}
+      </div>
+      <div class="compare-col">
+        <div class="compare-col-name">${clientB.name}</div>
+        ${renderCol(dlsB)}
+        ${dlsB.length === 0 ? '<div style="font-size:13px;color:var(--ink-4)">No pending deadlines</div>' : ""}
+      </div>
+    </div>
+  `
+  surface.appendChild(card)
+  state.view = { type: "CompareCard" }
+
+  setQuickActions([
+    { label: clientA.name.split(" ")[0], action: () => { addMsg("user", clientA.name); openClient(idA) } },
+    { label: clientB.name.split(" ")[0], action: () => { addMsg("user", clientB.name); openClient(idB) } },
+    { label: "Back to today", action: () => { addMsg("user", "Back to today"); goToday() } }
+  ])
+}
+
+// ── SCENE 3: COMPLETED LIST ───────────────────────────────────────────────────
+function renderCompletedList() {
+  const completed = [
+    { client_name: "Brighton Manufacturing LLC", tax_type: "Q1 Sales Tax Return", time: "Apr 15, 9:32 AM" },
+    { client_name: "Sunset Retail Inc.", tax_type: "Annual Report Filing", time: "Apr 12, 2:14 PM" },
+    { client_name: "Acme Dental LLC", tax_type: "W-9 Collection", time: "Apr 10, 11:05 AM" },
+  ]
+
+  const surface = document.getElementById("surface")
+  surface.innerHTML = ""
+
+  const card = document.createElement("div")
+  card.className = "completed-card"
+  card.innerHTML = `
+    <div class="completed-header">
+      <div class="completed-title">Completed</div>
+      <div class="list-card-meta">${completed.length} this month</div>
+    </div>
+    ${completed.map(c => `
+      <div class="completed-row">
+        <div class="completed-check">✓</div>
+        <div>
+          <div class="completed-client">${c.client_name}</div>
+          <div class="completed-sub">${c.tax_type}</div>
+        </div>
+        <div class="completed-time">${c.time}</div>
+      </div>
+    `).join("")}
+  `
+  surface.appendChild(card)
+  state.view = { type: "CompletedList" }
+
+  setQuickActions([
+    { label: "Back to today", action: () => { addMsg("user", "Back to today"); goToday() } }
+  ])
+}
+
+// ── SCENE 4: BULK SNOOZE ─────────────────────────────────────────────────────
+function renderBulkSnoozeCard() {
+  const lowRisk = state.deadlines.filter(d => d.status === "pending" && d.days_remaining >= 7)
+
+  const surface = document.getElementById("surface")
+  surface.innerHTML = ""
+
+  const card = document.createElement("div")
+  card.className = "bulk-card"
+  card.innerHTML = `
+    <div class="bulk-header">
+      <div class="bulk-eyebrow">Bulk action — write operation</div>
+      <div class="bulk-title">Snooze ${lowRisk.length} deadlines for 2 weeks?</div>
+    </div>
+    <div class="bulk-items">
+      ${lowRisk.map(dl => `
+        <div class="bulk-item-row">
+          <span class="bulk-item-check">○</span>
+          <span class="bulk-item-name">${dl.client_name} · ${dl.tax_type}</span>
+          <span class="bulk-item-days">${dl.days_remaining}d → ${dl.days_remaining + 14}d</span>
+        </div>
+      `).join("")}
+    </div>
+    <div class="bulk-footer">
+      <button class="confirm-btn primary" id="bulk-yes" style="flex:1">Confirm — snooze all</button>
+      <button class="confirm-btn" id="bulk-no" style="flex:0 0 90px">Cancel</button>
+    </div>
+  `
+  surface.appendChild(card)
+  state.view = { type: "BulkConfirm" }
+
+  document.getElementById("bulk-yes").addEventListener("click", () => {
+    lowRisk.forEach(dl => { dl.days_remaining += 14 })
+    addMsg("system", `Done. ${lowRisk.length} deadlines snoozed for 2 weeks.`)
+    setTimeout(() => goToday(), 350)
+  })
+
+  document.getElementById("bulk-no").addEventListener("click", () => {
+    addMsg("system", "Cancelled. No changes made.")
+    goToday()
+  })
+
+  setQuickActions([
+    { label: "Confirm", action: () => document.getElementById("bulk-yes")?.click() },
+    { label: "Cancel", action: () => document.getElementById("bulk-no")?.click() }
+  ])
+}
+
+// ── SCENE 5: PRIORITIZE ───────────────────────────────────────────────────────
+function renderPrioritizeCard() {
+  const surface = document.getElementById("surface")
+  surface.innerHTML = ""
+
+  const card = document.createElement("div")
+  card.className = "prioritize-card"
+  card.innerHTML = `
+    <div class="prioritize-header">
+      <div class="prioritize-eyebrow">Smart prioritization</div>
+      <div class="prioritize-title">Here's what to do first</div>
+    </div>
+    <div class="prioritize-item">
+      <div class="prioritize-rank r1">1</div>
+      <div>
+        <div class="prioritize-item-name">Greenway — CA PTE Election</div>
+        <div class="prioritize-item-reason">Due <em>today</em>, irrevocable. You can act on this right now — no missing documents.</div>
+      </div>
+    </div>
+    <div class="prioritize-item">
+      <div class="prioritize-rank r2">2</div>
+      <div>
+        <div class="prioritize-item-name">Acme Dental — Q2 Sales Tax</div>
+        <div class="prioritize-item-reason">Also due today, but <em>blocked</em> — client hasn't sent documents. Send a reminder now so you're not waiting at the end of the day.</div>
+        <div class="prioritize-item-blocked">⚠ Blocked by missing client docs</div>
+      </div>
+    </div>
+    <div class="prioritize-item">
+      <div class="prioritize-rank r3">3</div>
+      <div>
+        <div class="prioritize-item-name">Sunset & Brighton — later this week</div>
+        <div class="prioritize-item-reason">7–12 days out. No action needed today — check back Thursday.</div>
+      </div>
+    </div>
+  `
+  surface.appendChild(card)
+  state.view = { type: "PrioritizeCard" }
+
+  setQuickActions([
+    { label: "Start with Greenway", action: () => { addMsg("user", "Greenway"); openClient("greenway") } },
+    { label: "Start with Acme", action: () => { addMsg("user", "Acme"); openClient("acme") } },
+    { label: "Back to today", action: () => { addMsg("user", "Back to today"); goToday() } }
+  ])
+}
+
+
+const CHANGE_EVENT = {
+  source_label: "IRS Notice 2025-23",
+  source_url: "#",
+  description: "Federal disaster declaration — California wildfire areas.",
+  affected: [
+    { client_id: "acme", client_name: "Acme Dental LLC", old_date: "Apr 15, 2025", new_date: "Oct 15, 2025" },
+    { client_id: "greenway", client_name: "Greenway Consulting LLC", old_date: "Apr 15, 2025", new_date: "Oct 15, 2025" }
+  ]
+}
+
+function renderChangeNoticeCard() {
+  const surface = document.getElementById("surface")
+  surface.innerHTML = ""
+  const ev = CHANGE_EVENT
+  const n = ev.affected.length
+
+  const clientRows = ev.affected.map(c => `
+    <div class="change-client-row">
+      <div>
+        <div class="change-client-name">${c.client_name}</div>
+        <div class="change-dates">
+          <span class="change-old-date">${c.old_date}</span>
+          <span class="change-arrow">→</span>
+          <span class="change-new-date">${c.new_date}</span>
+        </div>
+      </div>
+      <span class="badge-pill low">Updated</span>
+    </div>
+  `).join("")
+
+  const card = document.createElement("div")
+  card.className = "change-card"
+  card.innerHTML = `
+    <div class="change-banner">
+      <div class="change-banner-icon">📡</div>
+      <div class="change-banner-text">
+        <div class="change-eyebrow">Policy change detected</div>
+        <div class="change-title">${ev.source_label}</div>
+        <div class="change-source-link">${ev.description}</div>
+      </div>
+    </div>
+
+    <div class="change-what">
+      <div class="change-what-label">What just happened — automatically</div>
+      <div class="change-steps">
+        <div class="change-step">
+          <span class="change-step-num">1</span>
+          <span>IRS published a disaster relief notice at <strong>6:01 AM</strong>. DueDateHQ detected it within 12 minutes.</span>
+        </div>
+        <div class="change-step">
+          <span class="change-step-num">2</span>
+          <span>System matched the notice against your <strong>${Object.keys(CLIENTS).length} clients</strong> and found ${n} affected.</span>
+        </div>
+        <div class="change-step">
+          <span class="change-step-num">3</span>
+          <span>Their deadlines were <strong>updated automatically</strong>. Apr 15 → Oct 15. No action needed from you.</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="change-without">
+      <div class="change-without-icon">⏱</div>
+      <div class="change-without-text">
+        Without DueDateHQ, this would have taken <strong>manual monitoring of the IRS website, cross-referencing your client list, and updating each calendar entry by hand</strong> — typically 30–60 minutes if you caught it at all.
+      </div>
+    </div>
+
+    <div class="change-clients">
+      <div class="change-clients-label">${n} clients updated</div>
+      ${clientRows}
+    </div>
+
+    <div class="change-footer">
+      <span class="change-footer-note">No action required. Everything is already up to date.</span>
+      <button class="action-btn primary" id="change-dismiss">Got it</button>
+    </div>
+  `
+  surface.appendChild(card)
+  state.view = { type: "ChangeNoticeCard" }
+
+  document.getElementById("change-dismiss").addEventListener("click", () => {
+    addMsg("user", "Got it")
+    addMsg("system", `Both clients updated. You saved the manual work — back to your list.`)
+    goToday()
+  })
+
+  setQuickActions([
+    { label: "Got it", action: () => { addMsg("user", "Got it"); addMsg("system", "All updated. Back to today."); goToday() } },
+    { label: "Show Acme", action: () => { addMsg("user", "Show Acme"); openClient("acme") } },
+    { label: "Show Greenway", action: () => { addMsg("user", "Show Greenway"); openClient("greenway") } }
+  ])
+}
+
+// ── RENDER: DONE STATE ────────────────────────────────────────────────────────
+function renderDoneState(completedCount, snoozedCount) {
+  const surface = document.getElementById("surface")
+  surface.innerHTML = ""
+
+  const div = document.createElement("div")
+  div.className = "done-state"
+  div.innerHTML = `
+    <div class="done-mark">✓</div>
+    <div class="done-title">All caught up.</div>
+    <div class="done-sub">Nothing else needs your attention today. DueDateHQ will let you know if anything changes.</div>
+    <div class="done-stats">
+      <div class="done-stat">
+        <div class="done-stat-num">${completedCount}</div>
+        <div class="done-stat-label">Completed</div>
+      </div>
+      ${snoozedCount > 0 ? `
+        <div class="done-divider"></div>
+        <div class="done-stat">
+          <div class="done-stat-num">${snoozedCount}</div>
+          <div class="done-stat-label">Snoozed</div>
+        </div>
+      ` : ""}
+    </div>
+  `
+  surface.appendChild(div)
+  state.view = { type: "DoneState" }
+  setQuickActions([])
+}
+
+// ── WEAK NOTICE (appears in stream, not surface) ───────────────────────────────
+function addWeakNotice(text) {
+  const stream = document.getElementById("stream")
+  const div = document.createElement("div")
+  div.className = "weak-notice"
+  div.innerHTML = `
+    <div class="weak-notice-dot"></div>
+    <div class="weak-notice-text">${text}</div>
+  `
+  stream.appendChild(div)
+  stream.scrollTop = stream.scrollHeight
+}
+
+// ── RENDER: CRITICAL ALERT ────────────────────────────────────────────────────
+const CRITICAL_DL = {
+  id: "greenway-pte",
+  client_id: "greenway",
+  client_name: "Greenway Consulting LLC",
+  tax_type: "CA PTE Election",
+  jurisdiction: "California",
+  due_date: "Apr 19, 2025",
+  days_remaining: 0,
+  status: "pending",
+  available_actions: ["complete", "waive"],
+  consequence: "Missing this deadline voids the entire year's pass-through entity tax credit. There is no extension.",
+  note: "PTE election — irrevocable. Missing this cancels the tax strategy for the whole year."
+}
+
+function renderCriticalCard() {
+  const surface = document.getElementById("surface")
+  surface.innerHTML = ""
+  const dl = CRITICAL_DL
+
+  const card = document.createElement("div")
+  card.className = "critical-card"
+  card.innerHTML = `
+    <div class="critical-header">
+      <div class="critical-eyebrow">
+        <div class="critical-dot"></div>
+        Action required today
+      </div>
+      <div class="critical-title">${dl.client_name} — ${dl.tax_type}</div>
+    </div>
+    <div class="critical-body">
+      This election must be made today. Once the window closes, it cannot be reopened for this tax year.
+      <div class="critical-consequence">⚠ ${dl.consequence}</div>
+    </div>
+    <div class="critical-options">
+      <button class="critical-btn primary" id="critical-done">Election made — mark complete</button>
+      <button class="critical-btn" id="critical-waive">Not applicable</button>
+    </div>
+  `
+  surface.appendChild(card)
+  state.view = { type: "CriticalCard" }
+  state.pendingConfirm = { dl, action: "complete" }
+
+  document.getElementById("critical-done").addEventListener("click", () => {
+    addMsg("system", "PTE election recorded for Greenway. This is logged with today's date.")
+    dl.status = "completed"
+    // remove from main deadlines if present
+    const idx = state.deadlines.findIndex(d => d.id === dl.id)
+    if (idx === -1) state.deadlines.push(dl)
+    state.deadlines.find(d => d.id === dl.id).status = "completed"
+    state.pendingConfirm = null
+    setTimeout(() => goToday(), 400)
+  })
+
+  document.getElementById("critical-waive").addEventListener("click", () => {
+    addMsg("system", "Marked as not applicable for Greenway. No election recorded.")
+    state.pendingConfirm = null
+    goToday()
+  })
+
+  setQuickActions([
+    { label: "Election made", action: () => document.getElementById("critical-done")?.click() },
+    { label: "Not applicable", action: () => document.getElementById("critical-waive")?.click() }
+  ])
+}
+
+// ── RENDER: ADD CLIENT ────────────────────────────────────────────────────────
+function renderAddClientCard(parsed) {
+  const surface = document.getElementById("surface")
+  surface.innerHTML = ""
+
+  const previewDls = [
+    { tax: "Federal Income Tax", date: "Apr 15, 2026" },
+    { tax: "TX Franchise Tax", date: "May 15, 2026" },
+    { tax: "CA LLC Annual Fee", date: "Apr 15, 2026" },
+    { tax: "DE Annual Report", date: "Mar 1, 2026" },
+    { tax: "Federal Q1 Estimated Tax", date: "Apr 15, 2026" },
+    { tax: "Federal Q2 Estimated Tax", date: "Jun 16, 2026" },
+  ]
+
+  const card = document.createElement("div")
+  card.className = "add-client-card"
+  card.innerHTML = `
+    <div class="add-client-header">
+      <div class="add-client-title">New Client — ${parsed.name}</div>
+      <div class="add-client-sub">Review before confirming. This will generate ${previewDls.length}+ deadlines.</div>
+    </div>
+    <div class="add-client-body">
+      <div class="field-group">
+        <div class="field-label">Client Name</div>
+        <div class="field-value">${parsed.name}</div>
+      </div>
+      <div class="field-group">
+        <div class="field-label">Entity Type</div>
+        <div class="field-value">${parsed.entity}</div>
+      </div>
+      <div class="field-group">
+        <div class="field-label">Registered States</div>
+        <div class="field-tags">
+          ${parsed.states.map(s => `<span class="field-tag">${s}</span>`).join("")}
+        </div>
+      </div>
+      <div class="field-group">
+        <div class="field-label">Deadlines to be generated</div>
+        <div class="add-client-dl-preview">
+          <div class="add-client-dl-preview-title">Preview (${previewDls.length} shown of ${previewDls.length}+)</div>
+          ${previewDls.map(d => `
+            <div class="dl-preview-row">
+              <span class="dl-preview-tax">${d.tax}</span>
+              <span class="dl-preview-date">${d.date}</span>
+            </div>
+          `).join("")}
+        </div>
+      </div>
+    </div>
+    <div class="add-client-footer">
+      <button class="confirm-btn primary" id="add-confirm" style="flex:1">Confirm and create client</button>
+      <button class="confirm-btn" id="add-cancel" style="flex:0 0 90px">Cancel</button>
+    </div>
+  `
+  surface.appendChild(card)
+  state.view = { type: "AddClientCard", parsed }
+
+  document.getElementById("add-confirm").addEventListener("click", () => {
+    // Add to CLIENTS and generate mock deadlines
+    const id = parsed.name.split(" ")[0].toLowerCase()
+    CLIENTS[id] = { name: parsed.name, entity_type: parsed.entity, states: parsed.states }
+    addMsg("system", `Done. ${parsed.name} created with ${previewDls.length}+ deadlines across ${parsed.states.join(", ")}. Opening their calendar.`)
+    // Add a sample deadline
+    state.deadlines.push({
+      id: `${id}-federal`,
+      client_id: id,
+      client_name: parsed.name,
+      tax_type: "Federal Income Tax",
+      jurisdiction: "Federal",
+      due_date: "Apr 15, 2026",
+      days_remaining: 361,
+      status: "pending",
+      available_actions: ["complete", "snooze", "waive"],
+      note: ""
+    })
+    setTimeout(() => openClient(id), 300)
+  })
+
+  document.getElementById("add-cancel").addEventListener("click", () => {
+    addMsg("system", "Cancelled. No client created.")
+    goToday()
+  })
+
+  setQuickActions([
+    { label: "Confirm", action: () => document.getElementById("add-confirm")?.click() },
+    { label: "Cancel", action: () => document.getElementById("add-cancel")?.click() }
+  ])
+}
+
+// ── RENDER: HISTORY ───────────────────────────────────────────────────────────
+function renderHistoryCard(clientId) {
+  const surface = document.getElementById("surface")
+  surface.innerHTML = ""
+  const client = CLIENTS[clientId]
+  const dl = state.deadlines.find(d => d.client_id === clientId)
+
+  const events = [
+    { icon: "↻", type: "auto", title: "Deadline auto-updated", detail: "IRS Notice 2025-23 — CA disaster extension. Due date changed Apr 15 → Oct 15.", time: "Today, 6:02 AM" },
+    { icon: "✓", type: "user-action", title: "Rule ingested", detail: "IRS Notice 2025-23 parsed and applied to all affected CA clients.", time: "Today, 6:01 AM" },
+    { icon: "◎", type: "system", title: "Deadline created", detail: `${dl?.tax_type || "Q2 Sales Tax Return"} generated from California CDTFA rule. Original due date: Apr 15, 2025.`, time: "Jan 3, 2025" },
+    { icon: "◎", type: "system", title: "Client created", detail: `${client?.name} added. Entity: ${client?.entity_type}. States: ${client?.states?.join(", ")}.`, time: "Jan 3, 2025" },
+  ]
+
+  const card = document.createElement("div")
+  card.className = "history-card"
+  card.innerHTML = `
+    <div class="history-header">
+      <div class="history-title">Change history</div>
+      <div class="history-sub">${client?.name} · All recorded events</div>
+    </div>
+    ${events.map(e => `
+      <div class="history-row">
+        <div class="history-icon ${e.type}">${e.icon}</div>
+        <div>
+          <div class="history-row-title">${e.title}</div>
+          <div class="history-row-detail">${e.detail}</div>
+        </div>
+        <div class="history-row-time">${e.time}</div>
+      </div>
+    `).join("")}
+  `
+  surface.appendChild(card)
+  state.view = { type: "HistoryCard" }
+
+  setQuickActions([
+    { label: `Back to ${client?.name?.split(" ")[0]}`, action: () => { addMsg("user", "Back"); openClient(clientId) } },
+    { label: "Back to today", action: () => { addMsg("user", "Back to today"); goToday() } }
+  ])
+}
+
+// ── ACTIONS ───────────────────────────────────────────────────────────────────
+function requestAction(dl, action) {
+  const labels = { complete: "Mark complete", snooze: "Snooze", waive: "Waive" }
+  addMsg("system", `Confirm: ${labels[action]} for ${dl.client_name}?`)
+  renderConfirmCard(dl, action)
+}
+
+function executeAction() {
+  if (!state.pendingConfirm) return
+  const { dl, action } = state.pendingConfirm
+  state.pendingConfirm = null
+
+  const messages = {
+    complete: `Done. ${dl.client_name}'s ${dl.tax_type} marked as complete.`,
+    snooze:   `Snoozed. I'll remind you about ${dl.client_name} again in 7 days.`,
+    waive:    `Waived. ${dl.client_name}'s ${dl.tax_type} won't appear again.`
+  }
+
+  if (action === "complete") dl.status = "completed"
+  else if (action === "waive") dl.status = "waived"
+  else if (action === "snooze") { dl.days_remaining += 7; dl.due_date = "Apr 26, 2025" }
+
+  if (action === "complete" || action === "waive") {
+    dl.available_actions = ["reopen"]
+  }
+
+  addMsg("system", messages[action])
+
+  const remaining = activeDls()
+  if (remaining.length === 0) {
+    const completed = state.deadlines.filter(d => d.status === "completed").length
+    const snoozed  = state.deadlines.filter(d => d.status === "snoozed" || d.days_remaining > 7).length
+    addMsg("system", "That's everything for today. Nothing left on your list.")
+    setTimeout(() => renderDoneState(completed, snoozed), 350)
+    setQuickActions([])
+  } else {
+    setTimeout(() => goToday(), 400)
+  }
+}
+
+function goToday() {
+  const dls = activeDls()
+  if (dls.length === 0) {
+    addMsg("system", "Nothing pending right now. You're all caught up.")
+    document.getElementById("surface").innerHTML =
+      `<div class="state-summary">Nothing else needs attention today.</div>`
+    setQuickActions([])
+    return
+  }
+  addMsg("system", `${dls.length} deadline${dls.length > 1 ? "s" : ""} remaining. ${dls[0].client_name} is most urgent.`)
+  renderListCard(dls)
+}
+
+// ── NLU (mock) ────────────────────────────────────────────────────────────────
+function parseNewClient(text) {
+  // Try to extract name, entity type, states from natural language
+  const entityMap = { "s-corp": "S-Corp", "scorp": "S-Corp", "llc": "LLC", "partnership": "Partnership", "c-corp": "C-Corp" }
+  const stateMap = { "texas": "TX", "tx": "TX", "california": "CA", "ca": "CA", "delaware": "DE", "de": "DE", "new york": "NY", "ny": "NY", "arizona": "AZ", "az": "AZ" }
+
+  let entity = "LLC"
+  for (const [k, v] of Object.entries(entityMap)) {
+    if (text.includes(k)) { entity = v; break }
+  }
+
+  const states = []
+  for (const [k, v] of Object.entries(stateMap)) {
+    if (text.includes(k) && !states.includes(v)) states.push(v)
+  }
+
+  // Extract name: look for quoted string or capitalize words before entity type
+  let name = "New Client LLC"
+  const quotedMatch = text.match(/["']([^"']+)["']/)
+  if (quotedMatch) {
+    name = quotedMatch[1]
+  } else {
+    // Try to find "new client [name]" or "[name] s-corp"
+    const words = text.replace(/new client|add client|create client/g, "").trim().split(/\s+/)
+    const nameWords = words.filter(w =>
+      !Object.keys(entityMap).some(e => w.includes(e)) &&
+      !Object.keys(stateMap).some(s => w.includes(s)) &&
+      !["and", "in", "with", "also", "registered", "has", "the", "a", "an"].includes(w) &&
+      w.length > 1
+    )
+    if (nameWords.length > 0) {
+      name = nameWords.map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(" ")
+      if (!name.includes("LLC") && !name.includes("Corp") && !name.includes("Inc")) name += " LLC"
+    }
+  }
+
+  return { name, entity, states: states.length > 0 ? states : ["TX"] }
+}
+
+function routeInput(raw) {
+  const text = raw.toLowerCase().trim()
+
+  // IRS / rule change
+  if (/irs|rule change|notice|california extend|disaster/.test(text)) {
+    addMsg("system", "IRS Notice 2025-23 detected — California disaster extension. I've already updated 2 of your clients' deadlines.")
+    addWeakNotice("<strong>Auto-updated silently at 6:02 AM:</strong> Acme Dental and Greenway Consulting — Apr 15 → Oct 15.")
+    addAnnotation(`<strong>In production:</strong> System monitors IRS RSS feeds every 15 min. On detection, <code>rule ingest-text</code> parses the notice, matches affected clients, and auto-updates deadlines. This card renders from real event data — not a fixed template.`)
+    renderChangeNoticeCard()
+    return
+  }
+
+  // PTE / critical
+  if (/pte|pass.through|election|critical/.test(text)) {
+    addMsg("system", "⚠ Greenway's CA PTE election is due today. This is irrevocable — if you miss it, this year's credit is gone.")
+    addAnnotation(`<strong>In production:</strong> CriticalCard is triggered when a deadline is (a) due today or tomorrow, (b) irrevocable, and (c) has no completion record. System escalates automatically — this card stays until Sarah explicitly responds.`)
+    renderCriticalCard()
+    return
+  }
+
+  // next month / upcoming
+  if (/next month|next 30|upcoming|coming up/.test(text)) {
+    addMsg("system", "Here are the 4 deadlines coming up in the next 30 days.")
+    addAnnotation(`<strong>In production:</strong> NLU maps "next month" → <code>deadline list --within-days 60 --enrich</code>, filtered to days 31–60. Updates in real time.`)
+    renderNextMonth()
+    return
+  }
+
+  // compare
+  if (/compare|vs|versus|more urgent|who.s first/.test(text)) {
+    const ids = Object.keys(CLIENTS)
+    const mentioned = ids.filter(id => text.includes(CLIENTS[id].name.toLowerCase().split(" ")[0]))
+    const [a, b] = mentioned.length >= 2 ? mentioned : [ids[0], ids[1]]
+    addMsg("system", `${CLIENTS[a].name.split(" ")[0]} is more urgent — deadline today. ${CLIENTS[b].name.split(" ")[0]} is 5 days out.`)
+    addAnnotation(`<strong>In production:</strong> NLU detects compare intent → parallel <code>deadline list</code> calls → CompareCard rendered with live data from both clients.`)
+    renderCompareCard(a, b)
+    return
+  }
+
+  // completed / handled / done
+  if (/complet|handled|done|finished|what.ve i/.test(text) && !state.pendingConfirm && state.view?.type !== "ClientCard") {
+    addMsg("system", "3 items completed this month across your clients.")
+    addAnnotation(`<strong>In production:</strong> <code>deadline list --status completed --enrich</code> — real timestamps from audit log. Filter by client or date range.`)
+    renderCompletedList()
+    return
+  }
+
+  // bulk snooze
+  if (/snooze (all|everything|low|non.urgent)|bulk snooze/.test(text)) {
+    addMsg("system", "Found 2 non-urgent deadlines. Confirm before I snooze them all?")
+    addAnnotation(`<strong>In production:</strong> Bulk write → always ConfirmCard first. Executor runs individual <code>deadline action snooze</code> calls after user confirms.`)
+    renderBulkSnoozeCard()
+    return
+  }
+
+  // prioritize / what first / suggest
+  if (/what.*first|prioriti|suggest|where.*start|what.*do/.test(text)) {
+    addMsg("system", "Start with Greenway's PTE election — it's irrevocable and ready to act on right now.")
+    addAnnotation(`<strong>In production:</strong> Claude scores all pending deadlines on urgency + actionability + consequence. Renders a ranked recommendation — not just a date sort.`)
+    renderPrioritizeCard()
+    return
+  }
+
+  // history / why
+  if (/why|history|source|where.*come|how.*know|audit/.test(text)) {
+    const clientId = state.view?.client_id ||
+      Object.keys(CLIENTS).find(id => text.includes(CLIENTS[id].name.toLowerCase().split(" ")[0]))
+    if (clientId) {
+      addMsg("system", `Here's the full change history for ${CLIENTS[clientId]?.name}.`)
+      renderHistoryCard(clientId)
+    } else {
+      addMsg("system", "Which client's history would you like to see?")
+      renderGuidanceCard("Whose history?", Object.values(CLIENTS).map(c => c.name))
+    }
+    return
+  }
+
+  // today / list / back
+  if (/today|list|all|overview|back/.test(text)) {
+    goToday(); return
+  }
+
+  // client name match
+  const clientMatch = Object.entries(CLIENTS).find(([id, c]) =>
+    text.includes(c.name.toLowerCase()) ||
+    text.includes(c.name.split(" ")[0].toLowerCase())
+  )
+  if (clientMatch) {
+    openClient(clientMatch[0]); return
+  }
+
+  // urgent / first / most
+  if (/urgent|first|top|most/.test(text)) {
+    const dls = activeDls()
+    if (dls.length > 0) openClient(dls[0].client_id)
+    return
+  }
+
+  // complete (on a specific client)
+  if (/complet|done|finish|filed|mark/.test(text)) {
+    if (state.view?.type === "ClientCard") {
+      const dl = state.deadlines.find(d =>
+        d.client_id === state.view.client_id && d.status === "pending"
+      )
+      if (dl) { requestAction(dl, "complete"); return }
+    }
+    addMsg("system", "Which client? Tell me the name or pick from the list.")
+    renderGuidanceCard("Which deadline would you like to complete?",
+      activeDls().map(d => d.client_name))
+    return
+  }
+
+  // snooze (single)
+  if (/snooze|later|remind/.test(text)) {
+    if (state.view?.type === "ClientCard") {
+      const dl = state.deadlines.find(d =>
+        d.client_id === state.view.client_id && d.status === "pending"
+      )
+      if (dl) { requestAction(dl, "snooze"); return }
+    }
+    goToday(); return
+  }
+
+  // confirm
+  if (/yes|confirm|ok|sure/.test(text) && state.pendingConfirm) {
+    executeAction(); return
+  }
+
+  // cancel
+  if (/no|cancel|stop/.test(text) && state.pendingConfirm) {
+    const { dl } = state.pendingConfirm
+    state.pendingConfirm = null
+    addMsg("system", "Cancelled. No changes made.")
+    openClient(dl.client_id)
+    return
+  }
+
+  // fallback
+  renderGuidanceCard("I didn't catch that. Try one of these:", [
+    "What should I work on first?",
+    "Show next month's deadlines",
+    "Compare Acme and Greenway",
+    "Show completed items",
+    "IRS rule change",
+    "PTE critical alert"
+  ])
+}
+
+// ── CONVERSATION ──────────────────────────────────────────────────────────────
+function addMsg(role, text) {
+  const stream = document.getElementById("stream")
+  const div = document.createElement("div")
+  div.className = `msg ${role === "user" ? "user" : "sys"}`
+  const badge = role === "user"
+    ? `<div class="msg-badge usr">SJ</div>`
+    : `<div class="msg-badge sys">DH</div>`
+  div.innerHTML = `${role !== "user" ? badge : ""}
+    <div class="msg-bubble ${role === "user" ? "usr" : "sys"}">
+      <p>${text}</p>
+    </div>
+    ${role === "user" ? badge : ""}`
+  stream.appendChild(div)
+  stream.scrollTop = stream.scrollHeight
+}
+
+function setQuickActions(actions) {
+  const container = document.getElementById("quick-actions")
+  container.innerHTML = ""
+  actions.forEach(a => {
+    const btn = document.createElement("button")
+    btn.className = "quick-btn"
+    btn.textContent = a.label
+    btn.addEventListener("click", () => {
+      if (a.label !== "Confirm" && a.label !== "Cancel" && a.label !== "Back to today" && a.label !== "Mark all complete") {
+        addMsg("user", a.label)
+      }
+      a.action()
+    })
+    container.appendChild(btn)
+  })
+}
+
+// ── DEMO NAV ──────────────────────────────────────────────────────────────────
+document.getElementById("demo-nav").addEventListener("click", e => {
+  const tab = e.target.closest(".demo-tab")
+  if (!tab) return
+  document.querySelectorAll(".demo-tab").forEach(t => t.classList.remove("active"))
+  tab.classList.add("active")
+
+  const scene = tab.dataset.scene
+  const sceneMap = {
+    "today":       () => {
+      addMsg("user", "Show today's list")
+      goToday()
+    },
+    "next-month":  () => {
+      addMsg("user", "What's coming up next month?")
+      addMsg("system", "Here are the 4 deadlines in the next 30 days, sorted by date.")
+      addAnnotation(`<strong>In production:</strong> NLU parses "next month" → <code>deadline list --within-days 60 --enrich</code>, filtered to days 31–60. The list updates in real time as deadlines are added or modified.`)
+      renderNextMonth()
+    },
+    "compare":     () => {
+      addMsg("user", "Compare Acme and Greenway — who's more urgent?")
+      addMsg("system", "Acme is more urgent — one deadline today, one blocked. Greenway is 5 days out.")
+      addAnnotation(`<strong>In production:</strong> NLU detects compare intent → runs <code>deadline list --client acme</code> and <code>deadline list --client greenway</code> in parallel → Response Generator picks CompareCard, ranks by urgency automatically.`)
+      renderCompareCard("acme", "greenway")
+    },
+    "completed":   () => {
+      addMsg("user", "Show me what's already been handled")
+      addMsg("system", "3 items completed this month.")
+      addAnnotation(`<strong>In production:</strong> NLU maps "handled/completed" → <code>deadline list --status completed --enrich</code>. Shows real completion timestamps from audit log. Filter by client or date range with natural language.`)
+      renderCompletedList()
+    },
+    "bulk-snooze": () => {
+      addMsg("user", "Snooze everything that's not urgent for two weeks")
+      addMsg("system", "Found 2 non-urgent deadlines. Confirm before I snooze them?")
+      addAnnotation(`<strong>In production:</strong> NLU identifies bulk write intent → filters <code>days_remaining ≥ 7</code> → always renders ConfirmCard before executing. User approves → Executor runs <code>deadline action snooze</code> for each item. Write operations never execute without confirmation.`)
+      renderBulkSnoozeCard()
+    },
+    "prioritize":  () => {
+      addMsg("user", "What should I work on first today?")
+      addMsg("system", "Start with Greenway's PTE election — it's irrevocable and you can act on it right now.")
+      addAnnotation(`<strong>In production:</strong> NLU detects open-ended prioritization request → Claude analyzes all pending deadlines against three signals: urgency (days remaining), actionability (blocked vs ready), and consequence (reversible vs irrevocable). Renders a ranked recommendation, not just a date-sorted list.`)
+      renderPrioritizeCard()
+    },
+    "irs":         () => routeInput("irs rule change"),
+    "pte":         () => routeInput("pte election critical"),
+  }
+
+  sceneMap[scene]?.()
+})
+
+
+document.getElementById("send-btn").addEventListener("click", () => {
+  const input = document.getElementById("user-input")
+  const val = input.value.trim()
+  if (!val) return
+  input.value = ""
+  addMsg("user", val)
+  routeInput(val)
+})
+
+document.getElementById("user-input").addEventListener("keydown", e => {
+  if (e.key === "Enter") {
+    const val = e.target.value.trim()
+    if (!val) return
+    e.target.value = ""
+    addMsg("user", val)
+    routeInput(val)
+  }
+})
+
+// ── INIT ──────────────────────────────────────────────────────────────────────
+addMsg("system", "Good morning, Sarah. You have 4 deadlines that need attention today — Acme Dental is the most urgent.")
+addWeakNotice("<strong>Updated overnight:</strong> 2 clients' CA deadlines extended to Oct 15 following IRS Notice 2025-23.")
+renderListCard(activeDls())
+</script>
+</body>
+</html>
