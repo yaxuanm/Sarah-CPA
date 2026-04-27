@@ -163,22 +163,45 @@ class FakeClient:
         self.messages = FakeMessages()
 
 
-class ExplodingMessages:
-    def create(self, **kwargs):
-        raise AssertionError("Claude should not be called for planner-owned workflow routes")
-
-
-class ExplodingClient:
+class PlannerHandoffMessages:
     def __init__(self):
-        self.messages = ExplodingMessages()
+        self.calls = []
+
+    def create(self, **kwargs):
+        self.calls.append(kwargs)
+        return FakeResponse(
+            [
+                FakeBlock(
+                    "text",
+                    text=json.dumps(
+                        {
+                            "route": "pass_to_planner",
+                            "need_type": "workflow_or_navigation",
+                            "render_policy": "pass_to_planner",
+                            "data_requests": [],
+                            "answer_mode": "pass_to_planner",
+                            "confidence": 0.9,
+                            "reason": "visible deterministic navigation",
+                        }
+                    ),
+                )
+            ]
+        )
 
 
-def test_claude_agent_kernel_does_not_call_model_for_planner_owned_routes():
+class PlannerHandoffClient:
+    def __init__(self):
+        self.messages = PlannerHandoffMessages()
+
+
+def test_claude_agent_kernel_still_lets_model_assess_workflow_like_text():
     kernel = ClaudeAgentKernel(api_key="test-key")
-    kernel.client = ExplodingClient()
+    fake_client = PlannerHandoffClient()
+    kernel.client = fake_client
 
     decision = kernel.decide("打开第 1 条", {"current_view": {"type": "ListCard", "data": {"items": []}}})
 
+    assert len(fake_client.messages.calls) == 1
     assert decision is not None
     assert decision.route == "pass_to_planner"
     assert decision.need_type == "workflow_or_navigation"

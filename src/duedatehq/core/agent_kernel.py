@@ -12,6 +12,7 @@ except ImportError:  # pragma: no cover - exercised only without the optional de
 
 from .models import BlockerStatus, DeadlineStatus, TaskStatus
 from .nlu_service import resolve_claude_model
+from .workspace_registry import workspace_registry_prompt
 
 
 ALLOWED_DATA_REQUESTS = {
@@ -22,6 +23,9 @@ ALLOWED_DATA_REQUESTS = {
     "client_deadlines",
     "blockers",
     "tasks",
+    "rules",
+    "rule_review_queue",
+    "notices",
 }
 
 ALLOWED_ROUTES = {
@@ -53,6 +57,7 @@ class AgentKernelDecision:
     selected_refs: list[str] | None = None
     suggested_actions: list[dict[str, str]] | None = None
     next_step: str | None = None
+    surface_kind: str | None = None
     requires_confirmation: bool = False
     confidence: float = 0.0
     reason: str | None = None
@@ -91,6 +96,7 @@ class AgentKernelDecision:
             selected_refs=[str(item) for item in selected_refs] if isinstance(selected_refs, list) else [],
             suggested_actions=suggested_actions[:3],
             next_step=str(payload["next_step"]) if payload.get("next_step") else None,
+            surface_kind=str(payload["surface_kind"]) if payload.get("surface_kind") else None,
             requires_confirmation=bool(payload.get("requires_confirmation")),
             confidence=float(payload.get("confidence") or 0.0),
             reason=str(payload["reason"]) if payload.get("reason") else None,
@@ -122,6 +128,8 @@ class DeterministicAgentKernel:
     def decide(self, user_input: str, session: dict[str, Any]) -> AgentKernelDecision | None:
         text = user_input.strip().casefold()
         if not text:
+            return None
+        if self._looks_like_tax_change_need(text):
             return None
 
         if self._looks_like_navigation_or_write(text):
@@ -180,6 +188,8 @@ class DeterministicAgentKernel:
         return any(term in text for term in terms)
 
     def _looks_like_surface_question(self, text: str) -> bool:
+        if self._looks_like_tax_change_need(text):
+            return False
         blocked_source_terms = ["来源", "变更", "变了", "谁改", "历史", "source", "history", "changed"]
         if any(term in text for term in blocked_source_terms):
             return False
@@ -214,6 +224,11 @@ class DeterministicAgentKernel:
         ]
         return any(term in text for term in question_terms)
 
+    def _looks_like_tax_change_need(self, text: str) -> bool:
+        subject_terms = ["政策", "法规", "规则", "税务", "税法", "税收", "policy", "regulation", "rule", "tax", "notice"]
+        change_terms = ["更新", "变化", "变更", "新闻", "新规", "最近", "关注", "update", "change", "news", "recent"]
+        return any(term in text for term in subject_terms) and any(term in text for term in change_terms)
+
 
 class ClaudeAgentKernel:
     """Agent-native first hop for on-demand rendering.
@@ -240,8 +255,6 @@ class ClaudeAgentKernel:
 
     def decide(self, user_input: str, session: dict[str, Any]) -> AgentKernelDecision | None:
         deterministic = self.fallback.decide(user_input, session)
-        if deterministic and deterministic.route == "pass_to_planner":
-            return deterministic
         if not self.client:
             return deterministic
 
@@ -299,6 +312,10 @@ class ClaudeAgentKernel:
     def _build_system_prompt(self, session: dict[str, Any]) -> str:
         context = {
             "current_view": self._summarize_view(session.get("current_view")),
+            "current_workspace": session.get("current_workspace"),
+            "previous_workspace": session.get("previous_workspace"),
+            "workspace_registry": workspace_registry_prompt(),
+            "breadcrumb": session.get("breadcrumb", []),
             "visual_context": session.get("visual_context"),
             "seen_visual_contexts": session.get("seen_visual_contexts", [])[-6:],
             "selectable_items": session.get("selectable_items", [])[:10],
@@ -307,6 +324,7 @@ class ClaudeAgentKernel:
             "allowed_render_policies": sorted(ALLOWED_RENDER_POLICIES),
             "current_actions": session.get("current_actions", [])[:5],
             "state_summary": session.get("state_summary"),
+            "recent_operations": session.get("operation_log", [])[-8:],
             "recent_history": session.get("history_window", [])[-8:],
         }
         return f"""
@@ -323,6 +341,8 @@ You are not a fixed intent classifier. Use native tool use plus a ReAct loop:
 Infer what the user needs right now from:
 - the user message
 - current visible page
+- current workspace, previous workspace, and breadcrumb
+- recent operations in this session
 - recently seen pages
 - selectable items
 - allowed data/action space
@@ -334,9 +354,10 @@ Schema:
   "route": "answer_current_view | render_strategy_surface | prepare_action | ask_clarifying_question | pass_to_planner",
   "need_type": "short semantic label, e.g. client_risk_review, workload_comparison, explain_current_view",
   "render_policy": "keep_current_view | no_view_needed | update_current_view | render_new_view | pass_to_planner",
-  "data_requests": ["current_view | visible_deadlines | all_clients | all_deadlines | client_deadlines | blockers | tasks"],
+  "data_requests": ["current_view | visible_deadlines | all_clients | all_deadlines | client_deadlines | blockers | tasks | rules | rule_review_queue | notices"],
   "answer_mode": "answer_only | answer_and_render | render_only | pass_to_planner",
   "view_goal": "what the right-side surface should help the user decide",
+  "surface_kind": "TaxChangeRadar | ClientImpactMatrix | WeeklyExecutionList | SourceAudit | null",
   "answer": "optional concise answer if current context is already enough",
   "selected_refs": ["item_1"],
   "suggested_actions": [
@@ -351,8 +372,10 @@ Schema:
 Rules:
 - Prefer answer_current_view only when the current page already contains enough information and a new surface would not improve decision-making.
 - If the user asks for a synthesis, comparison, prioritization, overview, status, explanation of multiple visible items, or "what should I do", prefer render_strategy_surface and request the minimum allowed data.
+- If the user asks about policy updates, tax news, rule changes, notices, regulations, or recent changes that may affect clients, use render_strategy_surface with surface_kind="TaxChangeRadar" and request rules, rule_review_queue, notices, all_clients, and all_deadlines.
 - For unknown but useful UI needs, choose render_strategy_surface with a clear view_goal.
-- For existing workflow/navigation/write actions, pass_to_planner.
+- For normal natural-language workflow requests, reason about the user's real need first. Do not pass to the planner just because the text contains words like open, prepare, draft, mark, send, or complete.
+- Use pass_to_planner only when the message is clearly a deterministic UI/navigation command already covered by visible action contracts, or when you cannot improve on the existing deterministic planner.
 - Never execute writes. If a write may be needed, choose prepare_action and requires_confirmation=true.
 - Do not invent facts. If facts are needed, call tools before final JSON.
 - If a user asks a normal advisory question, answer conversationally and still choose whether the current view should stay or a better surface should be rendered.
@@ -364,6 +387,7 @@ AVAILABLE_VIEWS:
 - ConfirmCard: a write action that needs confirmation.
 - HistoryCard: source/audit/history for one item.
 - GuidanceCard: one missing bit of context or a short unblocker.
+- TaxChangeRadarCard: policy, rule, notice, tax-news, or tax-change monitoring surface that shows data boundaries, rule signals, and affected client deadlines.
 - RenderSpecSurface: synthesized or ad-hoc work surface for comparisons, portfolio status, prioritization, risk, explanation, or a view not yet hard-coded.
 
 Context:
@@ -434,7 +458,7 @@ Context:
             },
             {
                 "name": "list_tasks",
-                "description": "List operational tasks, optionally for a selected or named client.",
+            "description": "List operational tasks, optionally for a selected or named client.",
                 "input_schema": {
                     "type": "object",
                     "properties": {
@@ -446,6 +470,33 @@ Context:
                     "additionalProperties": False,
                 },
             },
+            {
+                "name": "list_rules",
+                "description": "List internal tax rules and rule versions. Use this for policy updates, tax changes, and tax-news-like questions.",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {"limit": {"type": "integer", "minimum": 1, "maximum": 100}},
+                    "additionalProperties": False,
+                },
+            },
+            {
+                "name": "list_rule_review_queue",
+                "description": "List low-confidence or pending rule review items.",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {"limit": {"type": "integer", "minimum": 1, "maximum": 100}},
+                    "additionalProperties": False,
+                },
+            },
+            {
+                "name": "list_notices",
+                "description": "List imported or recorded notices for the tenant.",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {"limit": {"type": "integer", "minimum": 1, "maximum": 100}},
+                    "additionalProperties": False,
+                },
+            },
         ]
 
     def _run_tool(self, name: str, tool_input: dict[str, Any], session: dict[str, Any]) -> dict[str, Any]:
@@ -454,9 +505,13 @@ Context:
             if name == "get_current_view":
                 return {
                     "current_view": self._summarize_view(session.get("current_view")),
+                    "current_workspace": session.get("current_workspace"),
+                    "previous_workspace": session.get("previous_workspace"),
+                    "breadcrumb": session.get("breadcrumb", []),
                     "visual_context": session.get("visual_context"),
                     "seen_visual_contexts": session.get("seen_visual_contexts", [])[-6:],
                     "selectable_items": session.get("selectable_items", [])[:20],
+                    "recent_operations": session.get("operation_log", [])[-8:],
                 }
             if name == "list_visible_deadlines":
                 return {"deadlines": self._visible_deadlines(session)}
@@ -503,6 +558,15 @@ Context:
                     limit=int(tool_input.get("limit") or 100),
                 )
                 return {"tasks": [self._serialize_record(task) for task in tasks]}
+            if name == "list_rules":
+                limit = int(tool_input.get("limit") or 100)
+                return {"rules": [self._serialize_record(rule) for rule in self.engine.list_rules()[:limit]]}
+            if name == "list_rule_review_queue":
+                limit = int(tool_input.get("limit") or 100)
+                return {"review_queue": [self._serialize_record(item) for item in self.engine.list_rule_review_queue()[:limit]]}
+            if name == "list_notices":
+                limit = int(tool_input.get("limit") or 100)
+                return {"notices": [self._serialize_record(item) for item in self.engine.list_notices(tenant_id, limit=limit)]}
         except (KeyError, ValueError, TypeError) as exc:
             return {"error": type(exc).__name__, "message": str(exc)}
         return {"error": "unknown_tool", "tool": name}

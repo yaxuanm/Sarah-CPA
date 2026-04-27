@@ -110,6 +110,37 @@ def test_interaction_backend_processes_confirmed_action(app):
     assert response["session_id"] == "session-1"
 
 
+def test_interaction_backend_direct_confirm_command_executes_pending_action(app):
+    tenant, _, deadline, session = _seed_interaction_data(app)
+    confirm = app.interaction_backend.process_direct_action(
+        {
+            "plan": [
+                {
+                    "step_id": "s1",
+                    "type": "cli_call",
+                    "cli_group": "deadline",
+                    "cli_command": "action",
+                    "args": {"tenant_id": tenant.tenant_id, "deadline_id": deadline.deadline_id, "action": "complete"},
+                }
+            ],
+            "intent_label": "deadline_action_complete",
+            "op_class": "write",
+        },
+        session,
+    )
+
+    assert confirm["view"]["type"] == "ConfirmCard"
+    assert session["pending_action_plan"]["op_class"] == "write"
+
+    done = app.interaction_backend.process_direct_command("confirm_pending", session)
+
+    assert done["status"] == "ok"
+    assert done["view"]["type"] == "ListCard"
+    assert "pending_action_plan" not in session
+    assert app.engine.get_deadline(tenant.tenant_id, deadline.deadline_id).status.value == "completed"
+    assert session["last_turn"]["plan_source"] == "direct_action_confirm"
+
+
 def test_interaction_backend_turns_entity_not_found_into_guidance(app):
     tenant, _, _, session = _seed_interaction_data(app)
 
@@ -144,6 +175,9 @@ def test_interaction_backend_message_renders_today_and_remembers_selectable_item
     assert response["view"]["type"] == "ListCard"
     assert session["selectable_items"][0]["deadline_id"]
     assert session["current_view"]["type"] == "ListCard"
+    assert session["current_workspace"]["type"] == "TodayQueue"
+    assert session["breadcrumb"] == ["TodayQueue"]
+    assert session["operation_log"][0]["intent_label"] == "today"
 
 
 def test_interaction_backend_long_tail_need_renders_constrained_surface(app):
@@ -170,20 +204,26 @@ def test_interaction_backend_draft_request_uses_current_task_context(app):
     spec = response["view"]["data"]["render_spec"]
     assert "Acme" in spec["title"]
     assert any(block["type"] == "action_draft" for block in spec["blocks"])
+    choice_block = next(block for block in spec["blocks"] if block["type"] == "choice_set")
+    choices = {choice["label"]: choice for choice in choice_block["choices"]}
+    assert choices["记录为已发送"]["action"]["type"] == "direct_execute"
+    assert choices["记录为已发送"]["action"]["expected_view"] == "ConfirmCard"
+    assert choices["记录为已发送"]["action"]["plan"]["op_class"] == "write"
+    assert choices["查看依据"]["action"]["expected_view"] == "HistoryCard"
+    assert choices["回到今日清单"]["action"]["expected_view"] == "ListCard"
     assert "发送" in response["message"] or "草稿" in response["message"]
 
 
-def test_interaction_backend_prepare_request_hits_known_route_before_agent(app):
+def test_interaction_backend_prepare_request_no_longer_hits_known_route_when_agent_hands_off(app):
     _, _, _, session = _seed_interaction_data(app)
     app.interaction_backend.process_message("先看 Acme", session)
     app.interaction_backend.agent_kernel = FakeAgentKernel(
         AgentKernelDecision(
-            route="ask_clarifying_question",
-            need_type="ambiguous_prepare_request",
-            render_policy="render_new_view",
+            route="pass_to_planner",
+            need_type="workflow_or_navigation",
+            render_policy="pass_to_planner",
             data_requests=["current_view"],
-            answer_mode="answer_and_render",
-            view_goal="should not ask for clarification",
+            answer_mode="pass_to_planner",
             confidence=0.95,
         )
     )
@@ -195,8 +235,8 @@ def test_interaction_backend_prepare_request_hits_known_route_before_agent(app):
     spec = response["view"]["data"]["render_spec"]
     assert "Acme" in spec["title"]
     assert any(block["type"] == "action_draft" for block in spec["blocks"])
-    assert session["last_turn"]["intent_label"] == "client_request_draft"
-    assert session["last_turn"]["plan_source"] == "known_route"
+    assert session["last_turn"]["intent_label"] == "ad_hoc_render_spec"
+    assert session["last_turn"].get("plan_source") != "known_route"
 
 
 def test_interaction_backend_message_focuses_client_by_name(app):
@@ -342,6 +382,86 @@ def test_interaction_backend_renders_agent_priority_surface(app):
     assert not session.get("flywheel_feedback_events")
 
 
+def test_interaction_backend_agent_strategy_surface_hides_internal_fallback_terms(app):
+    tenant, _, _, session = _seed_interaction_data(app)
+    today = datetime.now(timezone.utc).date()
+    app.engine.register_client(
+        tenant_id=tenant.tenant_id,
+        name="Later LLC",
+        entity_type="s-corp",
+        registered_states=["CA"],
+        tax_year=today.year,
+    )
+    app.interaction_backend.process_message("今天先做什么", session)
+    app.interaction_backend.agent_kernel = FakeAgentKernel(
+        AgentKernelDecision(
+            route="render_strategy_surface",
+            need_type="least_urgent_client",
+            render_policy="render_new_view",
+            data_requests=["current_view", "blockers", "tasks"],
+            answer_mode="answer_and_render",
+            view_goal="帮我比较一下哪个客户最不紧急",
+            answer="综合截止日、待处理数量和是否有阻塞，Later LLC 可以最后处理。",
+            suggested_actions=[{"label": "打开 Later LLC", "intent": "打开 Later LLC", "style": "primary"}],
+            confidence=0.9,
+        )
+    )
+
+    response = app.interaction_backend.process_message("帮我比较一下哪个客户最不紧急", session)
+
+    spec = response["view"]["data"]["render_spec"]
+    rendered_text = str(spec)
+    assert response["view"]["type"] == "RenderSpecSurface"
+    assert "本轮只读取" not in rendered_text
+    assert "current_view" not in rendered_text
+    assert "当前范围" not in rendered_text
+    assert "0 个待处理" not in rendered_text
+    assert "结论" in rendered_text
+    assert "Later LLC" in rendered_text
+    assert response["view"]["selectable_items"]
+
+
+@pytest.mark.parametrize(
+    "user_input",
+    [
+        "有什么特别值得关注的税务新闻吗？",
+        "最近有什么政策更新吗",
+        "最近有什么新规会影响客户吗",
+    ],
+)
+def test_interaction_backend_policy_change_uses_agent_surface_not_generic_fallback(app, user_input):
+    _, _, _, session = _seed_interaction_data(app)
+    app.interaction_backend.process_message("今天先做什么", session)
+    app.interaction_backend.agent_kernel = FakeAgentKernel(
+        AgentKernelDecision(
+            route="render_strategy_surface",
+            need_type="tax_change_monitoring",
+            render_policy="render_new_view",
+            data_requests=["rules", "rule_review_queue", "notices", "all_clients", "all_deadlines"],
+            answer_mode="answer_and_render",
+            view_goal="查看最近政策、规则或 notice 是否会影响当前客户",
+            surface_kind="TaxChangeRadar",
+            answer="我会按政策变化雷达查看哪些变化可能影响客户。",
+            confidence=0.9,
+        )
+    )
+
+    response = app.interaction_backend.process_message(user_input, session)
+
+    data = response["view"]["data"]
+    rendered_text = str(data)
+    assert response["view"]["type"] == "TaxChangeRadarCard"
+    assert data["title"] == "本月税务变化雷达"
+    assert "实时外部税务新闻源" in data["data_boundary_notice"]
+    assert data["rule_signals"]
+    assert data["impacted_deadlines"]
+    assert "政策变化雷达" in response["message"]
+    assert "current_view" not in rendered_text
+    assert response["actions"][0]["action"]["type"] == "direct_execute"
+    assert session["last_turn"]["intent_label"] == "tax_change_monitoring"
+    assert session["last_turn"]["plan_source"] == "agent_kernel"
+
+
 class FakeAgentKernel:
     def __init__(self, decision: AgentKernelDecision):
         self.decision = decision
@@ -350,18 +470,17 @@ class FakeAgentKernel:
         return self.decision
 
 
-def test_interaction_backend_known_visible_item_route_wins_before_agent(app):
+def test_interaction_backend_known_visible_item_route_handles_agent_handoff(app):
     _, _, _, session = _seed_interaction_data(app)
     app.interaction_backend.process_message("今天先做什么", session)
     expected_client_id = session["selectable_items"][0]["client_id"]
     app.interaction_backend.agent_kernel = FakeAgentKernel(
         AgentKernelDecision(
-            route="render_strategy_surface",
-            need_type="agent_generated_client_surface",
-            render_policy="render_new_view",
+            route="pass_to_planner",
+            need_type="workflow_or_navigation",
+            render_policy="pass_to_planner",
             data_requests=["current_view", "client_deadlines"],
-            answer_mode="answer_and_render",
-            view_goal="agent should not handle row clicks",
+            answer_mode="pass_to_planner",
             confidence=0.95,
         )
     )
@@ -371,6 +490,10 @@ def test_interaction_backend_known_visible_item_route_wins_before_agent(app):
     assert response["status"] == "ok"
     assert response["view"]["type"] == "ClientCard"
     assert response["view"]["data"]["client_id"] == expected_client_id
+    assert session["previous_workspace"]["type"] == "TodayQueue"
+    assert session["current_workspace"]["type"] == "ClientWorkspace"
+    assert session["breadcrumb"][-2:] == ["TodayQueue", "ClientWorkspace"]
+    assert session["operation_log"][-1]["workspace_ref"] == session["current_workspace"]["key"]
     assert session["last_turn"]["intent_label"] == "client_deadline_list"
     assert session["last_turn"]["plan_source"] == "known_route"
 
@@ -440,6 +563,24 @@ def test_interaction_backend_resolves_cross_turn_reference_from_today_to_current
     assert session["selectable_items"][0]["client_id"] == selectable_after_focus[0]["client_id"]
     assert confirm["view"]["type"] == "ConfirmCard"
     assert session["pending_action_plan"]["op_class"] == "write"
+
+
+def test_interaction_backend_blocks_due_date_edit_from_audit_workspace(app):
+    tenant, _, deadline, session = _seed_interaction_data(app)
+
+    app.interaction_backend.process_message("先看 Acme", session)
+    history = app.interaction_backend.process_message("这个来源是什么", session)
+    response = app.interaction_backend.process_message("把这个截止日期改一下", session)
+
+    assert history["view"]["type"] == "HistoryCard"
+    assert response["view"]["type"] == "GuidanceCard"
+    assert response["view"]["data"]["title"] == "先回到可操作的工作区"
+    assert "不能直接修改截止日" in response["message"]
+    assert response["actions"][0]["label"] == "回到客户工作区"
+    assert response["actions"][0]["action"]["type"] == "direct_execute"
+    assert response["actions"][0]["action"]["expected_view"] == "ClientCard"
+    assert app.engine.get_deadline(tenant.tenant_id, deadline.deadline_id).status.value == "pending"
+    assert session["last_turn"]["plan_source"] == "workspace_guard"
 
 
 def test_interaction_backend_can_cancel_and_resume_cross_turn_write(app):

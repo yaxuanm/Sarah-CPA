@@ -4,6 +4,7 @@ from datetime import date, datetime
 from typing import Any
 
 from .engine import InfrastructureEngine
+from .system_state import workspace_snapshot
 
 
 ACTION_LABELS = {
@@ -82,19 +83,29 @@ class ResponseGenerator:
             "state_summary": None,
         }
 
-    def generate_guidance(self, message: str, options: list[str], context_options: list[dict[str, Any]] | None = None) -> dict[str, Any]:
+    def generate_guidance(
+        self,
+        message: str,
+        options: list[str],
+        context_options: list[dict[str, Any]] | None = None,
+        actions: list[dict[str, Any]] | None = None,
+        title: str | None = None,
+        eyebrow: str | None = None,
+    ) -> dict[str, Any]:
         return {
             "message": self._truncate(message),
             "view": {
                 "type": "GuidanceCard",
                 "data": {
+                    "title": title or "需要一点上下文",
+                    "eyebrow": eyebrow or "Need one more bit of context",
                     "message": message,
                     "options": options,
                     "context_options": context_options or [],
                 },
                 "selectable_items": context_options or [],
             },
-            "actions": [],
+            "actions": actions or [],
             "state_summary": None,
         }
 
@@ -166,6 +177,9 @@ class ResponseGenerator:
         tax_type = deadline.get("tax_type") or "当前事项"
         due_date = deadline.get("due_date") or "当前截止日"
         jurisdiction = deadline.get("jurisdiction") or "相关辖区"
+        record_action = self._deadline_action_direct_action(session["tenant_id"], deadline_id, "complete") if deadline_id else None
+        history_action = self._deadline_history_direct_action(session["tenant_id"], deadline_id) if deadline_id else None
+        today_action = self._today_direct_action(session["tenant_id"])
         draft = (
             f"Hi,\n\n"
             f"We are working on your {tax_type} for {jurisdiction}. "
@@ -204,9 +218,24 @@ class ResponseGenerator:
                     "type": "choice_set",
                     "question": "发出之后回来记录。",
                     "choices": [
-                        {"label": "记录为已发送", "intent": "record as sent", "style": "primary"},
-                        {"label": "查看依据", "intent": "show source", "style": "secondary"},
-                        {"label": "回到今日清单", "intent": "today", "style": "secondary"},
+                        {
+                            "label": "记录为已发送",
+                            "intent": "record as sent",
+                            "style": "primary",
+                            "action": record_action,
+                        },
+                        {
+                            "label": "查看依据",
+                            "intent": "show source",
+                            "style": "secondary",
+                            "action": history_action,
+                        },
+                        {
+                            "label": "回到今日清单",
+                            "intent": "today",
+                            "style": "secondary",
+                            "action": today_action,
+                        },
                     ],
                 },
             ],
@@ -220,6 +249,72 @@ class ResponseGenerator:
             },
             "actions": [],
             "state_summary": f"生成 {client_name} 的客户消息草稿。",
+        }
+
+    def _deadline_action_direct_action(self, tenant_id: str, deadline_id: str, action: str) -> dict[str, Any]:
+        return {
+            "type": "direct_execute",
+            "expected_view": "ConfirmCard",
+            "plan": self._deadline_action_plan(tenant_id, deadline_id, action),
+        }
+
+    def _deadline_history_direct_action(self, tenant_id: str, deadline_id: str) -> dict[str, Any]:
+        return {
+            "type": "direct_execute",
+            "expected_view": "HistoryCard",
+            "plan": self._deadline_history_plan(tenant_id, deadline_id),
+        }
+
+    def _today_direct_action(self, tenant_id: str) -> dict[str, Any]:
+        return {
+            "type": "direct_execute",
+            "expected_view": "ListCard",
+            "plan": self._today_plan(tenant_id),
+        }
+
+    def _deadline_action_plan(self, tenant_id: str, deadline_id: str, action: str) -> dict[str, Any]:
+        return {
+            "plan": [
+                {
+                    "step_id": "s1",
+                    "type": "cli_call",
+                    "cli_group": "deadline",
+                    "cli_command": "action",
+                    "args": {"tenant_id": tenant_id, "deadline_id": deadline_id, "action": action},
+                }
+            ],
+            "op_class": "write",
+            "intent_label": f"deadline_action_{action}",
+        }
+
+    def _deadline_history_plan(self, tenant_id: str, deadline_id: str) -> dict[str, Any]:
+        return {
+            "plan": [
+                {
+                    "step_id": "s1",
+                    "type": "cli_call",
+                    "cli_group": "deadline",
+                    "cli_command": "transitions",
+                    "args": {"tenant_id": tenant_id, "deadline_id": deadline_id},
+                }
+            ],
+            "intent_label": "deadline_history",
+            "op_class": "read",
+        }
+
+    def _today_plan(self, tenant_id: str) -> dict[str, Any]:
+        return {
+            "plan": [
+                {
+                    "step_id": "s1",
+                    "type": "cli_call",
+                    "cli_group": "today",
+                    "cli_command": "today",
+                    "args": {"tenant_id": tenant_id, "limit": 5, "enrich": True},
+                }
+            ],
+            "intent_label": "today",
+            "op_class": "read",
         }
 
     def _looks_like_draft_request(self, text: str) -> bool:
@@ -244,7 +339,11 @@ class ResponseGenerator:
         items = [self._enrich_today_item(item, session) for item in final_data]
         items.sort(key=lambda item: (item["days_remaining"], item["due_date"]))
         visible = items[:5]
-        selectable_items = [self._to_selectable(index, item, tenant_id=session["tenant_id"]) for index, item in enumerate(visible, start=1)]
+        selectable_items = [
+            self._to_selectable(index, item, tenant_id=session["tenant_id"], session=session, prefetch_client=True)
+            for index, item in enumerate(visible, start=1)
+        ]
+        self._remember_prefetch_pool(session, selectable_items)
         message = "今天没有待处理事项。" if not items else f"当前有 {len(items)} 件待处理，最早 {items[0]['due_date']} 到期。"
         return {
             "message": self._truncate(message),
@@ -347,7 +446,11 @@ class ResponseGenerator:
         for item in visible:
             client = client_map.get(item["client_id"])
             item["client_name"] = client["name"] if client else item["client_id"]
-        selectable_items = [self._to_selectable(index, item, tenant_id=session["tenant_id"]) for index, item in enumerate(visible, start=1)]
+        selectable_items = [
+            self._to_selectable(index, item, tenant_id=session["tenant_id"], session=session, prefetch_client=True)
+            for index, item in enumerate(visible, start=1)
+        ]
+        self._remember_prefetch_pool(session, selectable_items)
         is_upcoming = intent_label == "upcoming_deadlines"
         title = "所有未来待处理截止事项" if is_upcoming else "已完成截止事项"
         headline = "这里是还没有完成的全部未来 DDL" if is_upcoming else "这里是已经处理完的事项"
@@ -639,31 +742,80 @@ class ResponseGenerator:
         item: dict[str, Any],
         client_name: str | None = None,
         tenant_id: str | None = None,
+        session: dict[str, Any] | None = None,
+        prefetch_client: bool = False,
     ) -> dict[str, Any]:
         resolved_tenant_id = tenant_id or item.get("tenant_id")
+        action = {
+            "type": "direct_execute",
+            "expected_view": "ClientCard",
+            "plan": {
+                "plan": [
+                    {
+                        "step_id": "s1",
+                        "type": "cli_call",
+                        "cli_group": "deadline",
+                        "cli_command": "list",
+                        "args": {"tenant_id": resolved_tenant_id, "client_id": item["client_id"]},
+                    }
+                ],
+                "intent_label": "client_deadline_list",
+                "op_class": "read",
+            },
+        }
+        if prefetch_client and session and resolved_tenant_id:
+            prefetched = self._prefetch_client_workspace(resolved_tenant_id, item["client_id"], session)
+            action.update(prefetched)
         return {
             "ref": f"item_{index}",
             "deadline_id": item["deadline_id"],
             "client_id": item["client_id"],
             "client_name": client_name or item.get("client_name"),
-            "action": {
-                "type": "direct_execute",
-                "expected_view": "ClientCard",
-                "plan": {
-                    "plan": [
-                        {
-                            "step_id": "s1",
-                            "type": "cli_call",
-                            "cli_group": "deadline",
-                            "cli_command": "list",
-                            "args": {"tenant_id": resolved_tenant_id, "client_id": item["client_id"]},
-                        }
-                    ],
-                    "intent_label": "client_deadline_list",
-                    "op_class": "read",
-                },
-            },
+            "action": action,
         }
+
+    def _prefetch_client_workspace(self, tenant_id: str, client_id: str, session: dict[str, Any]) -> dict[str, Any]:
+        deadline_items = [self._serialize_deadline(item) for item in self.engine.list_deadlines(tenant_id, client_id)]
+        enriched_deadlines = [self._enrich_deadline_item(item, session) for item in deadline_items]
+        enriched_deadlines.sort(key=lambda item: (item["due_date"], item["deadline_id"]))
+        client = self._client_map(tenant_id).get(client_id)
+        client_name = client["name"] if client else (enriched_deadlines[0].get("client_name") if enriched_deadlines else client_id)
+        selectable_items = [
+            self._to_selectable(index, item, client_name=client_name, tenant_id=tenant_id)
+            for index, item in enumerate(enriched_deadlines, start=1)
+        ]
+        view_data = {
+            "client_id": client_id,
+            "client_name": client_name,
+            "entity_type": client["entity_type"] if client else None,
+            "registered_states": client["registered_states"] if client else [],
+            "deadlines": enriched_deadlines,
+        }
+        view = {"type": "ClientCard", "data": view_data, "selectable_items": selectable_items}
+        snapshot = workspace_snapshot(view, f"预取 {client_name} 的客户工作区。")
+        return {
+            "prefetch_key": snapshot["key"] if snapshot else f"ClientWorkspace:{client_id}",
+            "view_data": view_data,
+            "selectable_items": selectable_items,
+            "workspace": snapshot,
+        }
+
+    def _remember_prefetch_pool(self, session: dict[str, Any], selectable_items: list[dict[str, Any]]) -> None:
+        pool = dict(session.get("prefetch_pool") or {})
+        for item in selectable_items:
+            action = item.get("action") if isinstance(item.get("action"), dict) else {}
+            prefetch_key = action.get("prefetch_key")
+            if not prefetch_key:
+                continue
+            pool[prefetch_key] = {
+                "view": {
+                    "type": action.get("expected_view"),
+                    "data": action.get("view_data") or {},
+                    "selectable_items": action.get("selectable_items") or [],
+                },
+                "workspace": action.get("workspace"),
+            }
+        session["prefetch_pool"] = pool
 
     def _days_remaining(self, due_date: str, today_value: str) -> int:
         due = date.fromisoformat(due_date)

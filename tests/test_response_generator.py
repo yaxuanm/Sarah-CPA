@@ -60,7 +60,27 @@ def test_response_generator_builds_today_list_card(app):
     assert response["view"]["selectable_items"][0]["ref"] == "item_1"
     assert response["view"]["selectable_items"][0]["action"]["type"] == "direct_execute"
     assert response["view"]["selectable_items"][0]["action"]["expected_view"] == "ClientCard"
+    assert response["view"]["selectable_items"][0]["action"]["view_data"]["client_name"] == "Acme LLC"
+    assert response["view"]["selectable_items"][0]["action"]["workspace"]["type"] == "ClientWorkspace"
+    assert response["view"]["selectable_items"][0]["action"]["prefetch_key"] in response["view"]["selectable_items"][0]["action"]["workspace"]["key"]
     assert response["actions"]
+
+
+def test_response_generator_stores_prefetched_client_workspaces_in_session(app):
+    tenant, _, today_value = _seed_response_data(app)
+    generator = ResponseGenerator(app.engine)
+    session = {"tenant_id": tenant.tenant_id, "today": today_value}
+    executor_result = {
+        "intent_label": "today",
+        "op_class": "read",
+        "final_data": app.engine.today_enriched(tenant.tenant_id, limit=10),
+    }
+
+    response = generator.generate(executor_result, session)
+    action = response["view"]["selectable_items"][0]["action"]
+
+    assert action["prefetch_key"] in session["prefetch_pool"]
+    assert session["prefetch_pool"][action["prefetch_key"]]["view"]["type"] == "ClientCard"
 
 
 def test_response_generator_adds_client_names_to_plain_deadlines(app):
@@ -167,7 +187,10 @@ def test_response_generator_builds_guidance_card(app):
         "没太理解。你是想——",
         ["查看今天的待处理事项", "查一个具体客户的情况"],
         [{"label": "Acme LLC", "ref": "item_1"}],
+        actions=[{"label": "查看今天的待处理事项", "action": {"type": "direct_execute", "plan": {"intent_label": "today"}}}],
     )
 
     assert response["view"]["type"] == "GuidanceCard"
+    assert response["view"]["data"]["title"] == "需要一点上下文"
     assert response["view"]["data"]["context_options"][0]["ref"] == "item_1"
+    assert response["actions"][0]["action"]["type"] == "direct_execute"

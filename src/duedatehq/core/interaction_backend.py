@@ -9,6 +9,10 @@ from .followup_feedback import classify_followup
 from .intent_cache import InMemoryIntentLibrary
 from .models import DeadlineStatus
 from .response_generator import ResponseGenerator
+from .surface_composer import SurfaceComposer
+from .system_state import record_operation, remember_response_state
+from .work_surface_planner import WorkSurfacePlanner
+from .workspace_registry import get_workspace_spec, workspace_allows_edits
 
 
 class IntentPlanner(Protocol):
@@ -36,6 +40,8 @@ class InteractionBackend:
         self.intent_planner = intent_planner
         self.intent_library = intent_library
         self.agent_kernel = agent_kernel
+        self.work_surface_planner = WorkSurfacePlanner(response_generator.engine)
+        self.surface_composer = SurfaceComposer(response_generator)
 
     def process_message(self, user_input: str, session: dict[str, Any]) -> dict[str, Any]:
         text = user_input.strip()
@@ -58,23 +64,30 @@ class InteractionBackend:
                 session.get("selectable_items", []),
             )
             self._remember_response(session, response)
-            session["last_turn"] = {
-                "user_input": text,
-                "intent_label": "cancel",
-                "op_class": "read",
-                "plan_source": "pending_action_cancel",
-                "template_id": None,
-                "similarity": None,
-                "view_type": response["view"]["type"],
-            }
+            self._remember_last_turn(
+                session,
+                text,
+                {"intent_label": "cancel", "op_class": "read"},
+                response,
+                plan_source="pending_action_cancel",
+            )
             self._append_history(session, "system", response["message"])
             return {"status": "ok", **response, "session_id": session.get("session_id")}
 
         self._record_followup_feedback(text, session)
 
-        known_plan = self._known_route_plan(text, session)
-        if known_plan:
-            return self._process_plan_turn(text, known_plan, session, plan_source="known_route")
+        workspace_guard_response = self._guard_cross_workspace_request(text, session)
+        if workspace_guard_response:
+            self._remember_response(session, workspace_guard_response)
+            self._remember_last_turn(
+                session,
+                text,
+                {"intent_label": "cross_workspace_redirect", "op_class": "read"},
+                workspace_guard_response,
+                plan_source="workspace_guard",
+            )
+            self._append_history(session, "system", workspace_guard_response.get("message", ""))
+            return {"status": "ok", **workspace_guard_response, "session_id": session.get("session_id")}
 
         kernel_decision = self.agent_kernel.decide(text, session) if self.agent_kernel else None
         kernel_response = self._answer_from_agent_decision(kernel_decision, text, session) if kernel_decision else None
@@ -98,6 +111,24 @@ class InteractionBackend:
             )
             self._append_history(session, "system", kernel_response.get("message", ""))
             return {"status": "ok", **kernel_response, "session_id": session.get("session_id")}
+
+        known_plan = self._known_route_plan(text, session)
+        if known_plan:
+            return self._process_plan_turn(text, known_plan, session, plan_source="known_route")
+
+        work_surface_plan = self.work_surface_planner.plan(text, session)
+        if work_surface_plan:
+            response = self.surface_composer.compose_work_surface(work_surface_plan, session, text)
+            self._remember_response(session, response)
+            self._remember_last_turn(
+                session,
+                text,
+                {"intent_label": work_surface_plan.surface_plan.surface_kind, "op_class": "read"},
+                response,
+                plan_source="work_surface_planner_fallback",
+            )
+            self._append_history(session, "system", response.get("message", ""))
+            return {"status": "ok", **response, "session_id": session.get("session_id")}
 
         advice_response = self._answer_current_context_question(text, session)
         if advice_response:
@@ -179,6 +210,65 @@ class InteractionBackend:
     def process_direct_action(self, plan: dict[str, Any], session: dict[str, Any]) -> dict[str, Any]:
         return self._process_plan_turn("__direct_action__", plan, session, plan_source="direct_action")
 
+    def process_direct_command(self, command: str, session: dict[str, Any]) -> dict[str, Any]:
+        if command == "confirm_pending":
+            pending_plan = session.pop("pending_action_plan", None)
+            if not pending_plan:
+                response = self.response_generator.generate_guidance(
+                    "没有等待确认的操作，我没有改动任何数据。",
+                    ["查看今天的待处理事项"],
+                    session.get("selectable_items", []),
+                )
+                self._remember_response(session, response)
+                self._remember_last_turn(
+                    session,
+                    "__confirm_pending__",
+                    {"intent_label": "confirm_pending_missing", "op_class": "read"},
+                    response,
+                    plan_source="direct_action",
+                )
+                self._append_history(session, "system", response.get("message", ""))
+                return {"status": "ok", **response, "session_id": session.get("session_id")}
+            response = self.process_action(pending_plan, session)
+            self._remember_response(session, response)
+            self._remember_last_turn(session, "__confirm_pending__", pending_plan, response, plan_source="direct_action_confirm")
+            self._append_history(session, "system", response.get("message", "已处理。"))
+            return response
+
+        if command == "cancel_pending":
+            session.pop("pending_action_plan", None)
+            response = self.response_generator.generate_guidance(
+                "已取消，当前任务没有变化。",
+                ["查看今天的待处理事项", "继续看当前客户"],
+                session.get("selectable_items", []),
+            )
+            self._remember_response(session, response)
+            self._remember_last_turn(
+                session,
+                "__cancel_pending__",
+                {"intent_label": "cancel", "op_class": "read"},
+                response,
+                plan_source="direct_action_cancel",
+            )
+            self._append_history(session, "system", response.get("message", ""))
+            return {"status": "ok", **response, "session_id": session.get("session_id")}
+
+        response = self.response_generator.generate_guidance(
+            "这个按钮命令暂时不可执行，我没有改动任何数据。",
+            ["查看今天的待处理事项"],
+            session.get("selectable_items", []),
+        )
+        self._remember_response(session, response)
+        self._remember_last_turn(
+            session,
+            "__unknown_direct_command__",
+            {"intent_label": "unknown_direct_command", "op_class": "read"},
+            response,
+            plan_source="direct_action",
+        )
+        self._append_history(session, "system", response.get("message", ""))
+        return {"status": "ok", **response, "session_id": session.get("session_id")}
+
     def process_action(self, plan: dict[str, Any], session: dict[str, Any]) -> dict[str, Any]:
         try:
             self.executor.execute(plan)
@@ -214,29 +304,13 @@ class InteractionBackend:
         }
 
     def _known_route_plan(self, user_input: str, session: dict[str, Any]) -> dict[str, Any] | None:
-        """Resolve deterministic UI routes before the open-ended Agent Kernel.
+        """Resolve deterministic UI routes after the Agent Kernel hands off.
 
-        Existing work-surface actions such as "打开第 1 条" are not semantic
-        long-tail requests. They should hit the known view contract first so a
-        row click opens the cached ClientCard path instead of asking Claude to
-        synthesize a temporary surface.
+        Only object navigation belongs here. Open-ended requests like
+        "prepare request" or "draft an email" must stay agent-led because the
+        useful surface depends on current context and user intent.
         """
-        return self._relative_visible_item_plan(user_input, session) or self._draft_request_plan(user_input, session)
-
-    def _draft_request_plan(self, user_input: str, session: dict[str, Any]) -> dict[str, Any] | None:
-        text = user_input.casefold().strip()
-        if not any(token in text for token in ["prepare", "draft", "request", "message", "email", "起草", "草稿", "邮件", "催", "请求"]):
-            return None
-        if not session.get("selectable_items"):
-            return None
-        return {
-            "special": "render_spec_needed",
-            "intent_label": "client_request_draft",
-            "op_class": "read",
-            "message": "我根据当前选中的客户和事项生成请求草稿。",
-            "user_input": user_input,
-            "selectable_items": session.get("selectable_items", []),
-        }
+        return self._relative_visible_item_plan(user_input, session)
 
     def _relative_visible_item_plan(self, user_input: str, session: dict[str, Any]) -> dict[str, Any] | None:
         lowered = user_input.casefold()
@@ -276,6 +350,93 @@ class InteractionBackend:
             "intent_label": "client_deadline_list",
             "op_class": "read",
         }
+
+    def _guard_cross_workspace_request(self, user_input: str, session: dict[str, Any]) -> dict[str, Any] | None:
+        workspace = session.get("current_workspace") if isinstance(session.get("current_workspace"), dict) else {}
+        workspace_type = workspace.get("type")
+        if workspace_allows_edits(workspace_type):
+            return None
+        if workspace_type != "AuditWorkspace":
+            return None
+        if not self._looks_like_due_date_edit(user_input):
+            return None
+
+        selectable = session.get("selectable_items") or []
+        selected = selectable[0] if selectable and isinstance(selectable[0], dict) else {}
+        client_id = selected.get("client_id")
+        actions: list[dict[str, Any]] = []
+        if client_id and session.get("tenant_id"):
+            actions.append(
+                {
+                    "label": "回到客户工作区",
+                    "action": {
+                        "type": "direct_execute",
+                        "expected_view": "ClientCard",
+                        "plan": self._client_deadline_plan(session["tenant_id"], client_id),
+                    },
+                }
+            )
+        if selected.get("deadline_id") and session.get("tenant_id"):
+            actions.append(
+                {
+                    "label": "继续查看依据",
+                    "action": {
+                        "type": "direct_execute",
+                        "expected_view": "HistoryCard",
+                        "plan": {
+                            "plan": [
+                                {
+                                    "step_id": "s1",
+                                    "type": "cli_call",
+                                    "cli_group": "deadline",
+                                    "cli_command": "transitions",
+                                    "args": {"tenant_id": session["tenant_id"], "deadline_id": selected.get("deadline_id")},
+                                }
+                            ],
+                            "intent_label": "deadline_history",
+                            "op_class": "read",
+                        },
+                    },
+                }
+            )
+        spec = get_workspace_spec(workspace_type)
+        message = (
+            f"这里是{spec.get('purpose', '查阅')}工作区，只用于查看来源和变更记录，不能直接修改截止日。"
+            "如果你要改日期，我会先带你回到客户工作区，再走确认流程。"
+        )
+        return self.response_generator.generate_guidance(
+            message,
+            [action["label"] for action in actions],
+            selectable,
+            actions=actions,
+            title="先回到可操作的工作区",
+            eyebrow="当前页面只支持查阅",
+        )
+
+    def _looks_like_due_date_edit(self, user_input: str) -> bool:
+        text = user_input.strip().casefold()
+        if not text:
+            return False
+        direct_terms = [
+            "改日期",
+            "修改日期",
+            "改截止",
+            "修改截止",
+            "改ddl",
+            "改 ddl",
+            "换日期",
+            "调整日期",
+            "更新日期",
+            "change due date",
+            "update due date",
+            "change date",
+            "override due",
+        ]
+        if any(term in text for term in direct_terms):
+            return True
+        edit_terms = ["改", "修改", "调整", "更新", "换", "change", "update", "override"]
+        date_terms = ["日期", "截止", "ddl", "due date", "deadline"]
+        return any(term in text for term in edit_terms) and any(term in text for term in date_terms)
 
     def _answer_from_agent_decision(
         self,
@@ -320,9 +481,168 @@ class InteractionBackend:
         user_input: str,
         session: dict[str, Any],
     ) -> dict[str, Any] | None:
-        if not session.get("tenant_id"):
-            return None
-        return self._generic_agent_strategy_response(decision, user_input, session)
+        return self.surface_composer.compose_agent_strategy(decision, user_input, session)
+
+    def _compose_work_surface_response(
+        self,
+        plan: WorkSurfacePlan,
+        session: dict[str, Any],
+        user_input: str,
+    ) -> dict[str, Any]:
+        if plan.surface_plan.surface_kind == "TaxChangeRadar":
+            return self._compose_tax_change_radar(plan, session, user_input)
+        return self._compose_planned_render_spec(plan, session, user_input)
+
+    def _compose_tax_change_radar(
+        self,
+        plan: WorkSurfacePlan,
+        session: dict[str, Any],
+        user_input: str,
+    ) -> dict[str, Any]:
+        evidence = plan.evidence
+        clients = evidence.get("clients", [])
+        client_names = {client.get("client_id"): client.get("name") for client in clients if client.get("client_id")}
+        rules = evidence.get("rules", [])
+        review_queue = evidence.get("review_queue", [])
+        notices = evidence.get("notices", [])
+        deadlines = sorted(
+            evidence.get("deadlines", []),
+            key=lambda item: (item.get("due_date") or "", item.get("client_id") or ""),
+        )
+        affected_client_ids = {item.get("client_id") for item in deadlines if item.get("client_id")}
+        source_rows: list[dict[str, str]] = []
+        for rule in rules[:4]:
+            source_rows.append(
+                {
+                    "label": f"{rule.get('jurisdiction') or '未知辖区'} · {rule.get('tax_type') or '规则'}",
+                    "detail": f"当前截止日 {rule.get('deadline_date') or '未知'}，来源 {rule.get('source_url') or '未记录'}",
+                }
+            )
+        for review in review_queue[:3]:
+            source_rows.append(
+                {
+                    "label": f"待审核规则 {review.get('review_id') or ''}".strip(),
+                    "detail": f"置信度 {review.get('confidence_score', '未知')}，来源 {review.get('source_url') or '未记录'}",
+                }
+            )
+        for notice in notices[:3]:
+            source_rows.append(
+                {
+                    "label": notice.get("title") or notice.get("notice_id") or "notice",
+                    "detail": f"{notice.get('summary') or '无摘要'} 来源 {notice.get('source_url') or '未记录'}",
+                }
+            )
+        if not source_rows:
+            source_rows.append(
+                {
+                    "label": "内部规则库暂无新增信号",
+                    "detail": "没有发现规则审核项或 notice 记录；这不代表外部没有税务新闻。",
+                }
+            )
+
+        impacted_rows = [
+            {
+                "label": client_names.get(item.get("client_id")) or item.get("client_id") or f"客户 {index}",
+                "detail": f"{item.get('tax_type') or 'deadline'} / {item.get('jurisdiction') or '未知辖区'}，截止日 {item.get('due_date') or '未知'}，状态 {item.get('status') or 'unknown'}",
+            }
+            for index, item in enumerate(deadlines[:6], start=1)
+        ]
+        if not impacted_rows:
+            impacted_rows.append({"label": "暂无近期待处理事项", "detail": "内部数据里没有可关联到客户的 pending deadline。"})
+
+        choices = [
+            {"label": button.label, "intent": button.prompt or button.label, "style": "primary" if index == 0 else "secondary"}
+            for index, button in enumerate(plan.surface_plan.action_contract)
+        ]
+        render_spec = {
+            "version": "0.1",
+            "surface": "work_card",
+            "surface_kind": plan.surface_plan.surface_kind,
+            "title": plan.surface_plan.title,
+            "intent_summary": plan.surface_plan.primary_question,
+            "data_boundary_notice": plan.surface_plan.data_boundary_notice,
+            "blocks": [
+                {
+                    "type": "decision_brief",
+                    "title": "先说明边界",
+                    "body": plan.surface_plan.data_boundary_notice or "我会基于当前可用数据判断。",
+                },
+                {
+                    "type": "fact_strip",
+                    "facts": [
+                        {"label": "规则信号", "value": f"{len(rules)} 条", "tone": "blue"},
+                        {"label": "待审核", "value": f"{len(review_queue)} 条", "tone": "gold"},
+                        {"label": "可能影响", "value": f"{len(affected_client_ids)} 个客户", "tone": "red" if affected_client_ids else "green"},
+                    ],
+                },
+                {"type": "source_list", "sources": source_rows},
+                {"type": "source_list", "sources": impacted_rows},
+                {
+                    "type": "choice_set",
+                    "question": "接下来要看哪一块？",
+                    "choices": choices or [{"label": "回到今日清单", "intent": "查看今天的待处理事项", "style": "secondary"}],
+                },
+            ],
+        }
+        message = (
+            f"我先按秘书助手的方式理解：你要知道有没有影响客户工作的税务变化。"
+            f"当前我能查到内部规则库 {len(rules)} 条、待审核规则 {len(review_queue)} 条、notice {len(notices)} 条，"
+            f"关联到 {len(affected_client_ids)} 个有近期 pending deadline 的客户。"
+            f"注意：当前没有实时外部税务新闻源。"
+        )
+        return {
+            "message": self._truncate_message(message),
+            "view": {
+                "type": "RenderSpecSurface",
+                "data": {"render_spec": render_spec},
+                "selectable_items": [
+                    self.response_generator._to_selectable(index, item)
+                    for index, item in enumerate(deadlines[:10], start=1)
+                    if item.get("deadline_id") and item.get("client_id")
+                ],
+            },
+            "actions": [],
+            "state_summary": f"{plan.surface_plan.surface_kind}: {plan.need.goal}",
+        }
+
+    def _compose_planned_render_spec(
+        self,
+        plan: WorkSurfacePlan,
+        session: dict[str, Any],
+        user_input: str,
+    ) -> dict[str, Any]:
+        render_spec = {
+            "version": "0.1",
+            "surface": "work_card",
+            "surface_kind": plan.surface_plan.surface_kind,
+            "title": plan.surface_plan.title,
+            "intent_summary": plan.surface_plan.primary_question,
+            "data_boundary_notice": plan.surface_plan.data_boundary_notice,
+            "blocks": [
+                {
+                    "type": "decision_brief",
+                    "title": "结论",
+                    "body": plan.need.goal,
+                },
+                {
+                    "type": "choice_set",
+                    "question": "下一步怎么推进？",
+                    "choices": [
+                        {"label": button.label, "intent": button.prompt or button.label, "style": "secondary"}
+                        for button in plan.surface_plan.action_contract
+                    ],
+                },
+            ],
+        }
+        return {
+            "message": self._truncate_message(plan.need.goal),
+            "view": {"type": "RenderSpecSurface", "data": {"render_spec": render_spec}, "selectable_items": []},
+            "actions": [],
+            "state_summary": f"{plan.surface_plan.surface_kind}: {plan.need.goal}",
+        }
+
+    def _truncate_message(self, message: str, limit: int = 360) -> str:
+        return message if len(message) <= limit else message[: limit - 1] + "…"
 
     def _visible_deadline_items(self, session: dict[str, Any]) -> list[dict[str, Any]]:
         view = session.get("current_view")
@@ -363,7 +683,7 @@ class InteractionBackend:
             "blocks": [
                 {
                     "type": "decision_brief",
-                    "title": "我先把需求收敛成工作面",
+                    "title": "结论",
                     "body": body,
                 },
                 {"type": "fact_strip", "facts": facts},
@@ -393,7 +713,7 @@ class InteractionBackend:
         session: dict[str, Any],
     ) -> dict[str, Any]:
         tenant_id = session["tenant_id"]
-        requests = set(decision.data_requests or [])
+        requests = self._agent_data_requests(decision, session)
         gathered: dict[str, Any] = {
             "current_view": session.get("current_view"),
             "visible_deadlines": [],
@@ -438,6 +758,43 @@ class InteractionBackend:
         ]
         return gathered
 
+    def _agent_data_requests(self, decision: AgentKernelDecision, session: dict[str, Any]) -> set[str]:
+        requests = set(decision.data_requests or [])
+        semantic_text = " ".join(
+            str(value or "")
+            for value in [
+                decision.need_type,
+                decision.view_goal,
+                decision.answer,
+                (session.get("history_window") or [{}])[-1].get("text") if session.get("history_window") else "",
+            ]
+        ).casefold()
+        portfolio_terms = [
+            "所有",
+            "全部",
+            "客户",
+            "比较",
+            "优先",
+            "紧急",
+            "不紧急",
+            "风险",
+            "整体",
+            "portfolio",
+            "client",
+            "compare",
+            "priority",
+            "urgent",
+            "least urgent",
+            "risk",
+        ]
+        if any(term in semantic_text for term in portfolio_terms):
+            requests.update({"all_clients", "all_deadlines"})
+        if any(term in semantic_text for term in ["这个客户", "当前客户", "client_work", "selected client"]):
+            requests.add("client_deadlines")
+        if not requests:
+            requests.add("current_view")
+        return requests
+
     def _selected_client_id(self, session: dict[str, Any]) -> str | None:
         view = session.get("current_view")
         if isinstance(view, dict):
@@ -452,12 +809,12 @@ class InteractionBackend:
     def _agent_fact_strip(self, gathered: dict[str, Any]) -> list[dict[str, str]]:
         deadlines = gathered.get("deadline_pool", [])
         clients = gathered.get("all_clients", [])
-        overdue = [item for item in deadlines if item.get("days_remaining", 0) < 0]
-        next_due = deadlines[0].get("due_date") if deadlines else "无"
+        unique_clients = {item.get("client_id") for item in deadlines if item.get("client_id")}
+        next_due = deadlines[0].get("due_date") if deadlines else None
         return [
-            {"label": "客户", "value": str(len(clients)) if clients else "当前范围", "tone": "blue"},
-            {"label": "待处理", "value": str(len(deadlines)), "tone": "gold"},
-            {"label": "最早截止", "value": str(next_due), "tone": "red" if overdue else "green"},
+            {"label": "比较对象", "value": f"{len(unique_clients or clients)} 个客户", "tone": "blue"},
+            {"label": "待处理事项", "value": f"{len(deadlines)} 条" if deadlines else "无待处理", "tone": "gold"},
+            {"label": "最近截止", "value": str(next_due or "无"), "tone": "red" if next_due else "green"},
         ]
 
     def _agent_source_list(self, gathered: dict[str, Any]) -> list[dict[str, str]]:
@@ -465,10 +822,10 @@ class InteractionBackend:
         if deadlines:
             return [
                 {
-                    "label": item.get("client_name") or f"事项 {index}",
+                    "label": f"{index}. {item.get('client_name') or '当前客户'}",
                     "detail": (
                         f"{item.get('tax_type') or 'deadline'} / {item.get('jurisdiction') or '未知辖区'}，"
-                        f"{item.get('due_date') or '未知日期'}，{item.get('status') or 'unknown'}"
+                        f"截止日 {item.get('due_date') or '未知'}，状态 {item.get('status') or 'unknown'}"
                     ),
                 }
                 for index, item in enumerate(deadlines[:6], start=1)
@@ -482,7 +839,7 @@ class InteractionBackend:
                 }
                 for index, client in enumerate(clients[:6], start=1)
             ]
-        return [{"label": "当前页面", "detail": "这次需求没有读取到额外数据，右侧保留为决策工作面。"}]
+        return [{"label": "当前页面", "detail": "我先基于当前页面给出判断；如果你要更细的依据，可以继续追问。"}]
 
     def _strategy_title(self, decision: AgentKernelDecision) -> str:
         goal = (decision.view_goal or decision.need_type or "工作面").strip()
@@ -491,15 +848,16 @@ class InteractionBackend:
         return "按需工作面"
 
     def _strategy_body(self, decision: AgentKernelDecision, gathered: dict[str, Any]) -> str:
-        requests = "、".join(decision.data_requests or ["current_view"])
-        goal = decision.view_goal or "帮助你判断下一步"
+        if decision.answer:
+            return decision.answer
+        goal = decision.view_goal or "判断下一步"
         deadline_count = len(gathered.get("deadline_pool", []))
         client_count = len(gathered.get("all_clients", []))
-        return (
-            f"我把这句话理解为：{goal}。"
-            f"本轮只读取允许的数据：{requests}。"
-            f"当前工作面汇总了 {client_count if client_count else '当前范围内'} 个客户和 {deadline_count} 个待处理事项；不会写入任何记录。"
-        )
+        if deadline_count:
+            return f"我按“{goal}”整理了 {deadline_count} 条待处理事项，下面是判断依据和可继续推进的动作。"
+        if client_count:
+            return f"我按“{goal}”整理了 {client_count} 个客户，下面先给出可判断的客户范围。"
+        return f"我按“{goal}”整理了当前信息；这一步只帮助判断，不会写入任何记录。"
 
     def _strategy_message(self, decision: AgentKernelDecision, gathered: dict[str, Any]) -> str:
         deadlines = gathered.get("deadline_pool", [])
@@ -523,11 +881,7 @@ class InteractionBackend:
         return [{"label": "回到今日清单", "intent": "查看今天的待处理事项", "style": "secondary"}]
 
     def _remember_response(self, session: dict[str, Any], response: dict[str, Any]) -> None:
-        view = response.get("view") or {}
-        session["current_view"] = view
-        session["selectable_items"] = view.get("selectable_items", [])
-        session["current_actions"] = response.get("actions", [])
-        session["state_summary"] = response.get("state_summary")
+        remember_response_state(session, response)
 
     def _append_history(self, session: dict[str, Any], actor: str, text: str) -> None:
         history = session.setdefault("history_window", [])
@@ -543,14 +897,26 @@ class InteractionBackend:
         plan_source: str | None = None,
     ) -> None:
         route = session.pop("_last_plan_route", {})
+        plan_source_value = plan_source or route.get("source")
+        view_type = (response.get("view") or {}).get("type")
+        operation = record_operation(
+            session,
+            user_input=user_input,
+            intent_label=plan.get("intent_label"),
+            op_class=plan.get("op_class"),
+            plan_source=plan_source_value,
+            view_type=view_type,
+        )
         session["last_turn"] = {
             "user_input": user_input,
             "intent_label": plan.get("intent_label"),
             "op_class": plan.get("op_class"),
-            "plan_source": plan_source or route.get("source"),
+            "plan_source": plan_source_value,
             "template_id": route.get("template_id"),
             "similarity": route.get("similarity"),
-            "view_type": (response.get("view") or {}).get("type"),
+            "view_type": view_type,
+            "workspace_ref": operation.get("workspace_ref"),
+            "operation_ref": operation.get("operation_id"),
         }
 
     def _record_followup_feedback(self, user_input: str, session: dict[str, Any]) -> None:

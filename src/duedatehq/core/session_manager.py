@@ -5,6 +5,8 @@ from datetime import datetime, timezone
 from typing import Any
 from uuid import uuid4
 
+from .system_state import initialize_system_state
+
 
 class InMemoryInteractionSessionManager:
     """Small MVP session store with the same contract Redis will use later."""
@@ -17,11 +19,8 @@ class InMemoryInteractionSessionManager:
             "session_id": session_id or str(uuid4()),
             "tenant_id": tenant_id,
             "today": today or datetime.now(timezone.utc).date().isoformat(),
-            "history_window": [],
-            "selectable_items": [],
-            "current_view": None,
-            "state_summary": None,
         }
+        initialize_system_state(session)
         self._sessions[session["session_id"]] = session
         return session
 
@@ -54,11 +53,8 @@ class RedisInteractionSessionManager:
             "session_id": session_id or str(uuid4()),
             "tenant_id": tenant_id,
             "today": today or datetime.now(timezone.utc).date().isoformat(),
-            "history_window": [],
-            "selectable_items": [],
-            "current_view": None,
-            "state_summary": None,
         }
+        initialize_system_state(session)
         self.save(session)
         return session
 

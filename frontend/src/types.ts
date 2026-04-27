@@ -30,8 +30,11 @@ export type ActionPlan = {
 
 export type DirectAction = {
   type: "direct_execute" | "agent_input";
+  command?: "confirm_pending" | "cancel_pending";
+  prefetch_key?: string;
   plan?: Record<string, unknown>;
   expected_view?: string;
+  workspace?: Record<string, unknown>;
   view_data?: Record<string, unknown>;
   selectable_items?: SelectableItem[];
   text?: string;
@@ -81,7 +84,7 @@ export type RenderBlock =
   | {
       type: "choice_set";
       question: string;
-      choices: Array<{ label: string; intent: string; style?: "primary" | "secondary" }>;
+      choices: Array<{ label: string; intent: string; style?: "primary" | "secondary"; action?: DirectAction }>;
     }
   | {
       type: "empty_state";
@@ -92,7 +95,9 @@ export type RenderBlock =
 export type RenderSpec = {
   version: "0.1";
   surface: "work_card";
+  surface_kind?: string;
   title: string;
   intent_summary: string;
+  data_boundary_notice?: string;
   blocks: RenderBlock[];
 };

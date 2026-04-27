@@ -12,6 +12,11 @@ def test_in_memory_session_manager_starts_and_returns_session():
     assert session["tenant_id"] == "tenant-1"
     assert session["today"] == "2025-05-10"
     assert session["selectable_items"] == []
+    assert session["current_workspace"] is None
+    assert session["previous_workspace"] is None
+    assert session["breadcrumb"] == []
+    assert session["operation_log"] == []
+    assert session["prefetch_pool"] == {}
     assert manager.get("session-1") is session
 
 

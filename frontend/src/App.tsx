@@ -20,6 +20,38 @@ function id(): string {
     : `${Date.now()}-${Math.random()}`;
 }
 
+function todayPlan(): Record<string, unknown> {
+  return {
+    plan: [
+      {
+        step_id: "s1",
+        type: "cli_call",
+        cli_group: "today",
+        cli_command: "today",
+        args: { tenant_id: tenantId, limit: 5, enrich: true }
+      }
+    ],
+    intent_label: "today",
+    op_class: "read"
+  };
+}
+
+function deadlineHistoryPlan(deadlineId: string): Record<string, unknown> {
+  return {
+    plan: [
+      {
+        step_id: "s1",
+        type: "cli_call",
+        cli_group: "deadline",
+        cli_command: "transitions",
+        args: { tenant_id: tenantId, deadline_id: deadlineId }
+      }
+    ],
+    intent_label: "deadline_history",
+    op_class: "read"
+  };
+}
+
 export function App() {
   const [messages, setMessages] = useState<ChatMessage[]>([
     { id: id(), role: "status", text: String(initialView.data.message) }
@@ -75,14 +107,24 @@ export function App() {
     scrollStream();
   }
 
-  async function submit(value = input) {
+  function replaceMessage(messageId: string, text: string) {
+    setMessages((current) =>
+      current.map((message) =>
+        message.id === messageId ? { ...message, text } : message
+      )
+    );
+    scrollStream();
+  }
+
+  async function submit(value = input, userEcho?: string) {
     const cleaned = value.trim();
     if (!cleaned || busy) return;
     setInput("");
-    append("user", cleaned);
+    append("user", userEcho?.trim() || cleaned);
 
     setBusy(true);
     let streamedMessageId: string | null = null;
+    let thinkingMessageId: string | null = null;
     try {
       const nextSession = await streamChat({
         apiBase,
@@ -95,11 +137,26 @@ export function App() {
           seen_visual_contexts: seenVisualContexts.slice(0, 6)
         },
         onUpdate: (update) => {
-          if (update.event === "thinking") return;
+          if (update.event === "thinking") {
+            if (thinkingMessageId) {
+              replaceMessage(thinkingMessageId, update.message);
+            } else {
+              thinkingMessageId = append("status", update.message);
+            }
+            return;
+          }
           if (update.event === "intent_confirmed") {
-            append("status", humanIntentStatus(update.intentLabel, update.planSource));
+            const message = humanIntentStatus(update.intentLabel, update.planSource);
+            if (thinkingMessageId) {
+              replaceMessage(thinkingMessageId, message);
+            } else {
+              thinkingMessageId = append("status", message);
+            }
           }
           if (update.event === "view_rendered") {
+            if (thinkingMessageId) {
+              replaceMessage(thinkingMessageId, "工作面已准备好，正在展示结果。");
+            }
             if (update.view) setView(update.view);
             setActions(update.actions || []);
           }
@@ -125,13 +182,15 @@ export function App() {
     }
   }
 
-  async function runDirectAction(action: DirectAction) {
+  async function runDirectAction(action: DirectAction, userEcho?: string) {
     if (busy) return;
     if (action.type === "agent_input" && action.text) {
-      await submit(action.text);
+      await submit(action.text, userEcho);
       return;
     }
     if (action.type !== "direct_execute") return;
+
+    append("user", userEcho?.trim() || describeDirectAction(action));
 
     if (action.view_data && action.expected_view) {
       const nextView = {
@@ -139,10 +198,19 @@ export function App() {
         data: action.view_data,
         selectable_items: action.selectable_items || []
       };
+      const previousWorkspace = session.current_workspace || null;
+      const nextWorkspace = action.workspace || buildWorkspaceSnapshot(nextView);
+      const currentBreadcrumb = Array.isArray(session.breadcrumb) ? session.breadcrumb : [];
+      const nextBreadcrumb = nextWorkspace
+        ? appendBreadcrumb(currentBreadcrumb, String(nextWorkspace.type || nextView.type))
+        : currentBreadcrumb;
       setView(nextView);
       setActions([]);
       setSession((current) => ({
         ...current,
+        previous_workspace: previousWorkspace,
+        current_workspace: nextWorkspace,
+        breadcrumb: nextBreadcrumb,
         current_view: nextView,
         selectable_items: nextView.selectable_items,
         current_actions: []
@@ -231,7 +299,7 @@ export function App() {
               <button
                 key={action.label}
                 className="quick-btn"
-                onClick={() => action.action ? void runDirectAction(action.action) : void submit(action.prompt || action.label)}
+                onClick={() => action.action ? void runDirectAction(action.action, action.label) : void submit(action.prompt || action.label, action.label)}
               >
                 {action.label}
               </button>
@@ -258,18 +326,75 @@ export function App() {
               <span className="pill blue">{view.type}</span>
             </div>
           </div>
-          <ViewRenderer view={view} onPrompt={(prompt) => void submit(prompt)} onAction={(action) => void runDirectAction(action)} />
+          <ViewRenderer view={view} onPrompt={(prompt) => void submit(prompt)} onAction={(action, label) => void runDirectAction(action, label)} />
         </section>
       </main>
     </div>
   );
 }
 
+function buildWorkspaceSnapshot(view: ViewEnvelope): Record<string, unknown> {
+  const data = view.data || {};
+  const workspaceType = workspaceTypeForView(view.type);
+  const semanticId = String(
+    data.client_id ||
+      data.client_name ||
+      data.deadline_id ||
+      data.title ||
+      data.headline ||
+      view.type
+  );
+  return {
+    key: `${workspaceType}:${semanticId}`,
+    type: workspaceType,
+    view_type: view.type,
+    semantic_id: semanticId,
+    title: String(data.client_name || data.title || data.headline || data.message || view.type),
+    selectable_count: view.selectable_items?.length || 0
+  };
+}
+
+function workspaceTypeForView(viewType: string): string {
+  const mapping: Record<string, string> = {
+    ListCard: "TodayQueue",
+    ClientCard: "ClientWorkspace",
+    HistoryCard: "AuditWorkspace",
+    ConfirmCard: "ConfirmWorkspace",
+    GuidanceCard: "GuidanceWorkspace",
+    TaxChangeRadarCard: "TaxChangeRadarWorkspace",
+    RenderSpecSurface: "GeneratedWorkspace",
+    ReminderPreviewCard: "ReminderPreviewWorkspace",
+    ClientListCard: "ClientDirectoryWorkspace",
+    ReviewQueueCard: "ReviewQueueWorkspace"
+  };
+  return mapping[viewType] || `${viewType}Workspace`;
+}
+
+function appendBreadcrumb(current: unknown[], workspaceType: string): string[] {
+  const breadcrumb = current.map((item) => String(item));
+  if (!breadcrumb.length || breadcrumb[breadcrumb.length - 1] !== workspaceType) {
+    breadcrumb.push(workspaceType);
+  }
+  return breadcrumb.slice(-8);
+}
+
+function describeDirectAction(action: DirectAction): string {
+  if (action.command === "confirm_pending") return "确认执行";
+  if (action.command === "cancel_pending") return "取消";
+  if (action.expected_view === "ListCard") return "回到今日清单";
+  if (action.expected_view === "ClientCard") return "打开这个客户";
+  if (action.expected_view === "HistoryCard") return "查看来源";
+  if (action.expected_view === "ConfirmCard") return "确认这一步";
+  if (action.expected_view === "RenderSpecSurface") return "继续处理";
+  return "执行这个操作";
+}
+
 function MessageBubble({ message }: { message: ChatMessage }) {
   const isUser = message.role === "user";
+  const isThinking = message.role === "status" && message.text.startsWith("正在");
   return (
-    <div className={`msg ${isUser ? "user" : ""} ${message.role === "status" ? "status" : ""}`}>
-      <div className={`msg-badge ${isUser ? "usr" : "sys"}`}>{isUser ? "SJ" : "DH"}</div>
+    <div className={`msg ${isUser ? "user" : ""} ${message.role === "status" ? "status" : ""} ${isThinking ? "thinking" : ""}`}>
+      <div className={`msg-badge ${isUser ? "usr" : "sys"}`}>{isThinking ? "" : isUser ? "SJ" : "DH"}</div>
       <div className="msg-bubble">
         <MarkdownText text={message.text} />
       </div>
@@ -343,20 +468,23 @@ function renderInlineMarkdown(text: string) {
   });
 }
 
-function ViewRenderer({ view, onPrompt, onAction }: { view: ViewEnvelope; onPrompt: (prompt: string) => void; onAction: (action: DirectAction) => void }) {
+type DirectActionHandler = (action: DirectAction, userEcho?: string) => void;
+
+function ViewRenderer({ view, onPrompt, onAction }: { view: ViewEnvelope; onPrompt: (prompt: string) => void; onAction: DirectActionHandler }) {
   if (view.type === "ListCard") return <ListCard view={view} onPrompt={onPrompt} onAction={onAction} />;
   if (view.type === "ClientCard") return <ClientCard view={view} onPrompt={onPrompt} onAction={onAction} />;
-  if (view.type === "ConfirmCard") return <ConfirmCard view={view} onPrompt={onPrompt} />;
+  if (view.type === "ConfirmCard") return <ConfirmCard view={view} onAction={onAction} />;
   if (view.type === "HistoryCard") return <HistoryCard view={view} />;
   if (view.type === "ReminderPreviewCard") return <ReminderPreviewCard view={view} />;
   if (view.type === "ClientListCard") return <ClientListCard view={view} onPrompt={onPrompt} />;
   if (view.type === "ReviewQueueCard") return <ReviewQueueCard view={view} />;
   if (view.type === "GuidanceCard") return <GuidanceCard view={view} onPrompt={onPrompt} />;
-  if (view.type === "RenderSpecSurface") return <RenderSpecSurface spec={view.data.render_spec as RenderSpec} onPrompt={onPrompt} />;
+  if (view.type === "TaxChangeRadarCard") return <TaxChangeRadarCard view={view} onPrompt={onPrompt} />;
+  if (view.type === "RenderSpecSurface") return <RenderSpecSurface spec={view.data.render_spec as RenderSpec} onPrompt={onPrompt} onAction={onAction} />;
   return <UnknownView view={view} />;
 }
 
-function ListCard({ view, onPrompt, onAction }: { view: ViewEnvelope; onPrompt: (prompt: string) => void; onAction: (action: DirectAction) => void }) {
+function ListCard({ view, onPrompt, onAction }: { view: ViewEnvelope; onPrompt: (prompt: string) => void; onAction: DirectActionHandler }) {
   const data = view.data as {
     title?: string;
     headline?: string;
@@ -387,7 +515,7 @@ function ListCard({ view, onPrompt, onAction }: { view: ViewEnvelope; onPrompt: 
             onClick={() => {
               const action = view.selectable_items?.[index]?.action;
               if (action) {
-                onAction(action);
+                onAction(action, `打开 ${clientName}`);
                 return;
               }
               onPrompt(`打开第 ${index + 1} 条`);
@@ -411,7 +539,7 @@ function ListCard({ view, onPrompt, onAction }: { view: ViewEnvelope; onPrompt: 
   );
 }
 
-function ClientCard({ view, onPrompt, onAction }: { view: ViewEnvelope; onPrompt: (prompt: string) => void; onAction: (action: DirectAction) => void }) {
+function ClientCard({ view, onPrompt, onAction }: { view: ViewEnvelope; onPrompt: (prompt: string) => void; onAction: DirectActionHandler }) {
   const data = view.data as { client_name?: string; entity_type?: string; registered_states?: string[]; deadlines?: TaskItem[] };
   const deadline = data.deadlines?.[0];
   const deadlines = data.deadlines || [];
@@ -444,30 +572,65 @@ function ClientCard({ view, onPrompt, onAction }: { view: ViewEnvelope; onPrompt
         <button
           className="primary"
           onClick={() =>
-            onAction({
-              type: "direct_execute",
-              expected_view: "RenderSpecSurface",
-              plan: {
-                special: "render_spec_needed",
-                intent_label: "client_request_draft",
-                op_class: "read",
-                message: "我根据当前选中的客户和事项生成请求草稿。",
-                user_input: `prepare request for ${clientName}`
-              }
-            })
+            onAction(
+              {
+                type: "direct_execute",
+                expected_view: "RenderSpecSurface",
+                plan: {
+                  special: "render_spec_needed",
+                  intent_label: "client_request_draft",
+                  op_class: "read",
+                  message: "我根据当前选中的客户和事项生成请求草稿。",
+                  user_input: `prepare request for ${clientName}`
+                }
+              },
+              "Prepare request"
+            )
           }
         >
           Prepare request
         </button>
-        <button className="secondary" onClick={() => onPrompt("show source")}>Show source</button>
-        <button className="secondary" onClick={() => onPrompt("back to today")}>Back to today</button>
+        <button
+          className="secondary"
+          onClick={() => {
+            if (deadline?.deadline_id) {
+              onAction(
+                {
+                  type: "direct_execute",
+                  expected_view: "HistoryCard",
+                  plan: deadlineHistoryPlan(deadline.deadline_id)
+                },
+                "Show source"
+              );
+              return;
+            }
+            onPrompt("show source");
+          }}
+        >
+          Show source
+        </button>
+        <button
+          className="secondary"
+          onClick={() =>
+            onAction(
+              {
+                type: "direct_execute",
+                expected_view: "ListCard",
+                plan: todayPlan()
+              },
+              "Back to today"
+            )
+          }
+        >
+          Back to today
+        </button>
       </div>
     </article>
   );
 }
 
-function ConfirmCard({ view, onPrompt }: { view: ViewEnvelope; onPrompt: (prompt: string) => void }) {
-  const data = view.data as { description?: string; due_date?: string; consequence?: string; options?: Array<{ label: string; style?: string }> };
+function ConfirmCard({ view, onAction }: { view: ViewEnvelope; onAction: DirectActionHandler }) {
+  const data = view.data as { description?: string; due_date?: string; consequence?: string; options?: Array<{ label: string; style?: string; plan?: Record<string, unknown> | null }> };
   return (
     <article className="card confirm-card">
       <div className="card-header">
@@ -483,7 +646,16 @@ function ConfirmCard({ view, onPrompt }: { view: ViewEnvelope; onPrompt: (prompt
           <button
             key={option.label}
             className={option.style === "primary" ? "primary" : "secondary"}
-            onClick={() => onPrompt(option.style === "primary" ? "confirm" : "cancel")}
+            onClick={() =>
+              onAction(
+                {
+                  type: "direct_execute",
+                  command: option.style === "primary" ? "confirm_pending" : "cancel_pending",
+                  expected_view: option.style === "primary" ? "ListCard" : "GuidanceCard"
+                },
+                option.label
+              )
+            }
           >
             {option.label}
           </button>
@@ -596,8 +768,75 @@ function ReviewQueueCard({ view }: { view: ViewEnvelope }) {
   );
 }
 
+function TaxChangeRadarCard({ view, onPrompt }: { view: ViewEnvelope; onPrompt: (prompt: string) => void }) {
+  const data = view.data as {
+    title?: string;
+    primary_question?: string;
+    data_boundary_notice?: string;
+    metrics?: Array<{ label: string; value: string; tone?: "red" | "green" | "blue" | "gold" }>;
+    rule_signals?: Array<{ title: string; detail?: string; source?: string }>;
+    impacted_deadlines?: Array<{ client_name: string; tax_type: string; jurisdiction: string; due_date: string; status: string }>;
+  };
+  return (
+    <article className="card radar-card">
+      <div className="card-header">
+        <div>
+          <div className="eyebrow">Tax change radar</div>
+          <h2>{data.title || "本月税务变化雷达"}</h2>
+          {data.primary_question ? <p className="card-description">{data.primary_question}</p> : null}
+        </div>
+      </div>
+      {data.data_boundary_notice ? (
+        <section className="boundary-note">
+          <strong>数据边界</strong>
+          <p>{data.data_boundary_notice}</p>
+        </section>
+      ) : null}
+      <section className="fact-grid">
+        {(data.metrics || []).map((metric) => <Fact key={metric.label} label={metric.label} value={metric.value} tone={metric.tone} />)}
+      </section>
+      <section className="radar-section">
+        <div>
+          <div className="eyebrow">Signals</div>
+          <h3>目前能看到的变化信号</h3>
+        </div>
+        <div className="list compact-list">
+          {(data.rule_signals || []).map((signal, index) => (
+            <div className="plain-row" key={`${signal.title}-${index}`}>
+              <strong>{signal.title}</strong>
+              <span>{[signal.detail, signal.source].filter(Boolean).join(" · ")}</span>
+            </div>
+          ))}
+        </div>
+      </section>
+      <section className="radar-section">
+        <div>
+          <div className="eyebrow">Client impact</div>
+          <h3>可能被影响的近期事项</h3>
+        </div>
+        <div className="list compact-list">
+          {(data.impacted_deadlines || []).map((item, index) => (
+            <button className="task-row" key={`${item.client_name}-${item.tax_type}-${index}`} onClick={() => onPrompt(`打开 ${item.client_name}`)}>
+              <div>
+                <strong>{item.client_name}</strong>
+                <span>{item.tax_type} · {item.jurisdiction}</span>
+              </div>
+              <div className="task-right">
+                <span className="due">{item.due_date}</span>
+                <span>{item.status}</span>
+              </div>
+            </button>
+          ))}
+        </div>
+      </section>
+    </article>
+  );
+}
+
 function GuidanceCard({ view, onPrompt }: { view: ViewEnvelope; onPrompt: (prompt: string) => void }) {
   const data = view.data as {
+    title?: string;
+    eyebrow?: string;
     message?: string;
     options?: string[];
     context_options?: Array<Record<string, string>>;
@@ -606,8 +845,8 @@ function GuidanceCard({ view, onPrompt }: { view: ViewEnvelope; onPrompt: (promp
     <article className="card guidance-card">
       <div className="card-header">
         <div>
-          <div className="eyebrow">Need one more bit of context</div>
-          <h2>Choose the item first</h2>
+          <div className="eyebrow">{data.eyebrow || "Need one more bit of context"}</div>
+          <h2>{data.title || "Choose the item first"}</h2>
         </div>
       </div>
       <p className="consequence">{data.message || "I need a little more context before changing the work surface."}</p>
@@ -638,7 +877,7 @@ function GuidanceCard({ view, onPrompt }: { view: ViewEnvelope; onPrompt: (promp
   );
 }
 
-function RenderSpecSurface({ spec, onPrompt }: { spec: RenderSpec; onPrompt: (prompt: string) => void }) {
+function RenderSpecSurface({ spec, onPrompt, onAction }: { spec: RenderSpec; onPrompt: (prompt: string) => void; onAction: DirectActionHandler }) {
   const validation = validateRenderSpec(spec);
   if (!validation.ok) {
     return (
@@ -657,21 +896,22 @@ function RenderSpecSurface({ spec, onPrompt }: { spec: RenderSpec; onPrompt: (pr
     <article className="card spec-card">
       <div className="card-header">
         <div>
-          <div className="eyebrow">Suggested next step</div>
+          <div className="eyebrow">{spec.surface_kind || "Rendered for this question"}</div>
           <h2>{spec.title}</h2>
         </div>
       </div>
       <p className="spec-summary">{spec.intent_summary}</p>
+      {spec.data_boundary_notice ? <p className="consequence">{spec.data_boundary_notice}</p> : null}
       <div className="spec-blocks">
         {spec.blocks.map((block, index) => (
-          <RenderBlockView key={index} block={block} onPrompt={onPrompt} />
+          <RenderBlockView key={index} block={block} onPrompt={onPrompt} onAction={onAction} />
         ))}
       </div>
     </article>
   );
 }
 
-function RenderBlockView({ block, onPrompt }: { block: RenderBlock; onPrompt: (prompt: string) => void }) {
+function RenderBlockView({ block, onPrompt, onAction }: { block: RenderBlock; onPrompt: (prompt: string) => void; onAction: DirectActionHandler }) {
   if (block.type === "decision_brief") {
     return (
       <section className="spec-block">
@@ -714,7 +954,13 @@ function RenderBlockView({ block, onPrompt }: { block: RenderBlock; onPrompt: (p
             <button
               key={choice.label}
               className={choice.style === "primary" ? "primary" : "secondary"}
-              onClick={() => onPrompt(choice.intent)}
+              onClick={() => {
+                if (choice.action) {
+                  onAction(choice.action, choice.label);
+                  return;
+                }
+                onPrompt(choice.intent);
+              }}
             >
               {choice.label}
             </button>
@@ -783,7 +1029,8 @@ function buildQuickActions(view: ViewEnvelope, actions: ActionPlan[]): QuickActi
     if (choiceBlock?.type === "choice_set") {
       return choiceBlock.choices.slice(0, 3).map((choice) => ({
         label: choice.label,
-        prompt: choice.intent
+        prompt: choice.intent,
+        action: choice.action
       }));
     }
   }
@@ -842,6 +1089,21 @@ function summarizeView(view: ViewEnvelope, actions: ActionPlan[]): VisualContext
       summary: `${spec?.title || "Generated surface"}; ${spec?.intent_summary || "no summary"}`
     };
   }
+  if (view.type === "TaxChangeRadarCard") {
+    const data = view.data as {
+      title?: string;
+      primary_question?: string;
+      impacted_deadlines?: Array<{ client_name?: string; tax_type?: string; due_date?: string }>;
+    };
+    return {
+      view_type: view.type,
+      headline: data.title || "Tax change radar",
+      visible_clients: (data.impacted_deadlines || []).map((item) => item.client_name || "").filter(Boolean),
+      visible_deadlines: (data.impacted_deadlines || []).map((item) => [item.client_name, item.tax_type, item.due_date].filter(Boolean).join(" · ")),
+      visible_actions: visibleActions,
+      summary: data.primary_question || data.title || "Tax change radar"
+    };
+  }
   if (view.type === "GuidanceCard") {
     const data = view.data as { message?: string; options?: string[] };
     return {
@@ -876,6 +1138,7 @@ function surfaceTitle(view: ViewEnvelope): string {
   if (view.type === "ConfirmCard") return "Confirm change";
   if (view.type === "HistoryCard") return "Source and history";
   if (view.type === "GuidanceCard") return "Need context";
+  if (view.type === "TaxChangeRadarCard") return "Tax change radar";
   if (view.type === "RenderSpecSurface") return "Next step";
   return "Work surface";
 }

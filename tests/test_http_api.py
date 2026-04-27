@@ -4,7 +4,7 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from duedatehq.http_api import _instant_response_prefix, _latest_new_feedback_event, _message_chunks, _sse, create_fastapi_app
+from duedatehq.http_api import _instant_response_prefix, _latest_new_feedback_event, _message_chunks, _sse, _thinking_status, create_fastapi_app
 
 
 def _seed_api_deadline(api):
@@ -55,8 +55,17 @@ def test_message_chunks_prefer_natural_boundaries():
 
 
 def test_instant_response_prefix_uses_current_view_context():
-    assert _instant_response_prefix("总体情况如何", {"current_view": {"type": "ListCard"}}).startswith("我先看当前页面")
-    assert _instant_response_prefix("总体情况如何", {}).startswith("我先理解")
+    assert _instant_response_prefix("看下今天的情况", {"current_view": {"type": "ListCard"}}).startswith("好的，我帮你看看今天")
+    assert _instant_response_prefix("总体情况如何", {}).startswith("好的，我来处理")
+    assert _instant_response_prefix("最近有什么政策更新吗", {}).startswith("好的，我帮你查一下哪些变化")
+    assert "放在一起比较" not in _instant_response_prefix("最近有什么政策更新吗", {})
+
+
+def test_thinking_status_is_user_facing_not_internal_log():
+    assert _thinking_status("有什么税务新闻", {}) == "正在读取规则库、notice 和近期 deadline。"
+    assert _thinking_status("最近有什么政策更新吗", {}) == "正在读取规则库、notice 和近期 deadline。"
+    assert "当前页面和后台数据" in _thinking_status("总体情况如何", {"current_view": {"type": "ListCard"}})
+    assert "我先看" not in _thinking_status("总体情况如何", {"current_view": {"type": "ListCard"}})
 
 
 def test_fastapi_app_requires_optional_dependency(monkeypatch):
@@ -113,6 +122,10 @@ def test_bootstrap_today_uses_fast_default_entry(tmp_path):
     assert payload["response"]["view"]["type"] == "ListCard"
     assert payload["session"]["last_turn"]["plan_source"] == "bootstrap"
     assert payload["session"]["current_view"]["type"] == "ListCard"
+    assert payload["session"]["current_workspace"]["type"] == "TodayQueue"
+    assert payload["session"]["previous_workspace"] is None
+    assert payload["session"]["breadcrumb"] == ["TodayQueue"]
+    assert payload["session"]["operation_log"][0]["plan_source"] == "bootstrap"
 
 
 def test_action_endpoint_executes_direct_read_without_agent(tmp_path):
@@ -138,6 +151,9 @@ def test_action_endpoint_executes_direct_read_without_agent(tmp_path):
     payload = response.json()
     assert payload["response"]["view"]["type"] == "ClientCard"
     assert payload["session"]["last_turn"]["plan_source"] == "direct_action"
+    assert payload["session"]["previous_workspace"]["type"] == "TodayQueue"
+    assert payload["session"]["current_workspace"]["type"] == "ClientWorkspace"
+    assert payload["session"]["breadcrumb"][-2:] == ["TodayQueue", "ClientWorkspace"]
 
 
 def test_action_endpoint_keeps_write_actions_behind_confirm_card(tmp_path):
@@ -164,6 +180,40 @@ def test_action_endpoint_keeps_write_actions_behind_confirm_card(tmp_path):
     assert payload["response"]["view"]["type"] == "ConfirmCard"
     assert payload["session"]["pending_action_plan"]["op_class"] == "write"
     assert payload["session"]["last_turn"]["plan_source"] == "direct_action"
+
+
+def test_action_endpoint_confirms_pending_action_without_chat_route(tmp_path):
+    pytest.importorskip("fastapi")
+    pytest.importorskip("httpx")
+    from fastapi.testclient import TestClient
+
+    api = create_fastapi_app(str(tmp_path / "http-action-confirm.sqlite3"))
+    tenant = _seed_api_deadline(api)
+    client = TestClient(api)
+    bootstrap = client.post(
+        "/bootstrap/today",
+        json={"tenant_id": tenant.tenant_id, "session": {"session_id": "direct-confirm-session"}},
+    ).json()
+    write_plan = bootstrap["response"]["actions"][0]["plan"]
+    confirm = client.post(
+        "/action",
+        json={"tenant_id": tenant.tenant_id, "session": bootstrap["session"], "plan": write_plan},
+    ).json()
+
+    response = client.post(
+        "/action",
+        json={
+            "tenant_id": tenant.tenant_id,
+            "session": confirm["session"],
+            "action": {"type": "direct_execute", "command": "confirm_pending"},
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["response"]["view"]["type"] == "ListCard"
+    assert "pending_action_plan" not in payload["session"]
+    assert payload["session"]["last_turn"]["plan_source"] == "direct_action_confirm"
 
 
 def test_latest_new_feedback_event_ignores_stale_events():

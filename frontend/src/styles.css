@@ -159,7 +159,11 @@ input {
 }
 
 .msg.status {
-  opacity: 0.72;
+  opacity: 0.78;
+}
+
+.msg.thinking {
+  opacity: 1;
 }
 
 .msg-badge {
@@ -179,6 +183,21 @@ input {
   color: var(--gold);
 }
 
+.msg.thinking .msg-badge.sys {
+  position: relative;
+  background: var(--gold);
+  color: transparent;
+  animation: thinkPulse 1.15s ease-in-out infinite;
+}
+
+.msg.thinking .msg-badge.sys::after {
+  content: "";
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--ink);
+}
+
 .msg-badge.usr {
   background: var(--gold);
   color: var(--ink);
@@ -194,6 +213,10 @@ input {
   font-size: 14px;
   line-height: 1.5;
   overflow-wrap: anywhere;
+}
+
+.msg.thinking .msg-bubble {
+  color: var(--ink-3);
 }
 
 .msg.user .msg-bubble {
@@ -579,6 +602,41 @@ input {
   border-color: var(--gold);
 }
 
+.radar-card {
+  border-color: var(--paper-3);
+}
+
+.boundary-note {
+  margin: 0 28px;
+  padding: 16px 18px;
+  border: 1px solid #ecd2a3;
+  border-radius: 8px;
+  background: var(--gold-soft);
+}
+
+.boundary-note strong {
+  color: var(--ink);
+}
+
+.boundary-note p {
+  margin: 6px 0 0;
+  color: var(--ink-2);
+  line-height: 1.55;
+}
+
+.radar-section {
+  margin: 0 28px 22px;
+  padding: 18px;
+  border: 1px solid var(--paper-3);
+  border-radius: 8px;
+  background: var(--paper);
+}
+
+.radar-section h3 {
+  margin: 4px 0 14px;
+  font-size: 19px;
+}
+
 .spec-summary {
   margin: 0;
   padding: 20px 28px 0;
@@ -655,6 +713,18 @@ input {
   to {
     opacity: 1;
     transform: translateY(0);
+  }
+}
+
+@keyframes thinkPulse {
+  0%,
+  100% {
+    transform: scale(0.82);
+    opacity: 0.72;
+  }
+  50% {
+    transform: scale(1.08);
+    opacity: 1;
   }
 }
 
