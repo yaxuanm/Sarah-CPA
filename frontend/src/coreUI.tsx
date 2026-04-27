@@ -3,7 +3,7 @@
 // Kept deliberately thin: any block that needs business logic belongs in
 // cards.tsx or a section-specific file, not here.
 
-import { ReactNode } from "react";
+import { ReactNode, useEffect, useRef, useState } from "react";
 import type { ChatMessage, DirectAction } from "./types";
 
 export type DirectActionHandler = (action: DirectAction, userEcho?: string) => void;
@@ -152,5 +152,171 @@ export function EmptyStateRow({ title, body }: { title: string; body: string }) 
       <strong>{title}</strong>
       <span>{body}</span>
     </div>
+  );
+}
+
+// FilterIcon — small inline SVG so we don't add an icon dep.
+export function FilterIcon({ active }: { active?: boolean }) {
+  return (
+    <svg
+      className={`filter-icon ${active ? "active" : ""}`}
+      viewBox="0 0 16 16"
+      width="14"
+      height="14"
+      aria-hidden="true"
+    >
+      <path
+        d="M2 3.5h12M4 8h8M6.5 12.5h3"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
+export type FilterChipOption = { id: string; label: string };
+
+export type FilterGroupSpec = {
+  key: string;
+  label: string;
+  options: FilterChipOption[];
+  selectedId: string;
+  onSelect: (nextId: string) => void;
+};
+
+// FilterPopover — icon button that toggles a small popover with chip groups.
+// Closes on outside click or Escape. Used by Today/Calendar/Clients sections.
+export function FilterPopover({
+  groups,
+  activeCount,
+  onClear
+}: {
+  groups: FilterGroupSpec[];
+  activeCount: number;
+  onClear?: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const wrapRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    function onDocClick(event: MouseEvent) {
+      if (!wrapRef.current) return;
+      if (!wrapRef.current.contains(event.target as Node)) setOpen(false);
+    }
+    function onKey(event: KeyboardEvent) {
+      if (event.key === "Escape") setOpen(false);
+    }
+    document.addEventListener("mousedown", onDocClick);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDocClick);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+
+  return (
+    <div className="filter-popover-wrap" ref={wrapRef}>
+      <button
+        type="button"
+        className={`filter-trigger ${activeCount > 0 ? "active" : ""} ${open ? "open" : ""}`}
+        aria-expanded={open}
+        onClick={() => setOpen((current) => !current)}
+      >
+        <FilterIcon active={activeCount > 0} />
+        <span>Filter</span>
+        {activeCount > 0 ? <span className="filter-count">{activeCount}</span> : null}
+      </button>
+      {open ? (
+        <div className="filter-popover" role="dialog">
+          <div className="filter-popover-head">
+            <strong>Filter</strong>
+            {onClear ? (
+              <button type="button" className="link-btn" onClick={onClear}>
+                Clear all
+              </button>
+            ) : null}
+          </div>
+          <div className="filter-popover-body">
+            {groups.map((group) => (
+              <div className="filter-group" key={group.key}>
+                <span className="filter-label">{group.label}</span>
+                <div className="filter-chips">
+                  {group.options.map((option) => (
+                    <button
+                      key={option.id}
+                      type="button"
+                      className={`filter-chip ${option.id === group.selectedId ? "active" : ""}`}
+                      onClick={() => group.onSelect(option.id)}
+                    >
+                      {option.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+          <div className="filter-popover-foot">
+            <button type="button" className="primary" onClick={() => setOpen(false)}>
+              Done
+            </button>
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+// SearchInput — accessible inline search box with leading magnifier glyph.
+export function SearchInput({
+  value,
+  onChange,
+  placeholder
+}: {
+  value: string;
+  onChange: (next: string) => void;
+  placeholder?: string;
+}) {
+  return (
+    <label className="search-input">
+      <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
+        <circle cx="7" cy="7" r="4.5" fill="none" stroke="currentColor" strokeWidth="1.5" />
+        <path d="M10.4 10.4L13 13" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+      </svg>
+      <input
+        type="text"
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        placeholder={placeholder}
+      />
+    </label>
+  );
+}
+
+// IconButton — generic round icon button used in section headers (export, etc).
+export function IconButton({
+  icon,
+  label,
+  onClick,
+  tone
+}: {
+  icon: ReactNode;
+  label: string;
+  onClick: () => void;
+  tone?: "default" | "primary";
+}) {
+  return (
+    <button
+      type="button"
+      className={`icon-btn ${tone === "primary" ? "primary" : ""}`}
+      onClick={onClick}
+      aria-label={label}
+      title={label}
+    >
+      {icon}
+      <span>{label}</span>
+    </button>
   );
 }

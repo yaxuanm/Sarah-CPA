@@ -3,15 +3,10 @@
 //
 // Information architecture (per duedatehq-frontend-skill/SKILL.md):
 //   - 5 top-level sections: Today / Calendar / Clients / Updates / Settings.
+//   - Section body renders rich, structured UI from mockData (sections.tsx).
 //   - Chat lives in a right-hand drawer (natural language only).
-//   - Section body renders the most recent ViewEnvelope via <ViewRenderer>.
-//
-// State ownership:
-//   - currentSection, view, actions, session, messages, busy, backendState
-//     all live here so they survive section switches.
-//   - Sections in sections.tsx dispatch plans via the `dispatch` callback;
-//     this file resolves those plans against the backend executor through
-//     `executeAction` and updates `view`.
+//   - When chat resolves to a ViewEnvelope (ClientCard, ConfirmCard, etc.),
+//     App overlays a drilldown card on top of the active section.
 //
 // What this file is NOT:
 //   - It is not where business logic lives — that's in the backend / cards.tsx.
@@ -33,9 +28,7 @@ import {
   buildQuickActions,
   buildWorkspaceSnapshot,
   humanIntentStatus,
-  summarizeView,
-  surfaceSummary,
-  surfaceTitle
+  summarizeView
 } from "./chatHelpers";
 import {
   SectionId,
@@ -47,23 +40,27 @@ import {
 const tenantId = import.meta.env.VITE_DUEDATEHQ_TENANT_ID || "2403c5e1-85ac-4593-86cc-02f8d97a8d92";
 const apiBase = import.meta.env.VITE_DUEDATEHQ_API_BASE || "http://127.0.0.1:8000";
 
-const initialView: ViewEnvelope = {
-  type: "GuidanceCard",
-  data: { message: "Opening today's work." },
-  selectable_items: []
-};
 const initialActions: ActionPlan[] = [];
+
+// View types that should NOT pop the drilldown overlay — these either
+// duplicate what the active section already shows, or are low-information
+// fallbacks the user complained about ("Need one more bit of context").
+const SECTION_NATIVE_VIEWS = new Set([
+  "ListCard",
+  "ClientListCard",
+  "ReminderPreviewCard",
+  "ReviewQueueCard",
+  "GuidanceCard"
+]);
 
 export function App() {
   const [currentSection, setCurrentSection] = useState<SectionId>("today");
   const [messages, setMessages] = useState<ChatMessage[]>([
-    { id: id(), role: "status", text: String(initialView.data.message) }
+    { id: id(), role: "system", text: "Ask DueDateHQ — try 'Open Northwind Services' or 'Plan workload for next 30 days'." }
   ]);
-  const [view, setView] = useState<ViewEnvelope>(initialView);
+  const [view, setView] = useState<ViewEnvelope | null>(null);
   const [actions, setActions] = useState<ActionPlan[]>(initialActions);
-  const [seenVisualContexts, setSeenVisualContexts] = useState<VisualContext[]>([
-    summarizeView(initialView, initialActions)
-  ]);
+  const [seenVisualContexts, setSeenVisualContexts] = useState<VisualContext[]>([]);
   const [input, setInput] = useState("");
   const [session, setSession] = useState<Record<string, unknown>>({
     tenant_id: tenantId,
@@ -73,19 +70,22 @@ export function App() {
   const [busy, setBusy] = useState(false);
   const [apiBootstrapped, setApiBootstrapped] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
-  const [backendState, setBackendState] = useState<"connecting" | "ready" | "degraded">("connecting");
+  const [drilldownOpen, setDrilldownOpen] = useState(false);
+  const [backendState, setBackendState] = useState<"connecting" | "ready" | "degraded" | "offline">("connecting");
   const streamRef = useRef<HTMLDivElement | null>(null);
 
   // Track recent visual contexts so the agent kernel knows what the CPA has
   // already seen when it decides what to render next.
   useEffect(() => {
+    if (!view) return;
     const context = summarizeView(view, actions);
     setSeenVisualContexts((current) =>
       [context, ...current.filter((item) => item.summary !== context.summary)].slice(0, 8)
     );
   }, [view, actions]);
 
-  // Bootstrap once.
+  // Bootstrap once — this is best-effort. If the backend is offline, the
+  // frontend still renders fine because every section uses mockData.
   useEffect(() => {
     if (apiBootstrapped) return;
     setApiBootstrapped(true);
@@ -122,6 +122,14 @@ export function App() {
     scrollStream();
   }
 
+  // Pop the drilldown overlay only when the resolved envelope adds
+  // information beyond what the active section already shows.
+  function maybeOpenDrilldown(envelope: ViewEnvelope | null) {
+    if (!envelope) return;
+    if (SECTION_NATIVE_VIEWS.has(envelope.type)) return;
+    setDrilldownOpen(true);
+  }
+
   // ---------- Backend round-trips ----------
 
   async function loadBackendOverview() {
@@ -136,12 +144,9 @@ export function App() {
       setActions(result.response.actions || []);
       setSession(result.session);
       setBackendState("ready");
-      setMessages([
-        { id: id(), role: "system", text: result.response.message || "Today's work is open." }
-      ]);
-    } catch (error) {
-      setBackendState("degraded");
-      append("system", `Couldn't load today's work from the backend. ${String(error)}`);
+    } catch {
+      // Backend not running is fine — sections still render from mockData.
+      setBackendState("offline");
     } finally {
       setBusy(false);
     }
@@ -165,7 +170,7 @@ export function App() {
         session: {
           ...session,
           current_view: view,
-          visual_context: summarizeView(view, actions),
+          visual_context: view ? summarizeView(view, actions) : null,
           seen_visual_contexts: seenVisualContexts.slice(0, 6)
         },
         onUpdate: (update) => {
@@ -189,7 +194,10 @@ export function App() {
             if (thinkingMessageId) {
               replaceMessage(thinkingMessageId, "The next workspace is ready.");
             }
-            if (update.view) setView(update.view);
+            if (update.view) {
+              setView(update.view);
+              maybeOpenDrilldown(update.view);
+            }
             setActions(update.actions || []);
           }
           if (update.event === "feedback_recorded") {
@@ -241,6 +249,7 @@ export function App() {
         ? appendBreadcrumb(currentBreadcrumb, String(nextWorkspace.type || nextView.type))
         : currentBreadcrumb;
       setView(nextView);
+      maybeOpenDrilldown(nextView);
       setActions([]);
       setSession((current) => ({
         ...current,
@@ -262,12 +271,15 @@ export function App() {
         session: {
           ...session,
           current_view: view,
-          visual_context: summarizeView(view, actions),
+          visual_context: view ? summarizeView(view, actions) : null,
           seen_visual_contexts: seenVisualContexts.slice(0, 6)
         },
         action
       });
-      if (result.response.view) setView(result.response.view);
+      if (result.response.view) {
+        setView(result.response.view);
+        maybeOpenDrilldown(result.response.view);
+      }
       setActions(result.response.actions || []);
       setSession(result.session);
       setBackendState("ready");
@@ -280,12 +292,12 @@ export function App() {
     }
   }
 
-  // Sections dispatch plans through this callback. We turn the plan into a
-  // direct_execute DirectAction so it routes through the same /action endpoint
-  // the chat drawer uses. That keeps view-state transitions identical
-  // regardless of who initiated them (section nav vs chat).
+  // Sections dispatch plans through this callback (kept for backward-compat).
+  // The section bodies no longer call dispatch automatically — they own their
+  // own structured rendering — but a section may still call dispatch for an
+  // explicit deep-dive into the chat envelope flow.
   const dispatchSectionPlan = useCallback(
-    (plan: Record<string, unknown>, expectedView: string, _echo: string) => {
+    (plan: Record<string, unknown>, expectedView: string) => {
       void runDirectAction({
         type: "direct_execute",
         plan,
@@ -296,18 +308,26 @@ export function App() {
     [session, view, actions, seenVisualContexts]
   );
 
+  // Export prompt — routed through chat so the backend's export.export plan
+  // path is the one source of truth, but the user got there via a button.
+  function handleExport(scope: string, format: "csv" | "pdf") {
+    void submit(`Generate a ${format.toUpperCase()} export for: ${scope}`, `Export ${scope}`);
+  }
+
   function onSubmit(event: FormEvent) {
     event.preventDefault();
     void submit();
   }
 
-  const quickActions = buildQuickActions(view, actions);
+  const quickActions = view ? buildQuickActions(view, actions) : [];
   const statusLabel =
     backendState === "ready"
       ? "Live backend"
       : backendState === "degraded"
         ? "Backend issue"
-        : "Connecting";
+        : backendState === "offline"
+          ? "Demo data"
+          : "Connecting";
 
   const SectionComponent = sectionComponents[currentSection];
   const meta = sectionMeta[currentSection];
@@ -340,29 +360,33 @@ export function App() {
           <div className="surface-meta">
             <div>
               <div className="eyebrow">{meta.eyebrow}</div>
-              <h1>{currentSection === "today" ? surfaceTitle(view) : meta.title}</h1>
-              <p className="surface-summary">
-                {currentSection === "today" ? surfaceSummary(view) : meta.subtitle}
-              </p>
+              <h1>{meta.title}</h1>
+              <p className="surface-summary">{meta.subtitle}</p>
             </div>
             <div className="status-pills">
               <span
                 className={`pill ${
-                  backendState === "ready" ? "green" : backendState === "degraded" ? "red" : "gold"
+                  backendState === "ready"
+                    ? "green"
+                    : backendState === "degraded"
+                      ? "red"
+                      : backendState === "offline"
+                        ? "blue"
+                        : "gold"
                 }`}
               >
                 {statusLabel}
               </span>
-              <span className="pill blue">{view.type}</span>
             </div>
           </div>
           <SectionComponent
             tenantId={tenantId}
-            view={view}
+            view={view ?? { type: "GuidanceCard", data: {}, selectable_items: [] }}
             busy={busy}
             dispatch={dispatchSectionPlan}
             onPrompt={(prompt) => void submit(prompt)}
             onAction={(action, label) => void runDirectAction(action, label)}
+            onExport={handleExport}
           />
         </section>
 
@@ -419,6 +443,40 @@ export function App() {
           </aside>
         ) : null}
       </main>
+
+      {drilldownOpen && view ? (
+        <div
+          className="drilldown-overlay"
+          role="dialog"
+          aria-modal="true"
+          onClick={() => setDrilldownOpen(false)}
+        >
+          <div className="drilldown-panel" onClick={(event) => event.stopPropagation()}>
+            <div className="drilldown-head">
+              <div>
+                <div className="eyebrow">From chat</div>
+                <h2>{view.type}</h2>
+              </div>
+              <button
+                type="button"
+                className="chat-close"
+                aria-label="Close detail"
+                onClick={() => setDrilldownOpen(false)}
+              >
+                ×
+              </button>
+            </div>
+            <div className="drilldown-body">
+              <ViewRenderer
+                view={view}
+                onPrompt={(prompt) => void submit(prompt)}
+                onAction={(action, label) => void runDirectAction(action, label)}
+                tenantId={tenantId}
+              />
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
