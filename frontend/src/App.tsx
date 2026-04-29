@@ -55,6 +55,7 @@ const SECTION_NATIVE_VIEWS = new Set([
 
 export function App() {
   const [currentSection, setCurrentSection] = useState<SectionId>("today");
+  const [appMode, setAppMode] = useState<"dashboard" | "chat">("dashboard");
   const [messages, setMessages] = useState<ChatMessage[]>([
     { id: id(), role: "system", text: "Ask DueDateHQ — try 'Open Northwind Services' or 'Plan workload for next 30 days'." }
   ]);
@@ -69,7 +70,6 @@ export function App() {
   });
   const [busy, setBusy] = useState(false);
   const [apiBootstrapped, setApiBootstrapped] = useState(false);
-  const [chatOpen, setChatOpen] = useState(false);
   const [drilldownOpen, setDrilldownOpen] = useState(false);
   const [backendState, setBackendState] = useState<"connecting" | "ready" | "degraded" | "offline">("connecting");
   const streamRef = useRef<HTMLDivElement | null>(null);
@@ -126,6 +126,7 @@ export function App() {
   // information beyond what the active section already shows.
   function maybeOpenDrilldown(envelope: ViewEnvelope | null) {
     if (!envelope) return;
+    if (appMode !== "chat") return;
     if (SECTION_NATIVE_VIEWS.has(envelope.type)) return;
     setDrilldownOpen(true);
   }
@@ -155,7 +156,6 @@ export function App() {
   async function submit(value = input, userEcho?: string) {
     const cleaned = value.trim();
     if (!cleaned || busy) return;
-    setChatOpen(true);
     setInput("");
     append("user", userEcho?.trim() || cleaned);
 
@@ -331,6 +331,14 @@ export function App() {
 
   const SectionComponent = sectionComponents[currentSection];
   const meta = sectionMeta[currentSection];
+  const modeStatusTone =
+    backendState === "ready"
+      ? "green"
+      : backendState === "degraded"
+        ? "red"
+        : backendState === "offline"
+          ? "blue"
+          : "gold";
 
   return (
     <div className="app-shell">
@@ -338,71 +346,109 @@ export function App() {
         <div className="brand">
           DueDate<em>HQ</em>
         </div>
-        <SectionNav current={currentSection} onSelect={setCurrentSection} />
+        <div className="topbar-center">
+          <div className="mode-toggle" role="tablist" aria-label="Interface mode">
+            <button
+              type="button"
+              className={`mode-btn ${appMode === "dashboard" ? "active" : ""}`}
+              onClick={() => {
+                setAppMode("dashboard");
+                setDrilldownOpen(false);
+              }}
+            >
+              Dashboard
+            </button>
+            <button
+              type="button"
+              className={`mode-btn ${appMode === "chat" ? "active" : ""}`}
+              onClick={() => setAppMode("chat")}
+            >
+              Chat
+            </button>
+          </div>
+          {appMode === "dashboard" ? (
+            <SectionNav current={currentSection} onSelect={setCurrentSection} />
+          ) : (
+            <div className="workspace-mode-label">
+              <span className="eyebrow">Workspace</span>
+              <strong>Agent-driven work surface</strong>
+            </div>
+          )}
+        </div>
         <div className="topbar-right">
-          <button
-            className={`chat-toggle ${chatOpen ? "active" : ""}`}
-            type="button"
-            onClick={() => setChatOpen((current) => !current)}
-            aria-expanded={chatOpen}
-            aria-label="Toggle chat drawer"
-          >
-            {chatOpen ? "Close chat" : "Ask DueDateHQ"}
-          </button>
           <div className="tenant-name">Johnson CPA PLLC</div>
           <div className={`connection-pill ${backendState}`}>{statusLabel}</div>
           <div className="avatar">SJ</div>
         </div>
       </header>
 
-      <main className={`section-main ${chatOpen ? "with-chat" : ""}`}>
-        <section className="render-panel">
-          <div className="surface-meta">
-            <div>
-              <div className="eyebrow">{meta.eyebrow}</div>
-              <h1>{meta.title}</h1>
-              <p className="surface-summary">{meta.subtitle}</p>
+      {appMode === "dashboard" ? (
+        <main className="section-main">
+          <section className="render-panel">
+            <div className="surface-meta">
+              <div>
+                <div className="eyebrow">{meta.eyebrow}</div>
+                <h1>{meta.title}</h1>
+                <p className="surface-summary">{meta.subtitle}</p>
+              </div>
+              <div className="status-pills">
+                <span className={`pill ${modeStatusTone}`}>{statusLabel}</span>
+              </div>
             </div>
-            <div className="status-pills">
-              <span
-                className={`pill ${
-                  backendState === "ready"
-                    ? "green"
-                    : backendState === "degraded"
-                      ? "red"
-                      : backendState === "offline"
-                        ? "blue"
-                        : "gold"
-                }`}
-              >
-                {statusLabel}
-              </span>
+            <SectionComponent
+              tenantId={tenantId}
+              view={view ?? { type: "GuidanceCard", data: {}, selectable_items: [] }}
+              busy={busy}
+              dispatch={dispatchSectionPlan}
+              onPrompt={(prompt) => void submit(prompt)}
+              onAction={(action, label) => void runDirectAction(action, label)}
+              onExport={handleExport}
+            />
+          </section>
+        </main>
+      ) : (
+        <main className="chat-workspace-shell">
+          <section className="workspace-stage">
+            <div className="workspace-stage-head">
+              <div>
+                <div className="eyebrow">Current workspace</div>
+                <h1>{view ? view.type : "Chat workspace"}</h1>
+                <p className="surface-summary">
+                  {view
+                    ? "Structured work surfaces generated from the conversation live here."
+                    : "Start a conversation to generate a work surface, client card, or next-step confirmation."}
+                </p>
+              </div>
+              <div className="status-pills">
+                <span className={`pill ${modeStatusTone}`}>{statusLabel}</span>
+              </div>
             </div>
-          </div>
-          <SectionComponent
-            tenantId={tenantId}
-            view={view ?? { type: "GuidanceCard", data: {}, selectable_items: [] }}
-            busy={busy}
-            dispatch={dispatchSectionPlan}
-            onPrompt={(prompt) => void submit(prompt)}
-            onAction={(action, label) => void runDirectAction(action, label)}
-            onExport={handleExport}
-          />
-        </section>
+            <div className="workspace-stage-body">
+              {view ? (
+                <div className="workspace-surface-card">
+                  <ViewRenderer
+                    view={view}
+                    onPrompt={(prompt) => void submit(prompt)}
+                    onAction={(action, label) => void runDirectAction(action, label)}
+                    tenantId={tenantId}
+                  />
+                </div>
+              ) : (
+                <section className="card workspace-empty">
+                  <div className="eyebrow">No workspace yet</div>
+                  <h2>Ask a question to generate the first work surface</h2>
+                  <p>
+                    Try opening a client, planning work for the next 30 days, or asking for a notice review.
+                  </p>
+                </section>
+              )}
+            </div>
+          </section>
 
-        {chatOpen ? (
-          <aside className="chat-drawer" aria-label="Chat drawer">
+          <aside className="chat-panel" aria-label="Chat workspace">
             <div className="chat-header">
               <div className="chat-header-label">Conversation</div>
               <div className="chat-header-date">Sarah's work queue</div>
-              <button
-                type="button"
-                className="chat-close"
-                aria-label="Close chat"
-                onClick={() => setChatOpen(false)}
-              >
-                ×
-              </button>
             </div>
             <div className="stream" ref={streamRef}>
               {messages.map((message) => (
@@ -441,10 +487,10 @@ export function App() {
               </button>
             </form>
           </aside>
-        ) : null}
-      </main>
+        </main>
+      )}
 
-      {drilldownOpen && view ? (
+      {appMode === "chat" && drilldownOpen && view ? (
         <div
           className="drilldown-overlay"
           role="dialog"
