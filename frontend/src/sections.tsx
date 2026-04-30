@@ -10,7 +10,7 @@
 // plan resolves to a ViewEnvelope, App overlays a drilldown card on top of
 // the active section.
 
-import { ReactElement, useMemo, useState } from "react";
+import { Dispatch, ReactElement, SetStateAction, useMemo, useState } from "react";
 import type { DirectAction, ViewEnvelope } from "./types";
 import {
   DirectActionHandler,
@@ -43,13 +43,16 @@ import {
   statusBadgeLabel,
   statusBadgeTone,
   taxTypeOptions,
-  triageBucketMeta,
-  triageCounts,
-  triageOrder,
   urgencyOf,
+  type EntityType,
+  type MockActivity,
+  type MockBlocker,
   type MockClient,
   type MockDeadline,
+  type MockReminder,
+  type MockRule,
   type ReminderStep,
+  type TaxType,
   type TriageBucket
 } from "./mockData";
 
@@ -70,6 +73,15 @@ export type SectionContext = {
   onAction: DirectActionHandler;
   onExport?: (scope: string, format: "csv" | "pdf") => void;
   onOpenClient?: (clientId: string) => void;
+  onNotify?: (text: string, tone?: "green" | "blue" | "gold" | "red") => void;
+  deadlines?: MockDeadline[];
+  setDeadlines?: Dispatch<SetStateAction<MockDeadline[]>>;
+  rules?: MockRule[];
+  setRules?: Dispatch<SetStateAction<MockRule[]>>;
+  resolvedRuleIds?: string[];
+  setResolvedRuleIds?: Dispatch<SetStateAction<string[]>>;
+  changedDeadlineIds?: string[];
+  setChangedDeadlineIds?: Dispatch<SetStateAction<string[]>>;
 };
 
 export const sectionMeta: Record<SectionId, { eyebrow: string; title: string; subtitle: string }> = {
@@ -77,7 +89,7 @@ export const sectionMeta: Record<SectionId, { eyebrow: string; title: string; su
     eyebrow: "Today",
     title: "Portfolio board",
     subtitle:
-      "Every active deadline triaged into Notice, Waiting on info, Track, or Watchlist — one place to scan."
+      "Start with work now, then resolve blockers, then review anything that still needs a CPA decision."
   },
   calendar: {
     eyebrow: "Calendar",
@@ -113,6 +125,10 @@ function StatusBadge({ deadline }: { deadline: MockDeadline }) {
   return <span className={`badge-pill ${toneClass}`}>{statusBadgeLabel(deadline)}</span>;
 }
 
+function ChangeBadge({ kind = "changed" }: { kind?: "new" | "changed" }) {
+  return <span className={`badge-pill ${kind === "new" ? "green" : "blue"} thin`}>{kind === "new" ? "New" : "Changed"}</span>;
+}
+
 function UrgencyDot({ deadline }: { deadline: MockDeadline }) {
   const u = urgencyOf(deadline);
   return <span className={`urgency-dot ${u}`} aria-hidden="true" />;
@@ -123,10 +139,314 @@ function formatDaysRemaining(d: MockDeadline) {
   if (d.status === "extension-approved" || d.status === "extension-filed") {
     return d.extended_due_date ? `Extended → ${d.extended_due_date}` : "Extension on file";
   }
-  if (d.days_remaining < 0) return `${Math.abs(d.days_remaining)}d overdue`;
+  if (d.days_remaining < 0) return `Overdue by ${Math.abs(d.days_remaining)} day${Math.abs(d.days_remaining) === 1 ? "" : "s"}`;
   if (d.days_remaining === 0) return "Due today";
   if (d.days_remaining === 1) return "Due tomorrow";
   return `In ${d.days_remaining} days`;
+}
+
+type ClientRecord = {
+  client: MockClient;
+  deadlines: MockDeadline[];
+  blockers: MockBlocker[];
+  reminders: MockReminder[];
+  activity: MockActivity[];
+};
+
+type ImportDecision = "keep" | "merge" | "skip";
+
+type ImportApplyResult = {
+  records: ClientRecord[];
+  created: number;
+  merged: number;
+  skipped: number;
+};
+
+function buildInitialClientRecords(): ClientRecord[] {
+  return mockClients.map((client) => ({
+    client,
+    deadlines: mockDeadlines
+      .filter((deadline) => deadline.client_id === client.id)
+      .sort((a, b) => a.days_remaining - b.days_remaining),
+    blockers: mockBlockers.filter((blocker) => blocker.client_id === client.id),
+    reminders: mockReminders
+      .filter((reminder) => reminder.client_id === client.id)
+      .sort((a, b) => a.send_at.localeCompare(b.send_at)),
+    activity: mockActivity.filter((entry) =>
+      [client.name, client.name.split(" ")[0]].some((needle) => entry.detail.includes(needle))
+    )
+  }));
+}
+
+function normalizeStates(raw: string): string[] {
+  return raw
+    .split(/[;,]/)
+    .map((value) => value.trim())
+    .filter(Boolean);
+}
+
+function normalizeTaxes(raw: string): TaxType[] {
+  return raw
+    .split(/[;,]/)
+    .map((value) => value.trim())
+    .filter(Boolean) as TaxType[];
+}
+
+function makeDueDate(offsetDays: number) {
+  const anchor = new Date("2026-04-26T00:00:00");
+  anchor.setDate(anchor.getDate() + offsetDays);
+  return anchor.toISOString().slice(0, 10);
+}
+
+function makeDueLabel(offsetDays: number) {
+  const dueDate = new Date(`${makeDueDate(offsetDays)}T00:00:00`);
+  return dueDate.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+}
+
+function deriveDeadlinesForImportedClient(
+  client: MockClient,
+  rowIndex: number
+): MockDeadline[] {
+  const taxOffsets: Record<TaxType, number> = {
+    "Payroll (941)": 4,
+    "Sales/Use": 11,
+    "State income": 19,
+    "Federal income": 19,
+    Franchise: 24,
+    Property: 35,
+    Excise: 29,
+    "PTE election": 9
+  };
+
+  return client.applicable_taxes.slice(0, 4).map((taxType, index) => {
+    const offset = taxOffsets[taxType] ?? 21 + index * 7;
+    const jurisdiction =
+      taxType === "Federal income" || taxType === "Payroll (941)"
+        ? "Federal"
+        : client.states[Math.min(index, client.states.length - 1)] || client.states[0] || "Federal";
+    return {
+      id: `imp-dl-${client.id}-${index + 1}`,
+      client_id: client.id,
+      client_name: client.name,
+      tax_type: taxType,
+      jurisdiction,
+      due_date: makeDueDate(offset),
+      due_label: makeDueLabel(offset),
+      days_remaining: offset,
+      status: taxType === "Payroll (941)" ? "pending" : "pending",
+      extension_status: null,
+      extended_due_date: null,
+      source: `Derived from imported ${client.entity_type} profile · row ${rowIndex + 1}`,
+      blocker_reason: null,
+      assignee: rowIndex % 2 === 0 ? "Sarah Johnson" : "Maya Chen"
+    };
+  });
+}
+
+function buildImportedRecordFromRow(row: string[], rowIndex: number): ClientRecord {
+  const client: MockClient = {
+    id: `imp-cl-${rowIndex + 1}-${row[0].toLowerCase().replace(/[^a-z0-9]+/g, "-")}`,
+    name: row[0],
+    entity_type: row[1] as EntityType,
+    states: normalizeStates(row[2]),
+    primary_contact_name: row[3],
+    primary_contact_email: row[4],
+    applicable_taxes: normalizeTaxes(row[5]),
+    active_deadlines: 0,
+    blocked_deadlines: 0,
+    extensions_filed: 0,
+    risk_label:
+      row[6].toLowerCase().includes("blocking") || row[6].toLowerCase().includes("nexus")
+        ? "watch"
+        : null,
+    notes: row[6]
+  };
+
+  const deadlines = deriveDeadlinesForImportedClient(client, rowIndex);
+  client.active_deadlines = deadlines.length;
+
+  const activity: MockActivity[] = [
+    {
+      id: `imp-act-${client.id}`,
+      when: "Just now",
+      actor: "DueDateHQ",
+      action: "imported client",
+      detail: `Imported ${client.name} from CSV and derived ${deadlines.length} deadlines.`,
+      category: "import"
+    }
+  ];
+
+  return {
+    client,
+    deadlines,
+    blockers: [],
+    reminders: [],
+    activity
+  };
+}
+
+function applyImportedRowsToRecords(
+  current: ClientRecord[],
+  rows: string[][],
+  decisions: ImportDecision[]
+): ImportApplyResult {
+  const next = [...current];
+  let created = 0;
+  let merged = 0;
+  let skipped = 0;
+
+  rows.forEach((row, rowIndex) => {
+    const decision = decisions[rowIndex];
+    if (decision === "skip") {
+      skipped += 1;
+      return;
+    }
+
+    const imported = buildImportedRecordFromRow(row, rowIndex);
+    const existingIndex = next.findIndex((record) => record.client.name === row[0]);
+
+    if (decision === "merge" && existingIndex >= 0) {
+      const existing = next[existingIndex];
+      const mergedClient: MockClient = {
+        ...existing.client,
+        states: Array.from(new Set([...existing.client.states, ...imported.client.states])),
+        applicable_taxes: Array.from(
+          new Set([...existing.client.applicable_taxes, ...imported.client.applicable_taxes])
+        ) as TaxType[],
+        notes: `${existing.client.notes} Imported update: ${imported.client.notes}`
+      };
+      const mergedDeadlines = [
+        ...existing.deadlines,
+        ...imported.deadlines.filter(
+          (deadline) =>
+            !existing.deadlines.some(
+              (currentDeadline) =>
+                currentDeadline.tax_type === deadline.tax_type &&
+                currentDeadline.jurisdiction === deadline.jurisdiction
+            )
+        )
+      ].sort((a, b) => a.days_remaining - b.days_remaining);
+
+      mergedClient.active_deadlines = mergedDeadlines.filter((d) => d.status !== "completed").length;
+      mergedClient.blocked_deadlines = existing.blockers.length;
+      mergedClient.extensions_filed = mergedDeadlines.filter((d) => d.extension_status).length;
+
+      next[existingIndex] = {
+        client: mergedClient,
+        deadlines: mergedDeadlines,
+        blockers: existing.blockers,
+        reminders: existing.reminders,
+        activity: [
+          {
+            id: `merge-${existing.client.id}-${rowIndex}`,
+            when: "Just now",
+            actor: "DueDateHQ",
+            action: "merged import row",
+            detail: `Merged imported CSV data into ${existing.client.name}.`,
+            category: "import"
+          },
+          ...existing.activity
+        ]
+      };
+      merged += 1;
+      return;
+    }
+
+    next.push(imported);
+    created += 1;
+  });
+
+  return { records: next, created, merged, skipped };
+}
+
+function bucketForBoard(deadline: MockDeadline, resolvedRuleIds: string[] = []): "notice" | "waiting" | "track" | "watchlist" | "completed" {
+  if (deadline.status === "completed") return "completed";
+  if (deadline.status === "blocked") return "waiting";
+  if (deadline.notice_rule_id && !resolvedRuleIds.includes(deadline.notice_rule_id)) return "notice";
+  if (deadline.status === "extension-filed" || deadline.status === "extension-approved") return "watchlist";
+  if (deadline.days_remaining < 0) return "notice";
+  if (deadline.days_remaining <= 3) return "notice";
+  if (deadline.days_remaining <= 30) return "track";
+  return "watchlist";
+}
+
+function applyRuleToDeadline(deadline: MockDeadline, ruleId: string): MockDeadline {
+  if (deadline.notice_rule_id !== ruleId) return deadline;
+
+  if (ruleId === "rule-001") {
+    return {
+      ...deadline,
+      due_date: "2026-05-30",
+      due_label: "May 30",
+      days_remaining: 34,
+      source: "FTB Notice 2026-04 — applied to client filing calendar",
+      notice_rule_id: undefined
+    };
+  }
+
+  if (ruleId === "rule-002") {
+    return {
+      ...deadline,
+      status: "blocked",
+      blocker_reason: "Nexus confirmation required after TX threshold change",
+      source: "TX Comptroller 34-Tex.Admin.Code §3.286 — pending nexus confirmation",
+      notice_rule_id: undefined
+    };
+  }
+
+  if (ruleId === "rule-005") {
+    return {
+      ...deadline,
+      source: "OR DOR Rate Notice 2026-Q2 — rate update applied to template",
+      notice_rule_id: undefined
+    };
+  }
+
+  return {
+    ...deadline,
+    notice_rule_id: undefined
+  };
+}
+
+function summarizeRuleImpact(before: MockDeadline, after: MockDeadline) {
+  if (before.due_date !== after.due_date) {
+    return `${before.tax_type} moved from ${before.due_label} to ${after.due_label}.`;
+  }
+  if (before.status !== after.status && after.status === "blocked") {
+    return `${before.tax_type} now requires CPA confirmation and is blocked.`;
+  }
+  if (before.source !== after.source) {
+    return `${before.tax_type} source and filing guidance were updated.`;
+  }
+  return `${before.tax_type} was updated for this client.`;
+}
+
+function normalizeDeadlineMatcher(value: string) {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+}
+
+function findBlockerForDeadline(deadline: MockDeadline) {
+  if (deadline.status !== "blocked" && !deadline.blocker_reason) {
+    return null;
+  }
+  const normalizedTaxType = normalizeDeadlineMatcher(deadline.tax_type);
+  const normalizedSource = normalizeDeadlineMatcher(deadline.source);
+  const normalizedReason = normalizeDeadlineMatcher(deadline.blocker_reason || "");
+
+  return (
+    mockBlockers.find((blocker) => {
+      if (blocker.client_id !== deadline.client_id) return false;
+      const normalizedLabel = normalizeDeadlineMatcher(blocker.deadline_label);
+      const normalizedBlockerReason = normalizeDeadlineMatcher(blocker.reason);
+
+      if (normalizedReason && normalizedBlockerReason.includes(normalizedReason)) return true;
+      if (normalizedReason && normalizedReason.includes(normalizedBlockerReason)) return true;
+      if (normalizedLabel.includes(normalizedTaxType) || normalizedSource.includes(normalizedLabel)) return true;
+      if (normalizedTaxType.includes("payroll 941") && normalizedLabel.includes("941")) return true;
+      if (normalizedTaxType.includes("state income") && normalizedLabel.includes("form 100")) return true;
+      return false;
+    }) || null
+  );
 }
 
 // ============================================================================
@@ -146,54 +466,164 @@ function formatDaysRemaining(d: MockDeadline) {
 //     under Updates → Activity tab now, not on this board.
 // ============================================================================
 
-export function TodaySection({ onAction, onExport }: SectionContext) {
+export function TodaySection({
+  onExport,
+  onNotify,
+  deadlines: deadlineStore,
+  setDeadlines: setDeadlineStore,
+  rules: ruleStore,
+  resolvedRuleIds = [],
+  changedDeadlineIds = []
+}: SectionContext) {
+  type DisplayLane = "work" | "blocked" | "review";
+  type TodayViewMode = "board" | "archive";
   const [stateFilter, setStateFilter] = useState<string>("All");
   const [taxFilter, setTaxFilter] = useState<string>("All");
+  const [selectedDeadlineId, setSelectedDeadlineId] = useState<string | null>(null);
+  const [activeLane, setActiveLane] = useState<DisplayLane>("work");
+  const [viewMode, setViewMode] = useState<TodayViewMode>("board");
+
+  const deadlines = deadlineStore ?? mockDeadlines;
+  const rules = ruleStore ?? mockRules;
+  const rulesById = useMemo(() => Object.fromEntries(rules.map((rule) => [rule.id, rule])), [rules]);
+
+  function updateDeadline(deadlineId: string, updater: (deadline: MockDeadline) => MockDeadline) {
+    if (!setDeadlineStore) return;
+    setDeadlineStore((current) =>
+      current.map((deadline) => (deadline.id === deadlineId ? updater(deadline) : deadline))
+    );
+  }
 
   const filtered = useMemo(() => {
-    return mockDeadlines.filter((d) => {
+    return deadlines.filter((d) => {
       if (d.status === "completed") return false;
       if (stateFilter !== "All" && d.jurisdiction !== stateFilter) return false;
       if (taxFilter !== "All" && d.tax_type !== taxFilter) return false;
       return true;
     });
-  }, [stateFilter, taxFilter]);
+  }, [deadlines, stateFilter, taxFilter]);
 
-  const counts = useMemo(() => triageCounts(filtered), [filtered]);
-
-  // Group by bucket. Within each bucket, sort by days_remaining ascending
-  // (most urgent first).
   const grouped = useMemo(() => {
-    const map: Record<TriageBucket, MockDeadline[]> = {
-      notice: [],
-      waiting: [],
-      track: [],
-      watchlist: []
+    const map: Record<DisplayLane, MockDeadline[]> = {
+      work: [],
+      blocked: [],
+      review: []
     };
     filtered.forEach((d) => {
-      const b = bucketOfDeadline(d);
-      if (b !== "completed") map[b].push(d);
+      const b = bucketForBoard(d, resolvedRuleIds);
+      if (b === "completed") return;
+      if (b === "track") {
+        map.work.push(d);
+        return;
+      }
+      if (b === "waiting") {
+        map.blocked.push(d);
+        return;
+      }
+      map.review.push(d);
     });
-    triageOrder.forEach((b) => {
-      map[b].sort((a, b2) => a.days_remaining - b2.days_remaining);
+    (Object.keys(map) as DisplayLane[]).forEach((lane) => {
+      map[lane].sort((a, b2) => a.days_remaining - b2.days_remaining);
     });
     return map;
-  }, [filtered]);
+  }, [filtered, resolvedRuleIds]);
+
+  const archivedDeadlines = useMemo(
+    () => deadlines.filter((deadline) => deadline.status === "completed").sort((a, b) => a.client_name.localeCompare(b.client_name)),
+    [deadlines]
+  );
 
   const activeCount = (stateFilter !== "All" ? 1 : 0) + (taxFilter !== "All" ? 1 : 0);
+  const selectedDeadline =
+    selectedDeadlineId ? filtered.find((deadline) => deadline.id === selectedDeadlineId) || null : null;
+  const activeItems = grouped[activeLane];
+  const laneMeta: Record<DisplayLane, { title: string; helper: string; tone: "ink" | "gold" | "blue" }> = {
+    work: {
+      title: "Work now",
+      helper: "Items you can actively move today without waiting on more information.",
+      tone: "ink"
+    },
+    blocked: {
+      title: "Blocked",
+      helper: "Items that cannot move until a document, confirmation, or profile detail arrives.",
+      tone: "gold"
+    },
+    review: {
+      title: "Needs review",
+      helper: "Items still being watched or reviewed before they become active work.",
+      tone: "blue"
+    }
+  };
+  const activeMeta = laneMeta[activeLane];
+  const laneGuide: Record<
+    DisplayLane,
+    { boundary: string; moveWhen: string; nextStep: string }
+  > = {
+    work: {
+      boundary: "Show only the items a CPA or staff member can actively advance right now.",
+      moveWhen: "Keep it here while the work is moving. Move it out only when it becomes blocked or no longer needs action.",
+      nextStep: "Work the soonest due item first, then batch similar state or client work together."
+    },
+    blocked: {
+      boundary: "Show only the items that are waiting on supporting documents, confirmation, or missing profile data.",
+      moveWhen: "Move it back into Work now once the missing information has been received and confirmed.",
+      nextStep: "Identify exactly what is missing and who needs to provide it."
+    },
+    review: {
+      boundary: "Use this lane for things that are not active work yet but still need a CPA decision or monitoring.",
+      moveWhen: "Move it into Work now once the change is confirmed to matter for the portfolio.",
+      nextStep: "Review the source or watch condition, then either promote it into work or leave it under review."
+    }
+  };
+  const laneCounts: Record<DisplayLane, number> = {
+    work: grouped.work.length,
+    blocked: grouped.blocked.length,
+    review: grouped.review.length
+  };
+
+  function renderTodayReason(deadline: MockDeadline) {
+    if (activeLane === "blocked") {
+      return <span className="badge-pill gold">{deadline.blocker_reason || "Waiting on client"}</span>;
+    }
+    if (activeLane === "review") {
+      if (bucketOfDeadline(deadline) === "notice") {
+        return <span className="badge-pill red">{noticeReason(deadline)}</span>;
+      }
+      if (deadline.extension_status) {
+        return (
+          <span className="badge-pill blue">
+            {deadline.extension_status === "approved"
+              ? `Extended → ${deadline.extended_due_date}`
+              : deadline.extension_status === "submitted"
+                ? `Filed → ${deadline.extended_due_date}`
+                : "Extension denied"}
+          </span>
+        );
+      }
+      return <span className="badge-pill blue">Watch item</span>;
+    }
+    return <StatusBadge deadline={deadline} />;
+  }
 
   return (
     <div className="section-shell">
-      {/* KPI strip = the 4 bucket counts */}
-      <div className="kpi-strip">
-        {triageOrder.map((b) => {
-          const meta = triageBucketMeta[b];
+      <div className="kpi-strip lane-selector-strip">
+        {(Object.keys(laneMeta) as DisplayLane[]).map((lane) => {
+          const meta = laneMeta[lane];
           return (
-            <div key={b} className={`kpi-tile bucket bucket-${b} tone-${meta.tone}`}>
+            <button
+              type="button"
+              key={lane}
+              className={`kpi-tile bucket bucket-${lane} tone-${meta.tone} ${activeLane === lane ? "active" : ""}`}
+              onClick={() => {
+                setActiveLane(lane);
+                setSelectedDeadlineId(null);
+              }}
+            >
               <span className="kpi-label">{meta.title}</span>
-              <span className="kpi-value">{counts[b]}</span>
+              <span className="kpi-value">{laneCounts[lane]}</span>
               <span className="kpi-delta">{meta.helper}</span>
-            </div>
+            </button>
           );
         })}
       </div>
@@ -209,6 +639,16 @@ export function TodaySection({ onAction, onExport }: SectionContext) {
           </span>
         </div>
         <div className="toolbar-spacer" />
+        <button
+          type="button"
+          className={`ghost-btn ${viewMode === "archive" ? "active" : ""}`}
+          onClick={() => {
+            setViewMode((current) => (current === "archive" ? "board" : "archive"));
+            setSelectedDeadlineId(null);
+          }}
+        >
+          {viewMode === "archive" ? "Back to board" : `View archive${archivedDeadlines.length ? ` (${archivedDeadlines.length})` : ""}`}
+        </button>
         <FilterPopover
           activeCount={activeCount}
           onClear={() => {
@@ -241,99 +681,185 @@ export function TodaySection({ onAction, onExport }: SectionContext) {
         </button>
       </section>
 
-      {/* The board: 4 buckets stacked top-to-bottom. */}
-      {triageOrder.map((b) => {
-        const meta = triageBucketMeta[b];
-        const items = grouped[b];
-        return (
-          <section key={b} className={`card bucket-card bucket-${b} tone-${meta.tone}`}>
-            <div className="bucket-head">
-              <div>
-                <span className={`bucket-tag tone-${meta.tone}`}>{meta.title}</span>
-                <span className="bucket-count">
-                  {items.length} item{items.length === 1 ? "" : "s"}
-                </span>
-              </div>
-              <span className="bucket-helper">{meta.helper}</span>
-            </div>
-            {items.length === 0 ? (
-              <EmptyStateRow
-                title="Empty bucket"
-                body={`No deadlines currently classified as ${meta.title.toLowerCase()}.`}
-              />
-            ) : (
-              <div className="bucket-table" role="table">
-                <div className="bucket-table-head" role="row">
-                  <span role="columnheader">Client</span>
-                  <span role="columnheader">Tax type</span>
-                  <span role="columnheader">Jurisdiction</span>
-                  <span role="columnheader">Due</span>
-                  <span role="columnheader">Status / reason</span>
-                  <span role="columnheader">Assignee</span>
-                  <span role="columnheader" aria-label="Actions" />
+      {viewMode === "board" ? (
+        <section className={`card bucket-card bucket-${activeLane} tone-${activeMeta.tone}`}>
+          <div className="bucket-head">
+            <div className="bucket-title-row">
+              <span className={`bucket-tag tone-${activeMeta.tone}`}>{activeMeta.title}</span>
+              <span className="bucket-count">
+                {activeItems.length} item{activeItems.length === 1 ? "" : "s"}
+              </span>
+              <div className="lane-help-shell">
+                <button type="button" className="lane-help-trigger" aria-label={`How ${activeMeta.title} works`}>
+                  ?
+                </button>
+                <div className="lane-help-tooltip" role="tooltip">
+                  <strong>Boundary</strong>
+                  <p>{laneGuide[activeLane].boundary}</p>
+                  <strong>Move it when</strong>
+                  <p>{laneGuide[activeLane].moveWhen}</p>
+                  <strong>Next step</strong>
+                  <p>{laneGuide[activeLane].nextStep}</p>
                 </div>
-                {items.map((d) => (
-                  <div key={d.id} className="bucket-table-row" role="row">
-                    <span className="bucket-cell client" role="cell">
-                      <UrgencyDot deadline={d} />
-                      <span>{d.client_name}</span>
-                    </span>
-                    <span className="bucket-cell" role="cell">
-                      {d.tax_type}
-                    </span>
-                    <span className="bucket-cell" role="cell">
-                      {d.jurisdiction}
-                    </span>
-                    <span className="bucket-cell due" role="cell">
-                      <strong>{d.due_label}</strong>
-                      <span className="muted">{formatDaysRemaining(d)}</span>
-                    </span>
-                    <span className="bucket-cell reason" role="cell">
-                      {b === "notice" ? (
-                        <span className="badge-pill red">{noticeReason(d)}</span>
-                      ) : b === "waiting" ? (
-                        <span className="badge-pill gold">
-                          {d.blocker_reason || "Waiting on client"}
-                        </span>
-                      ) : b === "watchlist" && d.extension_status ? (
-                        <span className="badge-pill blue">
-                          {d.extension_status === "approved"
-                            ? `Extended → ${d.extended_due_date}`
-                            : d.extension_status === "submitted"
-                              ? `Filed → ${d.extended_due_date}`
-                              : "Extension denied"}
-                        </span>
-                      ) : (
-                        <StatusBadge deadline={d} />
-                      )}
-                    </span>
-                    <span className="bucket-cell" role="cell">
-                      {d.assignee}
-                    </span>
-                    <span className="bucket-cell actions" role="cell">
-                      <button
-                        type="button"
-                        className="link-btn"
-                        onClick={() =>
-                          onAction(
-                            {
-                              type: "agent_input",
-                              text: `Open ${d.client_name} ${d.tax_type} ${d.jurisdiction} deadline`
-                            },
-                            `Open ${d.client_name} deadline`
-                          )
-                        }
-                      >
-                        Open
-                      </button>
+              </div>
+            </div>
+            <span className="bucket-helper">{activeMeta.helper}</span>
+          </div>
+          {activeItems.length === 0 ? (
+            <EmptyStateRow
+              title="Empty lane"
+              body={`No deadlines currently classified as ${activeMeta.title.toLowerCase()}.`}
+            />
+          ) : (
+            <div className="bucket-table" role="table">
+              <div className="bucket-table-head" role="row">
+                <span role="columnheader">Client</span>
+                <span role="columnheader">Tax type</span>
+                <span role="columnheader">Jurisdiction</span>
+                <span role="columnheader">Due</span>
+                <span role="columnheader">Status / reason</span>
+                <span role="columnheader">Assignee</span>
+                <span role="columnheader" aria-label="Actions" />
+              </div>
+              {activeItems.map((d) => (
+                <div key={d.id} className="bucket-table-row" role="row">
+                  <span className="bucket-cell client" role="cell">
+                    <UrgencyDot deadline={d} />
+                    <span>{d.client_name}</span>
+                    {changedDeadlineIds.includes(d.id) ? <ChangeBadge /> : null}
+                  </span>
+                  <span className="bucket-cell" role="cell">
+                    {d.tax_type}
+                  </span>
+                  <span className="bucket-cell" role="cell">
+                    {d.jurisdiction}
+                  </span>
+                  <span className="bucket-cell due" role="cell">
+                    <strong>{d.due_label}</strong>
+                    <span className="muted">{formatDaysRemaining(d)}</span>
+                  </span>
+                  <span className="bucket-cell reason" role="cell">{renderTodayReason(d)}</span>
+                  <span className="bucket-cell" role="cell">
+                    {d.assignee}
+                  </span>
+                  <span className="bucket-cell actions" role="cell">
+                    <button
+                      type="button"
+                      className="link-btn"
+                      onClick={() => setSelectedDeadlineId(d.id)}
+                    >
+                      View details
+                    </button>
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+      ) : (
+        <section className="card archive-card">
+          <div className="archive-head">
+            <div>
+              <div className="eyebrow">Archive</div>
+              <h3>Completed or manually archived items</h3>
+              <p className="muted">Keep evidence of what moved off the active board without mixing it into live work.</p>
+            </div>
+          </div>
+          {archivedDeadlines.length === 0 ? (
+            <EmptyStateRow title="No archived items yet" body="Archived work will stay here so the CPA can prove what moved off the board." />
+          ) : (
+            <ul className="archive-list">
+              {archivedDeadlines.map((deadline) => (
+                <li key={deadline.id} className="archive-row">
+                  <div className="archive-copy">
+                    <strong>{deadline.client_name}</strong>
+                    <span className="muted">
+                      {deadline.tax_type} · {deadline.jurisdiction} · {deadline.due_label}
                     </span>
                   </div>
-                ))}
-              </div>
-            )}
-          </section>
-        );
-      })}
+                  <div className="archive-actions">
+                    <button
+                      type="button"
+                      className="link-btn"
+                      onClick={() => setSelectedDeadlineId(deadline.id)}
+                    >
+                      View details
+                    </button>
+                    <button
+                      type="button"
+                      className="ghost-btn"
+                      onClick={() =>
+                        updateDeadline(deadline.id, (current) => ({
+                          ...current,
+                          status: "pending"
+                        }))
+                      }
+                    >
+                      Restore
+                    </button>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+      )}
+
+      {selectedDeadline ? (
+        <DeadlineDetailCard
+          deadline={selectedDeadline}
+          linkedRule={selectedDeadline.notice_rule_id ? rulesById[selectedDeadline.notice_rule_id] || null : null}
+          title="Deadline detail"
+          subtitle="Inspect the source, reminders, blockers, and extension state for this item."
+          onClose={() => setSelectedDeadlineId(null)}
+          onPrimaryAction={
+            activeLane === "blocked"
+              ? () => {
+                  updateDeadline(selectedDeadline.id, (deadline) => ({
+                    ...deadline,
+                    status: "pending",
+                    blocker_reason: null
+                  }));
+                  setSelectedDeadlineId(null);
+                  onNotify?.(`Resolved blocker for ${selectedDeadline.client_name}; item moved to Work now.`, "green");
+                }
+              : activeLane === "review"
+                ? () => {
+                    updateDeadline(selectedDeadline.id, (deadline) => ({
+                      ...deadline,
+                      notice_rule_id: undefined
+                    }));
+                    setSelectedDeadlineId(null);
+                    onNotify?.(`Moved ${selectedDeadline.client_name} into Work now for active follow-up.`, "blue");
+                  }
+                : () => {
+                    updateDeadline(selectedDeadline.id, (deadline) => ({
+                      ...deadline,
+                      status: "blocked",
+                      blocker_reason: deadline.blocker_reason || "Waiting on CPA follow-up"
+                    }));
+                    setSelectedDeadlineId(null);
+                    onNotify?.(`Moved ${selectedDeadline.client_name} into Blocked.`, "gold");
+                  }
+          }
+          primaryLabel={
+            activeLane === "blocked"
+              ? "Resolve blocker"
+              : activeLane === "review"
+                ? "Move to work now"
+                : "Mark blocked"
+          }
+          onArchive={() => {
+            updateDeadline(selectedDeadline.id, (deadline) => ({
+              ...deadline,
+              status: "completed"
+            }));
+            setSelectedDeadlineId(null);
+            setViewMode("archive");
+            onNotify?.(`Archived ${selectedDeadline.client_name} from the board.`, "blue");
+          }}
+        />
+      ) : null}
     </div>
   );
 }
@@ -348,16 +874,27 @@ const horizonChoices = [
   { id: "quarter", label: "Quarter", days: 90 }
 ];
 
-export function CalendarSection({ onPrompt, onExport, onAction }: SectionContext) {
+export function CalendarSection({
+  onExport,
+  onNotify,
+  deadlines: deadlineStore,
+  rules: ruleStore,
+  changedDeadlineIds = []
+}: SectionContext) {
   const [horizon, setHorizon] = useState<string>("next-30");
   const [stateFilter, setStateFilter] = useState<string>("All");
   const [taxFilter, setTaxFilter] = useState<string>("All");
   const [urgencyFilter, setUrgencyFilter] = useState<string>("All");
+  const [selectedDeadlineId, setSelectedDeadlineId] = useState<string | null>(null);
 
   const horizonDef = horizonChoices.find((h) => h.id === horizon)!;
 
+  const deadlines = deadlineStore ?? mockDeadlines;
+  const rules = ruleStore ?? mockRules;
+  const rulesById = useMemo(() => Object.fromEntries(rules.map((rule) => [rule.id, rule])), [rules]);
+
   const filtered = useMemo(() => {
-    return mockDeadlines.filter((d) => {
+    return deadlines.filter((d) => {
       if (d.status === "completed") return false;
       if (d.days_remaining < 0) return false;
       if (d.days_remaining > horizonDef.days) return false;
@@ -366,13 +903,31 @@ export function CalendarSection({ onPrompt, onExport, onAction }: SectionContext
       if (urgencyFilter !== "All" && urgencyOf(d) !== urgencyFilter) return false;
       return true;
     });
-  }, [horizon, stateFilter, taxFilter, urgencyFilter, horizonDef.days]);
+  }, [deadlines, horizon, stateFilter, taxFilter, urgencyFilter, horizonDef.days]);
 
   const groups = groupDeadlinesByWeek(filtered);
   const activeCount =
     (stateFilter !== "All" ? 1 : 0) +
     (taxFilter !== "All" ? 1 : 0) +
     (urgencyFilter !== "All" ? 1 : 0);
+  const selectedDeadline =
+    selectedDeadlineId ? filtered.find((deadline) => deadline.id === selectedDeadlineId) || null : null;
+  const planFacts = [
+    { label: "Urgent", value: String(filtered.filter((d) => urgencyOf(d) === "urgent").length) },
+    { label: "This week", value: String(filtered.filter((d) => d.days_remaining <= 7).length) },
+    { label: "States", value: String(new Set(filtered.map((d) => d.jurisdiction)).size) },
+    { label: "Clients", value: String(new Set(filtered.map((d) => d.client_id)).size) }
+  ];
+  const calendarGuide = {
+    boundary:
+      "Use Calendar to understand when work clusters happen across the next 7 to 90 days.",
+    bestFor:
+      "Finding crowded weeks, spotting state-specific clusters, and planning staffing before deadlines bunch together.",
+    notFor:
+      "Deciding whether something belongs in Notice, Track, Waiting on info, or Watchlist. That belongs on Today.",
+    nextStep:
+      "Pick a crowded week, review the due items, then go back to Today if one of them should become active work now."
+  };
 
   return (
     <div className="section-shell">
@@ -435,28 +990,49 @@ export function CalendarSection({ onPrompt, onExport, onAction }: SectionContext
         </button>
         <button
           type="button"
-          className="primary"
-          onClick={() => onPrompt(`Plan workload across ${horizonDef.label.toLowerCase()}`)}
+          className="ghost-btn"
+          onClick={() => onNotify?.(`Calendar export prepared for ${horizonDef.label}.`, "green")}
         >
-          Plan workload
+          Save view
         </button>
       </section>
 
-      <section className="card calendar-overview">
-        <div className="calendar-pill-row">
-          {quickViewOptions.map((q) => {
-            const count = mockDeadlines.filter(
-              (d) => d.days_remaining >= 0 && d.days_remaining <= q.days && d.status !== "completed"
-            ).length;
-            return (
-              <div key={q.id} className="calendar-pill">
-                <span>{q.label}</span>
-                <strong>{count}</strong>
+      <div className="calendar-focus-grid">
+        <section className="card calendar-overview">
+          <div className="card-header calendar-overview-header">
+            <div>
+              <div className="eyebrow">Time horizon</div>
+              <h2>{`What is coming up in ${horizonDef.label.toLowerCase()}`}</h2>
+              <p className="card-description">
+                Calendar is for time distribution, not lane triage. Use Today to decide what to work first.
+              </p>
+            </div>
+            <div className="lane-help-shell">
+              <button type="button" className="lane-help-trigger" aria-label="How to use Calendar">
+                ?
+              </button>
+              <div className="lane-help-tooltip" role="tooltip">
+                <strong>Boundary</strong>
+                <p>{calendarGuide.boundary}</p>
+                <strong>Best for</strong>
+                <p>{calendarGuide.bestFor}</p>
+                <strong>Not for</strong>
+                <p>{calendarGuide.notFor}</p>
+                <strong>Next step</strong>
+                <p>{calendarGuide.nextStep}</p>
               </div>
-            );
-          })}
-        </div>
-      </section>
+            </div>
+          </div>
+          <div className="local-plan-grid">
+            {planFacts.map((fact) => (
+              <div key={fact.label} className="local-plan-fact">
+                <span>{fact.label}</span>
+                <strong>{fact.value}</strong>
+              </div>
+            ))}
+          </div>
+        </section>
+      </div>
 
       {groups.length === 0 ? (
         <section className="card">
@@ -482,37 +1058,45 @@ export function CalendarSection({ onPrompt, onExport, onAction }: SectionContext
                     <span>{formatDaysRemaining(d)}</span>
                   </div>
                   <div className="calendar-event-body">
-                    <div className="calendar-event-title">
-                      {d.client_name}
-                      <span className="badge-pill blue thin">{d.tax_type}</span>
-                      <span className="badge-pill thin">{d.jurisdiction}</span>
+                    <div className="calendar-event-top">
+                      <div className="calendar-event-title">
+                        {d.client_name}
+                        {changedDeadlineIds.includes(d.id) ? <ChangeBadge /> : null}
+                        <span className="badge-pill blue thin">{d.tax_type}</span>
+                        <span className="badge-pill thin">{d.jurisdiction}</span>
+                      </div>
+                      <span className="calendar-event-hook">{formatDaysRemaining(d)}</span>
                     </div>
                     <div className="calendar-event-meta">
                       <StatusBadge deadline={d} />
                       <span className="muted">{d.source}</span>
                     </div>
+                    <div className="calendar-event-actions">
+                      <button
+                        type="button"
+                        className="link-btn calendar-inline-action"
+                        onClick={() => setSelectedDeadlineId(d.id)}
+                      >
+                        View details
+                      </button>
+                    </div>
                   </div>
-                  <button
-                    type="button"
-                    className="link-btn"
-                    onClick={() =>
-                      onAction(
-                        {
-                          type: "agent_input",
-                          text: `Open ${d.client_name} ${d.tax_type} ${d.jurisdiction} deadline`
-                        },
-                        `Open ${d.client_name}`
-                      )
-                    }
-                  >
-                    Open
-                  </button>
                 </li>
               ))}
             </ul>
           </section>
         ))
       )}
+
+      {selectedDeadline ? (
+        <DeadlineDetailCard
+          deadline={selectedDeadline}
+          linkedRule={selectedDeadline.notice_rule_id ? rulesById[selectedDeadline.notice_rule_id] || null : null}
+          title="Calendar detail"
+          subtitle="Source, reminders, blockers, and extension state."
+          onClose={() => setSelectedDeadlineId(null)}
+        />
+      ) : null}
     </div>
   );
 }
@@ -521,20 +1105,59 @@ export function CalendarSection({ onPrompt, onExport, onAction }: SectionContext
 // Clients
 // ============================================================================
 
-export function ClientsSection({ onExport }: SectionContext) {
+export function ClientsSection({ onExport, onNotify, deadlines: deadlineStore, changedDeadlineIds = [] }: SectionContext) {
   const [importMode, setImportMode] = useState(false);
   const [selectedClientId, setSelectedClientId] = useState<string | null>(null);
+  const [records, setRecords] = useState<ClientRecord[]>(() => buildInitialClientRecords());
+  const deadlines = deadlineStore ?? mockDeadlines;
+
+  const recordsWithLiveDeadlines = useMemo(
+    () =>
+      records.map((record) => {
+        const liveDeadlines = deadlines
+          .filter((deadline) => deadline.client_id === record.client.id)
+          .sort((a, b) => a.due_date.localeCompare(b.due_date));
+        const extensionCount = liveDeadlines.filter((deadline) => deadline.extension_status).length;
+        const blockedCount = liveDeadlines.filter((deadline) => deadline.status === "blocked").length;
+        const activeCount = liveDeadlines.filter((deadline) => deadline.status !== "completed").length;
+        return {
+          ...record,
+          client: {
+            ...record.client,
+            active_deadlines: activeCount,
+            blocked_deadlines: blockedCount,
+            extensions_filed: extensionCount
+          },
+          deadlines: liveDeadlines
+        };
+      }),
+    [records, deadlines]
+  );
 
   if (importMode) {
-    return <ImportWizard onClose={() => setImportMode(false)} />;
+    return (
+      <ImportWizard
+        onClose={() => setImportMode(false)}
+        onApply={(rows, decisions) => {
+          const result = applyImportedRowsToRecords(records, rows, decisions);
+          setRecords(result.records);
+          onNotify?.(
+            `Import complete: ${result.created} created, ${result.merged} merged, ${result.skipped} skipped.`,
+            "green"
+          );
+          return result;
+        }}
+      />
+    );
   }
 
   if (selectedClientId) {
-    const client = mockClients.find((entry) => entry.id === selectedClientId);
-    if (client) {
+    const record = recordsWithLiveDeadlines.find((entry) => entry.client.id === selectedClientId);
+    if (record) {
       return (
         <ClientDetailSurface
-          client={client}
+          record={record}
+          changedDeadlineIds={changedDeadlineIds}
           onBack={() => setSelectedClientId(null)}
           onExport={onExport}
         />
@@ -544,6 +1167,8 @@ export function ClientsSection({ onExport }: SectionContext) {
 
   return (
     <ClientDirectory
+      records={recordsWithLiveDeadlines}
+      changedDeadlineIds={changedDeadlineIds}
       onExport={onExport}
       onImport={() => setImportMode(true)}
       onOpenClient={setSelectedClientId}
@@ -552,10 +1177,14 @@ export function ClientsSection({ onExport }: SectionContext) {
 }
 
 function ClientDirectory({
+  records,
+  changedDeadlineIds,
   onExport,
   onImport,
   onOpenClient
 }: {
+  records: ClientRecord[];
+  changedDeadlineIds: string[];
   onExport?: (scope: string, format: "csv" | "pdf") => void;
   onImport: () => void;
   onOpenClient: (clientId: string) => void;
@@ -567,7 +1196,7 @@ function ClientDirectory({
 
   const filtered = useMemo(() => {
     const needle = query.trim().toLowerCase();
-    return mockClients.filter((c) => {
+    return records.map((record) => record.client).filter((c) => {
       if (needle && !c.name.toLowerCase().includes(needle) && !c.primary_contact_name.toLowerCase().includes(needle))
         return false;
       if (stateFilter !== "All" && !c.states.includes(stateFilter)) return false;
@@ -577,7 +1206,7 @@ function ClientDirectory({
       if (riskFilter === "calm" && c.risk_label !== null) return false;
       return true;
     });
-  }, [query, stateFilter, entityFilter, riskFilter]);
+  }, [records, query, stateFilter, entityFilter, riskFilter]);
 
   const activeCount =
     (stateFilter !== "All" ? 1 : 0) + (entityFilter !== "All" ? 1 : 0) + (riskFilter !== "All" ? 1 : 0);
@@ -655,7 +1284,16 @@ function ClientDirectory({
           </div>
         ) : (
           filtered.map((c) => (
-            <ClientCardTile key={c.id} client={c} onOpenClient={onOpenClient} />
+            <ClientCardTile
+              key={c.id}
+              client={c}
+              hasChanged={
+                records
+                  .find((record) => record.client.id === c.id)
+                  ?.deadlines.some((deadline) => changedDeadlineIds.includes(deadline.id)) ?? false
+              }
+              onOpenClient={onOpenClient}
+            />
           ))
         )}
       </section>
@@ -748,11 +1386,18 @@ const sampleCsvRows: string[][] = [
   ]
 ];
 
-function ImportWizard({ onClose }: { onClose: () => void }) {
+function ImportWizard({
+  onClose,
+  onApply
+}: {
+  onClose: () => void;
+  onApply: (rows: string[][], decisions: ImportDecision[]) => ImportApplyResult;
+}) {
   const [step, setStep] = useState<1 | 2 | 3 | 4>(1);
   const [fileName, setFileName] = useState<string | null>(null);
   const [delimiter, setDelimiter] = useState(",");
   const [hasHeader, setHasHeader] = useState(true);
+  const [result, setResult] = useState<ImportApplyResult | null>(null);
 
   // Auto-detect column → field mapping. Re-derive when CSV changes; user can
   // override.
@@ -786,9 +1431,9 @@ function ImportWizard({ onClose }: { onClose: () => void }) {
     setStep(2);
   }
 
-  const created = decisions.filter((d) => d === "keep").length;
-  const merged = decisions.filter((d) => d === "merge").length;
-  const skipped = decisions.filter((d) => d === "skip").length;
+  const created = result?.created ?? 0;
+  const merged = result?.merged ?? 0;
+  const skipped = result?.skipped ?? 0;
 
   return (
     <div className="section-shell">
@@ -980,7 +1625,14 @@ function ImportWizard({ onClose }: { onClose: () => void }) {
             <button type="button" className="ghost-btn" onClick={() => setStep(2)}>
               Back
             </button>
-            <button type="button" className="primary" onClick={() => setStep(4)}>
+            <button
+              type="button"
+              className="primary"
+              onClick={() => {
+                setResult(onApply(sampleCsvRows, decisions));
+                setStep(4);
+              }}
+            >
               Apply import
             </button>
           </div>
@@ -1026,11 +1678,15 @@ function ImportWizard({ onClose }: { onClose: () => void }) {
 
 function ClientCardTile({
   client,
+  hasChanged,
   onOpenClient
 }: {
   client: MockClient;
+  hasChanged: boolean;
   onOpenClient: (clientId: string) => void;
 }) {
+  const visibleTaxes = client.applicable_taxes.slice(0, 3);
+  const hiddenTaxCount = Math.max(client.applicable_taxes.length - visibleTaxes.length, 0);
   return (
     <button
       type="button"
@@ -1051,6 +1707,7 @@ function ClientCardTile({
         ) : (
           <span className="badge-pill green">Calm</span>
         )}
+        {hasChanged ? <ChangeBadge /> : null}
       </div>
       <div className="client-tile-stats">
         <div>
@@ -1067,11 +1724,12 @@ function ClientCardTile({
         </div>
       </div>
       <div className="client-tile-taxes">
-        {client.applicable_taxes.map((t) => (
+        {visibleTaxes.map((t) => (
           <span key={t} className="badge-pill thin">
             {t}
           </span>
         ))}
+        {hiddenTaxCount > 0 ? <span className="badge-pill thin">+{hiddenTaxCount} more</span> : null}
       </div>
       <p className="client-tile-notes">{client.notes}</p>
       <div className="client-tile-foot">
@@ -1083,50 +1741,19 @@ function ClientCardTile({
 }
 
 function ClientDetailSurface({
-  client,
+  record,
+  changedDeadlineIds,
   onBack,
   onExport
 }: {
-  client: MockClient;
+  record: ClientRecord;
+  changedDeadlineIds: string[];
   onBack: () => void;
   onExport?: (scope: string, format: "csv" | "pdf") => void;
 }) {
-  const deadlines = useMemo(
-    () =>
-      mockDeadlines
-        .filter((deadline) => deadline.client_id === client.id)
-        .sort((a, b) => a.days_remaining - b.days_remaining),
-    [client.id]
-  );
-
-  const blockers = useMemo(
-    () => mockBlockers.filter((blocker) => blocker.client_id === client.id),
-    [client.id]
-  );
-
-  const reminders = useMemo(
-    () =>
-      mockReminders
-        .filter((reminder) => reminder.client_id === client.id)
-        .sort((a, b) => a.send_at.localeCompare(b.send_at)),
-    [client.id]
-  );
-
-  const extensionDeadlines = useMemo(
-    () => deadlines.filter((deadline) => deadline.extension_status),
-    [deadlines]
-  );
-
-  const recentActivity = useMemo(() => {
-    const nameNeedles = [
-      client.name,
-      client.name.split(" ").slice(0, 2).join(" "),
-      client.name.split(" ")[0]
-    ].filter(Boolean);
-    return mockActivity.filter((entry) =>
-      nameNeedles.some((needle) => entry.detail.includes(needle))
-    );
-  }, [client.name]);
+  const { client, deadlines, blockers, reminders, activity: recentActivity } = record;
+  const extensionDeadlines = deadlines.filter((deadline) => deadline.extension_status);
+  const hasChangedDeadlines = deadlines.some((deadline) => changedDeadlineIds.includes(deadline.id));
 
   return (
     <div className="section-shell client-detail-shell">
@@ -1137,7 +1764,10 @@ function ClientDetailSurface({
           </button>
           <div className="detail-toolbar-copy">
             <div className="eyebrow">Client detail</div>
-            <strong>{client.name}</strong>
+            <strong>
+              {client.name}
+              {hasChangedDeadlines ? <ChangeBadge /> : null}
+            </strong>
           </div>
         </div>
         <div className="detail-toolbar-actions">
@@ -1218,7 +1848,10 @@ function ClientDetailSurface({
                 {deadlines.map((deadline) => (
                   <div key={deadline.id} className="deadlines-table-row" role="row">
                     <span className="deadlines-cell" role="cell">
-                      {deadline.tax_type}
+                      <span className="deadline-cell-title">
+                        {deadline.tax_type}
+                        {changedDeadlineIds.includes(deadline.id) ? <ChangeBadge /> : null}
+                      </span>
                     </span>
                     <span className="deadlines-cell" role="cell">
                       {deadline.jurisdiction}
@@ -1367,6 +2000,169 @@ function ClientDetailSurface({
   );
 }
 
+function DeadlineDetailCard({
+  deadline,
+  linkedRule,
+  title,
+  subtitle,
+  onClose,
+  onPrimaryAction,
+  primaryLabel,
+  onArchive
+}: {
+  deadline: MockDeadline;
+  linkedRule: MockRule | null;
+  title: string;
+  subtitle: string;
+  onClose: () => void;
+  onPrimaryAction?: () => void;
+  primaryLabel?: string;
+  onArchive?: () => void;
+}) {
+  const linkedReminders = mockReminders
+    .filter((reminder) => reminder.deadline_id === deadline.id)
+    .sort((a, b) => a.send_at.localeCompare(b.send_at));
+  const linkedBlocker = findBlockerForDeadline(deadline);
+
+  return (
+    <section className="card deadline-detail-card">
+      <div className="detail-toolbar">
+        <div className="detail-toolbar-left">
+          <div className="detail-toolbar-copy">
+            <div className="eyebrow">{title}</div>
+            <strong>
+              {deadline.client_name} · {deadline.tax_type}
+            </strong>
+            <span className="muted">{subtitle}</span>
+          </div>
+        </div>
+        <div className="detail-toolbar-actions">
+          {onArchive ? (
+            <button type="button" className="ghost-btn" onClick={onArchive}>
+              Archive
+            </button>
+          ) : null}
+          {onPrimaryAction && primaryLabel ? (
+            <button type="button" className="primary" onClick={onPrimaryAction}>
+              {primaryLabel}
+            </button>
+          ) : null}
+          <button type="button" className="icon-btn" aria-label="Close detail" onClick={onClose}>
+            ×
+          </button>
+        </div>
+      </div>
+
+      <div className="client-detail-grid">
+        <div className="client-detail-main">
+          <section className="card detail-side-card">
+            <EyebrowHeader
+              eyebrow="Deadline"
+              title={`${deadline.tax_type} · ${deadline.jurisdiction}`}
+              subtitle={`${deadline.due_label} · ${formatDaysRemaining(deadline)}`}
+            />
+            <div className="profile-grid">
+              <div className="profile-block">
+                <span className="profile-label">Status</span>
+                <StatusBadge deadline={deadline} />
+              </div>
+              <div className="profile-block">
+                <span className="profile-label">Assignee</span>
+                <strong>{deadline.assignee}</strong>
+              </div>
+              <div className="profile-block">
+                <span className="profile-label">Source</span>
+                <span>{deadline.source}</span>
+              </div>
+              <div className="profile-block">
+                <span className="profile-label">Extension</span>
+                <span>
+                  {deadline.extension_status
+                    ? `${deadline.extension_status} → ${deadline.extended_due_date || "pending"}`
+                    : "No extension"}
+                </span>
+              </div>
+            </div>
+          </section>
+
+          {linkedRule ? (
+            <section className="card detail-side-card">
+              <EyebrowHeader
+                eyebrow="Rule change"
+                title={linkedRule.title}
+                subtitle={`${linkedRule.jurisdiction} · ${linkedRule.source}`}
+              />
+              <p>{linkedRule.summary}</p>
+              <div className="rule-diff">
+                <div className="diff-side before">
+                  <span className="diff-label">Before</span>
+                  <code>{linkedRule.diff_before}</code>
+                </div>
+                <span className="diff-arrow" aria-hidden="true">
+                  →
+                </span>
+                <div className="diff-side after">
+                  <span className="diff-label">After</span>
+                  <code>{linkedRule.diff_after}</code>
+                </div>
+              </div>
+            </section>
+          ) : null}
+        </div>
+
+        <div className="client-detail-rail">
+          <section className="card detail-side-card">
+            <EyebrowHeader
+              eyebrow="Reminders"
+              title="Queued reminder timeline"
+              subtitle="What is already scheduled for this deadline."
+            />
+            {linkedReminders.length === 0 ? (
+              <EmptyStateRow title="No reminders" body="No reminder has been queued for this item yet." />
+            ) : (
+              <ul className="mini-log">
+                {linkedReminders.map((reminder) => (
+                  <li key={reminder.id} className="mini-log-row">
+                    <strong>{reminderStepLabel(reminder.step)}</strong>
+                    <span className="muted">{channelLabel(reminder.channel)} · {reminder.status}</span>
+                    <span className="muted">
+                      {new Date(reminder.send_at).toLocaleString("en-US", {
+                        month: "short",
+                        day: "numeric",
+                        hour: "numeric",
+                        minute: "2-digit"
+                      })}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
+
+          <section className="card detail-side-card">
+            <EyebrowHeader
+              eyebrow="Blocker"
+              title="Blocking status"
+              subtitle="If this item is waiting on something, it will show here."
+            />
+            {linkedBlocker ? (
+              <ul className="mini-log">
+                <li className="mini-log-row">
+                  <strong>{linkedBlocker.reason}</strong>
+                  <span className="muted">Waiting on {linkedBlocker.waiting_on}</span>
+                  <span className="muted">{linkedBlocker.next_step}</span>
+                </li>
+              </ul>
+            ) : (
+              <EmptyStateRow title="No blocker" body="This deadline is not blocked right now." />
+            )}
+          </section>
+        </div>
+      </div>
+    </section>
+  );
+}
+
 // ============================================================================
 // Updates
 // ============================================================================
@@ -1387,9 +2183,25 @@ const updatesTabs: Array<{ key: UpdatesTab; label: string; description: string }
   }
 ];
 
-export function UpdatesSection({ onAction, onPrompt }: SectionContext) {
+export function UpdatesSection({
+  onNotify,
+  rules: ruleStore,
+  setRules: setRuleStore,
+  deadlines: deadlineStore,
+  setDeadlines: setDeadlineStore,
+  resolvedRuleIds = [],
+  setResolvedRuleIds,
+  setChangedDeadlineIds
+}: SectionContext) {
   const [tab, setTab] = useState<UpdatesTab>("rules");
   const activeMeta = updatesTabs.find((entry) => entry.key === tab)!;
+  const [localRules, setLocalRules] = useState<MockRule[]>(mockRules);
+  const [archivedRuleIds, setArchivedRuleIds] = useState<string[]>([]);
+  const rules = ruleStore ?? localRules;
+  const setRules = setRuleStore ?? setLocalRules;
+  const [selectedRuleId, setSelectedRuleId] = useState<string | null>(mockRules[0]?.id || null);
+  const visibleRules = rules.filter((rule) => !archivedRuleIds.includes(rule.id));
+  const selectedRule = selectedRuleId ? visibleRules.find((rule) => rule.id === selectedRuleId) || null : null;
 
   return (
     <div className="section-shell">
@@ -1439,7 +2251,51 @@ export function UpdatesSection({ onAction, onPrompt }: SectionContext) {
         </div>
       </section>
 
-      {tab === "rules" ? <RulesReview onAction={onAction} onPrompt={onPrompt} /> : null}
+      {tab === "rules" ? (
+        <RulesReview
+          rules={visibleRules}
+          deadlines={deadlineStore ?? mockDeadlines}
+          selectedRule={selectedRule}
+          onSelectRule={setSelectedRuleId}
+          onDismissRule={(ruleId) => {
+            setRules((current) =>
+              current.map((rule) => (rule.id === ruleId ? { ...rule, status: "dismissed" } : rule))
+            );
+            setResolvedRuleIds?.((current) => (current.includes(ruleId) ? current : [...current, ruleId]));
+            onNotify?.("Rule review dismissed. The change will not alter the current portfolio.", "gold");
+          }}
+          onApplyRule={(ruleId) => {
+            const changedIds: string[] = [];
+            setRules((current) =>
+              current.map((rule) => (rule.id === ruleId ? { ...rule, status: "auto-applied" } : rule))
+            );
+            setDeadlineStore?.((current) =>
+              current.map((deadline) => {
+                const next = applyRuleToDeadline(deadline, ruleId);
+                if (next !== deadline) {
+                  changedIds.push(deadline.id);
+                }
+                return next;
+              })
+            );
+            setResolvedRuleIds?.((current) => (current.includes(ruleId) ? current : [...current, ruleId]));
+            setChangedDeadlineIds?.((current) => [...new Set([...current, ...changedIds])]);
+            onNotify?.("Rule applied. Related items have been pushed back into the portfolio board.", "green");
+          }}
+          onReopenRule={(ruleId) => {
+            setRules((current) =>
+              current.map((rule) => (rule.id === ruleId ? { ...rule, status: "pending-review" } : rule))
+            );
+            setResolvedRuleIds?.((current) => current.filter((id) => id !== ruleId));
+            onNotify?.("Rule review reopened and sent back to Pending review.", "blue");
+          }}
+          onArchiveRule={(ruleId) => {
+            setArchivedRuleIds((current) => [...current, ruleId]);
+            if (selectedRuleId === ruleId) setSelectedRuleId(null);
+            onNotify?.("Rule review archived from the active queue.", "blue");
+          }}
+        />
+      ) : null}
       {tab === "activity" ? <ActivityMonitor /> : null}
     </div>
   );
@@ -1492,91 +2348,218 @@ function ActivityMonitor() {
   );
 }
 
-function RulesReview({ onAction, onPrompt }: { onAction: DirectActionHandler; onPrompt: (prompt: string) => void }) {
+function RulesReview({
+  rules,
+  deadlines,
+  selectedRule,
+  onSelectRule,
+  onDismissRule,
+  onApplyRule,
+  onReopenRule,
+  onArchiveRule
+}: {
+  rules: MockRule[];
+  deadlines: MockDeadline[];
+  selectedRule: MockRule | null;
+  onSelectRule: (ruleId: string) => void;
+  onDismissRule: (ruleId: string) => void;
+  onApplyRule: (ruleId: string) => void;
+  onReopenRule: (ruleId: string) => void;
+  onArchiveRule: (ruleId: string) => void;
+}) {
+  const impactRowsByRule = useMemo(() => {
+    return Object.fromEntries(
+      rules.map((rule) => {
+        const rows = mockDeadlines
+          .filter((base) => base.notice_rule_id === rule.id)
+          .map((base) => {
+            const current = deadlines.find((deadline) => deadline.id === base.id) ?? base;
+            return {
+              id: base.id,
+              clientName: base.client_name,
+              taxType: base.tax_type,
+              before: base.due_label,
+              after: current.due_label,
+              summary: summarizeRuleImpact(base, current),
+              changed: base.due_date !== current.due_date || base.status !== current.status || base.source !== current.source
+            };
+          });
+        return [rule.id, rows];
+      })
+    ) as Record<string, { id: string; clientName: string; taxType: string; before: string; after: string; summary: string; changed: boolean }[]>;
+  }, [rules, deadlines]);
+
   return (
-    <section className="card rules-card">
-      <ul className="rules-list">
-        {mockRules.map((rule) => (
-          <li key={rule.id} className={`rule-row status-${rule.status}`}>
-            <div className="rule-head">
-              <div>
-                <h3>{rule.title}</h3>
-                <span className="muted">
-                  {rule.jurisdiction} · {rule.source} · detected{" "}
-                  {new Date(rule.detected_at).toLocaleString("en-US", {
-                    month: "short",
-                    day: "numeric",
-                    hour: "numeric",
-                    minute: "2-digit"
-                  })}
+    <div className="section-shell">
+      <section className="card rules-card">
+        <ul className="rules-list">
+          {rules.map((rule) => (
+            <li
+              key={rule.id}
+              className={`rule-row status-${rule.status} ${selectedRule?.id === rule.id ? "selected" : ""}`}
+            >
+              <div className="rule-head">
+                <div>
+                  <h3>{rule.title}</h3>
+                  <span className="muted">
+                    {rule.jurisdiction} · {rule.source} · detected{" "}
+                    {new Date(rule.detected_at).toLocaleString("en-US", {
+                      month: "short",
+                      day: "numeric",
+                      hour: "numeric",
+                      minute: "2-digit"
+                    })}
+                  </span>
+                </div>
+                <span
+                  className={`badge-pill ${
+                    rule.status === "pending-review" ? "gold" : rule.status === "auto-applied" ? "green" : ""
+                  }`}
+                >
+                  {rule.status === "pending-review"
+                    ? "Pending review"
+                    : rule.status === "auto-applied"
+                      ? "Auto-applied"
+                      : "Dismissed"}
                 </span>
               </div>
-              <span
-                className={`badge-pill ${
-                  rule.status === "pending-review" ? "gold" : rule.status === "auto-applied" ? "green" : ""
-                }`}
-              >
-                {rule.status === "pending-review"
-                  ? "Pending review"
-                  : rule.status === "auto-applied"
-                    ? "Auto-applied"
-                    : "Dismissed"}
-              </span>
-            </div>
-            <p className="rule-summary">{rule.summary}</p>
-            <div className="rule-diff">
-              <div className="diff-side before">
-                <span className="diff-label">Before</span>
-                <code>{rule.diff_before}</code>
+              <p className="rule-summary">{rule.summary}</p>
+              <div className="rule-diff">
+                <div className="diff-side before">
+                  <span className="diff-label">Before</span>
+                  <code>{rule.diff_before}</code>
+                </div>
+                <span className="diff-arrow" aria-hidden="true">
+                  →
+                </span>
+                <div className="diff-side after">
+                  <span className="diff-label">After</span>
+                  <code>{rule.diff_after}</code>
+                </div>
               </div>
-              <span className="diff-arrow" aria-hidden="true">
-                →
-              </span>
-              <div className="diff-side after">
-                <span className="diff-label">After</span>
-                <code>{rule.diff_after}</code>
-              </div>
-            </div>
-            <div className="rule-foot">
-              <span className="muted">Affects {rule.affected_count} client{rule.affected_count === 1 ? "" : "s"}</span>
-              <div className="rule-actions">
-                {rule.status === "pending-review" ? (
-                  <>
-                    <button
-                      type="button"
-                      className="ghost-btn"
-                      onClick={() => onPrompt(`Dismiss rule change "${rule.title}" with a reason`)}
-                    >
-                      Dismiss
-                    </button>
-                    <button
-                      type="button"
-                      className="primary"
-                      onClick={() =>
-                        onAction(
-                          { type: "agent_input", text: `Apply rule change "${rule.title}" to affected clients` },
-                          `Apply ${rule.title}`
-                        )
-                      }
-                    >
-                      Apply to {rule.affected_count} client{rule.affected_count === 1 ? "" : "s"}
-                    </button>
-                  </>
-                ) : (
+              <div className="rule-foot">
+                <span className="muted">Affects {rule.affected_count} client{rule.affected_count === 1 ? "" : "s"}</span>
+                <div className="rule-row-actions">
                   <button
                     type="button"
                     className="link-btn"
-                    onClick={() => onPrompt(`Show source for "${rule.title}"`)}
+                    onClick={() => onSelectRule(selectedRule?.id === rule.id ? "" : rule.id)}
                   >
-                    View source
+                    {selectedRule?.id === rule.id
+                      ? "Close details"
+                      : rule.status === "pending-review"
+                        ? "Review details"
+                        : "View result"}
                   </button>
-                )}
+                  {rule.status === "pending-review" ? (
+                    <>
+                      <button
+                        type="button"
+                        className="ghost-btn compact"
+                        onClick={() => onDismissRule(rule.id)}
+                      >
+                        Dismiss
+                      </button>
+                      <button
+                        type="button"
+                        className="primary compact"
+                        onClick={() => onApplyRule(rule.id)}
+                      >
+                        Apply to {rule.affected_count} client{rule.affected_count === 1 ? "" : "s"}
+                      </button>
+                    </>
+                  ) : null}
+                  {(rule.status === "auto-applied" || rule.status === "dismissed") ? (
+                    <button
+                      type="button"
+                      className="link-btn"
+                      onClick={() => onArchiveRule(rule.id)}
+                    >
+                      Archive
+                    </button>
+                  ) : null}
+                </div>
               </div>
-            </div>
-          </li>
-        ))}
-      </ul>
-    </section>
+              {selectedRule?.id === rule.id ? (
+                <div className="rule-inline-detail">
+                  <div className="rule-inline-copy">
+                    <span className="eyebrow">Rule action</span>
+                    <strong>
+                      {rule.status === "pending-review"
+                        ? "Choose what to do with this change"
+                        : rule.status === "auto-applied"
+                          ? "Applied changes across affected clients"
+                          : "Dismissed from the current portfolio"}
+                    </strong>
+                    <p className="muted">
+                      {rule.status === "pending-review"
+                        ? "Apply it to the affected clients, or dismiss it if this rule should not change the current portfolio."
+                        : rule.status === "auto-applied"
+                          ? `This change has already been applied to ${rule.affected_count} client${rule.affected_count === 1 ? "" : "s"}.`
+                          : "This change has been dismissed and will not update the current portfolio."}
+                    </p>
+                  </div>
+                  <div className="rule-inline-actions">
+                    {rule.status === "pending-review" ? (
+                      <>
+                        <span className="badge-pill gold">Pending review</span>
+                      </>
+                    ) : (
+                      <>
+                        <span className={`badge-pill ${rule.status === "auto-applied" ? "green" : "gold"}`}>
+                          {rule.status === "auto-applied" ? "Applied" : "Dismissed"}
+                        </span>
+                        <button
+                          type="button"
+                          className="link-btn"
+                          onClick={() => onReopenRule(rule.id)}
+                        >
+                          Restore to review
+                        </button>
+                        <button
+                          type="button"
+                          className="ghost-btn"
+                          onClick={() => onArchiveRule(rule.id)}
+                        >
+                          Archive
+                        </button>
+                      </>
+                    )}
+                    <button
+                      type="button"
+                      className="icon-btn"
+                      aria-label="Close review details"
+                      onClick={() => onSelectRule("")}
+                    >
+                      ×
+                    </button>
+                  </div>
+                  {rule.status === "auto-applied" ? (
+                    <div className="rule-impact-list">
+                      {(impactRowsByRule[rule.id] ?? []).map((impact) => (
+                        <div key={impact.id} className="rule-impact-row">
+                          <div className="rule-impact-head">
+                            <strong>{impact.clientName}</strong>
+                            <span className="badge-pill blue thin">{impact.taxType}</span>
+                            {impact.changed ? <ChangeBadge /> : null}
+                          </div>
+                          <div className="rule-impact-copy">
+                            <span className="muted">
+                              {impact.before !== impact.after ? `${impact.before} → ${impact.after}` : impact.after}
+                            </span>
+                            <p>{impact.summary}</p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
+            </li>
+          ))}
+        </ul>
+      </section>
+    </div>
   );
 }
 
@@ -1590,7 +2573,7 @@ function RulesReview({ onAction, onPrompt }: { onAction: DirectActionHandler; on
 //   - Per-view export buttons → Today / Calendar / Clients toolbars
 // Settings only contains things you can flip, name, schedule, connect,
 // disconnect, invite, or remove.
-export function SettingsSection({ tenantId, onPrompt }: SectionContext) {
+export function SettingsSection({ tenantId, onNotify }: SectionContext) {
   // Local-only state — these are mock toggles. They look real but don't
   // round-trip to the backend yet (notify.config isn't whitelisted in
   // PlanExecutor). When that endpoint lands, replace setState with a
@@ -1811,7 +2794,11 @@ export function SettingsSection({ tenantId, onPrompt }: SectionContext) {
           ))}
         </ul>
         <div className="setting-foot">
-          <button type="button" className="primary" onClick={() => onPrompt("Invite a new team member")}>
+          <button
+            type="button"
+            className="primary"
+            onClick={() => onNotify?.("Invite flow staged locally. Backend invite endpoint not connected in this demo.", "blue")}
+          >
             + Invite member
           </button>
         </div>

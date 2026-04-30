@@ -14,6 +14,7 @@
 
 import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { bootstrapToday, executeAction, streamChat } from "./apiClient";
+import { mockDeadlines, mockRules } from "./mockData";
 import type {
   ActionPlan,
   ChatMessage,
@@ -72,7 +73,18 @@ export function App() {
   const [apiBootstrapped, setApiBootstrapped] = useState(false);
   const [drilldownOpen, setDrilldownOpen] = useState(false);
   const [backendState, setBackendState] = useState<"connecting" | "ready" | "degraded" | "offline">("connecting");
+  const [sectionNotice, setSectionNotice] = useState<{
+    id: string;
+    text: string;
+    tone: "green" | "blue" | "gold" | "red";
+  }[]>([]);
+  const [messagesOpen, setMessagesOpen] = useState(false);
+  const [portfolioDeadlines, setPortfolioDeadlines] = useState(() => mockDeadlines.map((d) => ({ ...d })));
+  const [portfolioRules, setPortfolioRules] = useState(() => mockRules.map((r) => ({ ...r })));
+  const [resolvedRuleIds, setResolvedRuleIds] = useState<string[]>([]);
+  const [changedDeadlineIds, setChangedDeadlineIds] = useState<string[]>([]);
   const streamRef = useRef<HTMLDivElement | null>(null);
+  const messageMenuRef = useRef<HTMLDivElement | null>(null);
 
   // Track recent visual contexts so the agent kernel knows what the CPA has
   // already seen when it decides what to render next.
@@ -121,6 +133,31 @@ export function App() {
     );
     scrollStream();
   }
+
+  function showSectionNotice(text: string, tone: "green" | "blue" | "gold" | "red" = "blue") {
+    setSectionNotice((current) => [{ id: id(), text, tone }, ...current].slice(0, 8));
+  }
+
+  function dismissSectionNotice(noticeId: string) {
+    setSectionNotice((current) => current.filter((notice) => notice.id !== noticeId));
+  }
+
+  useEffect(() => {
+    if (!messagesOpen) return;
+    function onDocClick(event: MouseEvent) {
+      if (!messageMenuRef.current) return;
+      if (!messageMenuRef.current.contains(event.target as Node)) setMessagesOpen(false);
+    }
+    function onKey(event: KeyboardEvent) {
+      if (event.key === "Escape") setMessagesOpen(false);
+    }
+    document.addEventListener("mousedown", onDocClick);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDocClick);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [messagesOpen]);
 
   // Pop the drilldown overlay only when the resolved envelope adds
   // information beyond what the active section already shows.
@@ -311,7 +348,10 @@ export function App() {
   // Export prompt — routed through chat so the backend's export.export plan
   // path is the one source of truth, but the user got there via a button.
   function handleExport(scope: string, format: "csv" | "pdf") {
-    void submit(`Generate a ${format.toUpperCase()} export for: ${scope}`, `Export ${scope}`);
+    showSectionNotice(
+      `${format.toUpperCase()} export prepared for ${scope}. In this demo, the export stays inside the dashboard flow.`,
+      "green"
+    );
   }
 
   function onSubmit(event: FormEvent) {
@@ -377,6 +417,46 @@ export function App() {
         </div>
         <div className="topbar-right">
           <div className="tenant-name">Johnson CPA PLLC</div>
+          <div className="message-shell" ref={messageMenuRef}>
+            <button
+              type="button"
+              className="message-trigger"
+              aria-label="Open page messages"
+              onClick={() => setMessagesOpen((current) => !current)}
+            >
+              <span className="message-icon" aria-hidden="true">◔</span>
+              {sectionNotice.length ? <span className="message-count">{sectionNotice.length}</span> : null}
+            </button>
+            {messagesOpen ? (
+              <div className="message-menu">
+                <div className="message-menu-head">
+                  <strong>Page messages</strong>
+                  <span>{sectionNotice.length} item{sectionNotice.length === 1 ? "" : "s"}</span>
+                </div>
+                {sectionNotice.length ? (
+                  <ul className="message-list">
+                    {sectionNotice.map((notice) => (
+                      <li key={notice.id} className={`message-row ${notice.tone}`}>
+                        <div className="message-row-copy">
+                          <span className="message-row-label">Current page</span>
+                          <p>{notice.text}</p>
+                        </div>
+                        <button
+                          type="button"
+                          className="ghost-btn"
+                          onClick={() => dismissSectionNotice(notice.id)}
+                        >
+                          Dismiss
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <div className="message-empty">No messages yet.</div>
+                )}
+              </div>
+            ) : null}
+          </div>
           <div className={`connection-pill ${backendState}`}>{statusLabel}</div>
           <div className="avatar">SJ</div>
         </div>
@@ -400,9 +480,28 @@ export function App() {
               view={view ?? { type: "GuidanceCard", data: {}, selectable_items: [] }}
               busy={busy}
               dispatch={dispatchSectionPlan}
-              onPrompt={(prompt) => void submit(prompt)}
-              onAction={(action, label) => void runDirectAction(action, label)}
+              onPrompt={() =>
+                showSectionNotice(
+                  "That action belongs to Chat mode. Use the Chat button in the top bar if you want to continue in the conversational workspace.",
+                  "blue"
+                )
+              }
+              onAction={() =>
+                showSectionNotice(
+                  "That action belongs to Chat mode. Use the Chat button in the top bar if you want to continue in the conversational workspace.",
+                  "blue"
+                )
+              }
               onExport={handleExport}
+              onNotify={showSectionNotice}
+              deadlines={portfolioDeadlines}
+              setDeadlines={setPortfolioDeadlines}
+              rules={portfolioRules}
+              setRules={setPortfolioRules}
+              resolvedRuleIds={resolvedRuleIds}
+              setResolvedRuleIds={setResolvedRuleIds}
+              changedDeadlineIds={changedDeadlineIds}
+              setChangedDeadlineIds={setChangedDeadlineIds}
             />
           </section>
         </main>
