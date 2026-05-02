@@ -2,9 +2,9 @@
 // Slim shell for the DueDateHQ "traditional" frontend (codex/frontend-core-flow).
 //
 // Information architecture (per duedatehq-frontend-skill/SKILL.md):
-//   - 5 top-level sections: Today / Calendar / Clients / Updates / Settings.
+//   - 4 top-level sections: Work / Clients / Review / Settings.
 //   - Section body renders rich, structured UI from mockData (sections.tsx).
-//   - Chat lives in a right-hand drawer (natural language only).
+//   - Ask lives as a tool entry, not as a top-level destination.
 //   - When chat resolves to a ViewEnvelope (ClientCard, ConfirmCard, etc.),
 //     App overlays a drilldown card on top of the active section.
 //
@@ -23,7 +23,7 @@ import type {
   VisualContext
 } from "./types";
 import { ViewRenderer } from "./cards";
-import { id, MessageBubble, UploadIcon } from "./coreUI";
+import { id, MessageBubble } from "./coreUI";
 import {
   appendBreadcrumb,
   buildQuickActions,
@@ -55,7 +55,7 @@ const SECTION_NATIVE_VIEWS = new Set([
 ]);
 
 export function App() {
-  const [currentSection, setCurrentSection] = useState<SectionId>("today");
+  const [currentSection, setCurrentSection] = useState<SectionId>("work");
   const [appMode, setAppMode] = useState<"dashboard" | "chat">("dashboard");
   const [messages, setMessages] = useState<ChatMessage[]>([
     { id: id(), role: "system", text: "Ask DueDateHQ — try 'Open Northwind Services' or 'Plan workload for next 30 days'." }
@@ -83,7 +83,6 @@ export function App() {
   const [portfolioRules, setPortfolioRules] = useState(() => mockRules.map((r) => ({ ...r })));
   const [resolvedRuleIds, setResolvedRuleIds] = useState<string[]>([]);
   const [changedDeadlineIds, setChangedDeadlineIds] = useState<string[]>([]);
-  const [importLaunchToken, setImportLaunchToken] = useState(0);
   const streamRef = useRef<HTMLDivElement | null>(null);
   const messageMenuRef = useRef<HTMLDivElement | null>(null);
 
@@ -388,50 +387,23 @@ export function App() {
           DueDate<em>HQ</em>
         </div>
         <div className="topbar-center">
-          <div className="mode-toggle" role="tablist" aria-label="Interface mode">
-            <button
-              type="button"
-              className={`mode-btn ${appMode === "dashboard" ? "active" : ""}`}
-              onClick={() => {
-                setAppMode("dashboard");
-                setDrilldownOpen(false);
-              }}
-            >
-              Dashboard
-            </button>
-            <button
-              type="button"
-              className={`mode-btn ${appMode === "chat" ? "active" : ""}`}
-              onClick={() => setAppMode("chat")}
-            >
-              Chat
-            </button>
-          </div>
-          {appMode === "dashboard" ? (
-            <SectionNav current={currentSection} onSelect={setCurrentSection} />
-          ) : (
-            <div className="workspace-mode-label">
-              <span className="eyebrow">Workspace</span>
-              <strong>Agent-driven work surface</strong>
-            </div>
-          )}
+          <SectionNav
+            current={currentSection}
+            onSelect={(section) => {
+              setCurrentSection(section);
+              setAppMode("dashboard");
+              setDrilldownOpen(false);
+            }}
+          />
         </div>
         <div className="topbar-right">
-          {appMode === "dashboard" ? (
-            <button
-              type="button"
-              className="topbar-import-btn"
-              onClick={() => {
-                setCurrentSection("clients");
-                setImportLaunchToken((current) => current + 1);
-              }}
-            >
-              <span className="topbar-import-icon" aria-hidden="true">
-                <UploadIcon />
-              </span>
-              <span>Import</span>
-            </button>
-          ) : null}
+          <button
+            type="button"
+            className={`topbar-ask-btn ${appMode === "chat" ? "active" : ""}`}
+            onClick={() => setAppMode((current) => (current === "chat" ? "dashboard" : "chat"))}
+          >
+            Ask
+          </button>
           <div className="tenant-name">Johnson CPA PLLC</div>
           <div className="message-shell" ref={messageMenuRef}>
             <button
@@ -487,9 +459,6 @@ export function App() {
                 <h1>{meta.title}</h1>
                 <p className="surface-summary">{meta.subtitle}</p>
               </div>
-              <div className="status-pills">
-                <span className={`pill ${modeStatusTone}`}>{statusLabel}</span>
-              </div>
             </div>
             <SectionComponent
               tenantId={tenantId}
@@ -518,7 +487,6 @@ export function App() {
               setResolvedRuleIds={setResolvedRuleIds}
               changedDeadlineIds={changedDeadlineIds}
               setChangedDeadlineIds={setChangedDeadlineIds}
-              importLaunchToken={importLaunchToken}
             />
           </section>
         </main>

@@ -1,0 +1,623 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DueDateHQ — Redesign Mockup v2</title>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#ffffff;--bg2:#f7f6f3;--bg3:#f4f1e9;
+  --txt:#1a1a18;--txt2:#6b6b66;--txt3:#9b9b96;
+  --b1:rgba(0,0,0,0.07);--b2:rgba(0,0,0,0.12);--b3:rgba(0,0,0,0.2);
+  --r-sm:6px;--r-md:8px;--r-lg:12px;
+  --danger-bg:#fde8e8;--danger-txt:#7a1f1f;
+  --warn-bg:#fdf3e2;--warn-txt:#7a5a08;
+  --info-bg:#e7effe;--info-txt:#1a3882;
+  --ok-bg:#e7f3e7;--ok-txt:#1e4e1e;
+  --neu-bg:#f0ede8;--neu-txt:#5a5a56;
+  --tax-bg:#ece9f6;--tax-txt:#3e3280;
+  --navy:#1b2030;--gold:#e8a020;
+}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;background:#e0ddd6;min-height:100vh;padding:24px;display:flex;justify-content:center}
+.ddh{background:var(--bg);border:0.5px solid var(--b1);border-radius:var(--r-lg);overflow:hidden;width:100%;max-width:1100px;box-shadow:0 2px 24px rgba(0,0,0,0.1)}
+
+/* Nav */
+nav{background:var(--navy);padding:0 20px;display:flex;align-items:center;height:46px}
+.logo{color:#fff;font-size:15px;font-weight:600;margin-right:28px;letter-spacing:-0.3px;flex-shrink:0}
+.logo em{color:var(--gold);font-style:normal}
+.tabs{display:flex;flex:1}
+.tab{color:rgba(255,255,255,0.5);font-size:13px;padding:0 14px;height:46px;display:flex;align-items:center;cursor:pointer;border-bottom:2px solid transparent;transition:color 0.1s;user-select:none;gap:5px}
+.tab:hover{color:rgba(255,255,255,0.8)}
+.tab.on{color:#fff;border-bottom-color:var(--gold)}
+.tab-badge{background:var(--gold);color:var(--navy);font-size:10px;font-weight:700;padding:1px 5px;border-radius:8px}
+.nav-right{display:flex;align-items:center;gap:10px}
+.ask-btn{background:transparent;border:1px solid rgba(255,255,255,0.22);color:rgba(255,255,255,0.85);font-size:12px;padding:4px 12px;border-radius:20px;cursor:pointer;font-family:inherit}
+.ask-btn:hover{border-color:rgba(255,255,255,0.45)}
+.firm{color:rgba(255,255,255,0.45);font-size:12px}
+
+/* Body */
+.body{background:var(--bg3);min-height:600px;padding:20px 24px;position:relative}
+.view{display:none}.view.on{display:block}
+
+/* Shared */
+.eyebrow{font-size:10px;color:var(--txt2);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:3px}
+.pg-title{font-size:20px;font-weight:600;color:var(--txt)}
+.pg-head{display:flex;justify-content:space-between;align-items:flex-end;margin-bottom:16px}
+.btn{background:var(--bg);border:0.5px solid var(--b2);color:var(--txt);font-size:12px;padding:6px 12px;border-radius:var(--r-sm);cursor:pointer;font-family:inherit;transition:background 0.1s}
+.btn:hover{background:var(--bg2)}
+.btn-primary{background:var(--navy);color:#fff;border-color:var(--navy)}
+.btn-primary:hover{opacity:0.88;background:var(--navy)}
+.btn-sm{font-size:11px;padding:4px 10px}
+.ch{font-size:10px;padding:2px 6px;border-radius:3px;display:inline-block;white-space:nowrap;font-weight:500}
+.ct{background:var(--tax-bg);color:var(--tax-txt)}
+.cj{background:var(--bg2);color:var(--txt2);border:0.5px solid var(--b2)}
+.cb{background:var(--danger-bg);color:var(--danger-txt)}
+.ca{background:var(--ok-bg);color:var(--ok-txt)}
+.cw2{background:var(--warn-bg);color:var(--warn-txt)}
+
+/* ===== WORK VIEW ===== */
+.sum{display:flex;gap:10px;margin-bottom:20px}
+.sc{background:var(--bg);border:0.5px solid var(--b1);border-radius:var(--r-md);padding:11px 14px;flex:1}
+.sc-l{font-size:10px;color:var(--txt2);text-transform:uppercase;letter-spacing:0.6px;margin-bottom:3px}
+.sc-v{font-size:22px;font-weight:600;color:var(--txt)}
+.sc-s{font-size:11px;color:var(--txt2);margin-top:1px}
+.sc.w .sc-v{color:#a06a08}
+
+.toolbar{display:flex;align-items:center;gap:8px;margin-bottom:12px;position:relative;z-index:10}
+
+/* Filter panel */
+.fp{position:absolute;top:38px;left:0;background:var(--bg);border:0.5px solid var(--b2);border-radius:var(--r-lg);padding:16px;width:540px;box-shadow:0 6px 24px rgba(0,0,0,0.13);display:none}
+.fp.open{display:block}
+.fp-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px}
+.fp-head-title{font-size:15px;font-weight:600;color:var(--txt)}
+.fp-clear{font-size:12px;color:#2563eb;cursor:pointer}
+.fp-lbl{font-size:10px;color:var(--txt2);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px}
+.fp-pills{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:14px}
+.fp-pill{font-size:12px;padding:4px 10px;border-radius:20px;border:0.5px solid var(--b2);background:var(--bg2);color:var(--txt);cursor:pointer;user-select:none;transition:all 0.1s}
+.fp-pill:hover{border-color:var(--b3)}
+.fp-pill.on{background:var(--navy);color:#fff;border-color:var(--navy)}
+
+/* Deadline table */
+.dtbl{background:var(--bg);border:0.5px solid var(--b1);border-radius:var(--r-lg);overflow:hidden;margin-bottom:14px}
+.dg{background:var(--bg2);padding:7px 14px;display:flex;justify-content:space-between;align-items:center;border-bottom:0.5px solid var(--b1)}
+.dg-d{font-size:12px;font-weight:600;color:var(--txt)}
+.dg-r{font-size:11px;color:var(--txt2)}
+.dcols{display:grid;grid-template-columns:172px 112px 54px 1fr 94px 70px;padding:5px 14px;font-size:10px;color:var(--txt3);letter-spacing:0.5px;text-transform:uppercase;border-bottom:0.5px solid var(--b1);gap:6px;align-items:center}
+.dr{display:grid;grid-template-columns:172px 112px 54px 1fr 94px 70px;align-items:center;padding:9px 14px;border-bottom:0.5px solid var(--b1);font-size:12px;gap:6px;cursor:pointer;transition:background 0.1s}
+.dr:last-child{border-bottom:none}
+.dr:hover{background:var(--bg2)}
+.dr.blk{background:#fff8f8}
+.dr.blk:hover{background:#fef2f2}
+.dr-c{font-weight:500;color:var(--txt);font-size:13px}
+.dr-a{font-size:11px;color:var(--txt2)}
+.dr-lk{font-size:11px;color:#2563eb;text-align:right}
+.alrt{background:#fdf6e4;border-bottom:0.5px solid #edda8a}
+.alrt-in{display:flex;align-items:center;gap:7px;padding:7px 14px 7px 20px;font-size:11px;color:#7a5a08}
+.alrt-dot{width:5px;height:5px;border-radius:50%;background:var(--gold);flex-shrink:0}
+.alrt-lk{color:#2563eb;cursor:pointer;margin-left:3px}
+
+/* ===== DEADLINE DETAIL ===== */
+.detail-view{display:none}
+.detail-view.on{display:block}
+.back-link{display:inline-flex;align-items:center;gap:5px;font-size:12px;color:#2563eb;cursor:pointer;margin-bottom:16px}
+.detail-head{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:20px}
+.detail-title{font-size:22px;font-weight:700;color:var(--txt);margin-bottom:3px}
+.detail-sub{font-size:13px;color:var(--txt2)}
+.detail-actions{display:flex;gap:8px;flex-shrink:0}
+.detail-grid{display:grid;grid-template-columns:1fr 340px;gap:16px}
+.detail-card{background:var(--bg);border:0.5px solid var(--b1);border-radius:var(--r-lg);padding:18px}
+.detail-card-lbl{font-size:10px;color:var(--txt2);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:12px}
+.detail-bigtext{font-size:26px;font-weight:700;color:var(--txt);margin-bottom:5px}
+.detail-date{font-size:13px;color:var(--txt2);margin-bottom:16px}
+.detail-fields{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.df{background:var(--bg2);border-radius:var(--r-sm);padding:10px 12px}
+.df-lbl{font-size:10px;color:var(--txt2);text-transform:uppercase;letter-spacing:0.4px;margin-bottom:5px}
+.df-val{font-size:14px;color:var(--txt);font-weight:500}
+.detail-right{display:flex;flex-direction:column;gap:12px}
+.rem-item{background:var(--bg2);border-radius:var(--r-sm);padding:11px 13px}
+.rem-title{font-size:13px;font-weight:600;color:var(--txt);margin-bottom:2px}
+.rem-sub{font-size:12px;color:var(--txt2)}
+
+/* ===== CLIENTS VIEW ===== */
+.cgrid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px}
+.cc{background:var(--bg);border:0.5px solid var(--b1);padding:13px 14px}
+.cc.hr{border-left:3px solid #c0392b;border-radius:0 var(--r-lg) var(--r-lg) 0}
+.cc.wt{border-left:3px solid var(--gold);border-radius:0 var(--r-lg) var(--r-lg) 0}
+.cc.cl{border-radius:var(--r-lg)}
+.cc-n{font-size:13px;font-weight:600;color:var(--txt);margin-bottom:1px}
+.cc-t{font-size:11px;color:var(--txt2);margin-bottom:9px}
+.cc-chips{display:flex;flex-wrap:wrap;gap:4px;margin-bottom:8px}
+.cc-ch{font-size:10px;padding:2px 7px;border-radius:3px;font-weight:500}
+.cf{background:var(--danger-bg);color:var(--danger-txt)}
+.cw{background:var(--warn-bg);color:var(--warn-txt)}
+.ci{background:var(--info-bg);color:var(--info-txt)}
+.ck{background:var(--neu-bg);color:var(--neu-txt)}
+.cc-counts{display:flex;gap:12px;font-size:11px;color:var(--txt2);margin-bottom:8px}
+.cc-counts strong{color:var(--txt);font-weight:600}
+.cc-foot{display:flex;justify-content:space-between;align-items:center;padding-top:9px;border-top:0.5px solid var(--b1)}
+.cc-who{font-size:11px;color:var(--txt2)}
+.cc-lk{font-size:11px;color:#2563eb;cursor:pointer}
+
+/* ===== IMPORT WIZARD ===== */
+.import-view{display:none}
+.import-view.on{display:block}
+.import-hd{background:var(--bg);border:0.5px solid var(--b1);border-radius:var(--r-lg);padding:18px 20px;margin-bottom:12px;display:flex;justify-content:space-between;align-items:flex-start}
+.import-title{font-size:18px;font-weight:700;color:var(--txt);margin-bottom:3px}
+.import-sub{font-size:12px;color:var(--txt2);max-width:580px}
+.import-steps{background:var(--bg);border:0.5px solid var(--b1);border-radius:var(--r-lg);padding:13px 20px;margin-bottom:12px;display:flex;align-items:center}
+.step-item{display:flex;align-items:center;gap:8px;flex:1}
+.step-num{width:24px;height:24px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600;flex-shrink:0}
+.step-num.done,.step-num.active{background:var(--navy);color:#fff}
+.step-num.pending{background:var(--bg2);color:var(--txt2);border:0.5px solid var(--b2)}
+.step-lbl{font-size:13px}
+.step-lbl.active{font-weight:600;color:var(--txt)}
+.step-lbl.pending{color:var(--txt2)}
+.step-conn{flex:1;height:0.5px;background:var(--b2);margin:0 8px;max-width:80px}
+.import-body{background:var(--bg);border:0.5px solid var(--b1);border-radius:var(--r-lg);padding:20px}
+.istep{display:none}
+.istep.on{display:block}
+.upload-area{border:1.5px dashed var(--b2);border-radius:var(--r-md);padding:36px 20px;text-align:center;cursor:pointer;transition:border-color 0.15s;margin-bottom:16px}
+.upload-area:hover{border-color:#2563eb}
+.upload-lbl{font-size:14px;font-weight:500;color:var(--txt);margin-bottom:4px}
+.upload-sub{font-size:12px;color:var(--txt2)}
+.src-tags{display:flex;gap:7px;justify-content:center;margin-top:12px;flex-wrap:wrap}
+.src-tag{font-size:11px;padding:3px 8px;border-radius:3px;background:var(--bg2);color:var(--txt2);border:0.5px solid var(--b2)}
+.map-tbl{width:100%;border-collapse:collapse;font-size:12px}
+.map-tbl th{text-align:left;font-size:10px;text-transform:uppercase;letter-spacing:0.5px;color:var(--txt2);padding:6px 10px;border-bottom:0.5px solid var(--b1)}
+.map-tbl td{padding:9px 10px;border-bottom:0.5px solid var(--b1);vertical-align:middle}
+.map-tbl tr:last-child td{border-bottom:none}
+.csv-col{font-family:monospace;font-size:11px;background:var(--bg2);padding:2px 6px;border-radius:3px;color:var(--txt)}
+.csv-sample{font-size:11px;color:var(--txt2);margin-top:2px}
+.map-arrow{color:var(--txt3);text-align:center;font-size:13px}
+.map-sel{background:var(--bg);border:0.5px solid var(--b2);border-radius:var(--r-sm);padding:5px 8px;font-size:12px;color:var(--txt);font-family:inherit;width:165px}
+.conf-auto{font-size:11px;color:#1e7a3e;font-weight:500}
+.conf-review{font-size:11px;color:#a06a08;font-weight:500}
+.rev-tbl{width:100%;border-collapse:collapse;font-size:12px}
+.rev-tbl th{text-align:left;font-size:10px;text-transform:uppercase;letter-spacing:0.5px;color:var(--txt2);padding:6px 10px;border-bottom:0.5px solid var(--b1)}
+.rev-tbl td{padding:9px 10px;border-bottom:0.5px solid var(--b1)}
+.rev-tbl tr:last-child td{border-bottom:none}
+.rev-tbl tbody tr:hover td{background:var(--bg2)}
+.row-ok{font-size:11px;color:#1e7a3e;font-weight:500}
+.row-warn{font-size:11px;color:#a06a08;font-weight:500}
+.import-done{text-align:center;padding:36px 20px}
+.done-check{width:46px;height:46px;border-radius:50%;background:var(--ok-bg);display:flex;align-items:center;justify-content:center;margin:0 auto 14px;font-size:20px;color:var(--ok-txt);font-weight:700}
+.done-title{font-size:18px;font-weight:700;color:var(--txt);margin-bottom:5px}
+.done-sub{font-size:13px;color:var(--txt2);margin-bottom:18px;max-width:440px;margin-left:auto;margin-right:auto}
+.step-footer{display:flex;justify-content:flex-end;gap:8px;margin-top:14px}
+
+/* ===== REVIEW VIEW ===== */
+.ri-box{background:var(--bg);border:0.5px solid var(--b1);border-radius:var(--r-lg);padding:15px 18px;margin-bottom:14px;display:flex;justify-content:space-between;align-items:center}
+.ri-title{font-size:15px;font-weight:600;color:var(--txt);margin-bottom:2px}
+.ri-sub{font-size:12px;color:var(--txt2)}
+.ri-meta{text-align:right;font-size:11px;color:var(--txt2);line-height:1.7}
+.ri-healthy{display:inline-block;background:var(--ok-bg);color:var(--ok-txt);font-size:11px;font-weight:500;padding:2px 8px;border-radius:20px}
+.rq-item{background:var(--bg);border:0.5px solid var(--b1);border-radius:var(--r-lg);padding:15px 18px;margin-bottom:10px;border-left:3px solid var(--gold)}
+.rq-item.auto-applied{border-left-color:#1e7a3e;opacity:0.78}
+.rq-top{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:5px}
+.rq-name{font-size:14px;font-weight:700;color:var(--txt)}
+.rq-src{font-size:11px;color:var(--txt2);margin-bottom:7px}
+.rq-status{font-size:11px;font-weight:500;white-space:nowrap;margin-left:12px;flex-shrink:0}
+.rq-status.pending{color:#a06a08}
+.rq-status.applied{color:#1e7a3e}
+.rq-body{font-size:12px;color:var(--txt2);margin-bottom:10px;line-height:1.5}
+.rq-tags{display:flex;gap:7px;margin-bottom:12px;flex-wrap:wrap}
+.rq-tag{font-size:11px;padding:3px 8px;border-radius:3px;background:var(--bg2);color:var(--txt);border:0.5px solid var(--b2)}
+.rq-tag strong{font-weight:500}
+.rq-foot{display:flex;justify-content:space-between;align-items:center}
+.rq-src-link{font-size:12px;color:#2563eb;cursor:pointer;font-weight:500}
+.rq-actions{display:flex;gap:7px}
+.section-divider{font-size:11px;font-weight:500;color:var(--txt2);text-transform:uppercase;letter-spacing:0.5px;margin:16px 0 8px}
+
+/* ===== SETTINGS ===== */
+.s-card{background:var(--bg);border:0.5px solid var(--b1);border-radius:var(--r-lg);padding:18px 20px;margin-bottom:12px}
+.s-lbl{font-size:10px;color:var(--txt2);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:3px}
+.s-title{font-size:15px;font-weight:600;color:var(--txt);margin-bottom:3px}
+.s-sub{font-size:12px;color:var(--txt2);margin-bottom:14px}
+.s-row{display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:0.5px solid var(--b1)}
+.s-row:last-of-type{border-bottom:none}
+.s-rl{font-size:13px;font-weight:500;color:var(--txt)}
+.s-rs{font-size:11px;color:var(--txt2);margin-top:1px}
+.s-input{background:var(--bg2);border:0.5px solid var(--b2);border-radius:var(--r-sm);padding:5px 10px;font-size:12px;color:var(--txt);min-width:180px;text-align:right;font-family:inherit}
+.s-input.mono{font-family:monospace;font-size:11px;color:var(--txt2)}
+.s-foot{display:flex;justify-content:space-between;align-items:center;margin-top:14px}
+</style>
+</head>
+<body>
+<div class="ddh">
+
+<nav>
+  <div class="logo">DueDate<em>HQ</em></div>
+  <div class="tabs">
+    <div class="tab on" onclick="goTab('work',this)">Work</div>
+    <div class="tab" onclick="goTab('clients',this)">Clients</div>
+    <div class="tab" onclick="goTab('review',this)">Review <span class="tab-badge">3</span></div>
+    <div class="tab" onclick="goTab('settings',this)">Settings</div>
+  </div>
+  <div class="nav-right">
+    <button class="ask-btn">Ask</button>
+    <span class="firm">Johnson CPA PLLC</span>
+  </div>
+</nav>
+
+<div class="body">
+
+<!-- ===== WORK ===== -->
+<div class="view on" id="v-work">
+  <div id="work-main">
+    <div class="sum">
+      <div class="sc"><div class="sc-l">This week</div><div class="sc-v">8</div><div class="sc-s">Actionable now</div></div>
+      <div class="sc w"><div class="sc-l">Blocked</div><div class="sc-v">3</div><div class="sc-s">Waiting on client</div></div>
+      <div class="sc"><div class="sc-l">Rule changes</div><div class="sc-v">3</div><div class="sc-s">Need CPA decision</div></div>
+      <div class="sc"><div class="sc-l">Next 30 days</div><div class="sc-v">23</div><div class="sc-s">Across 11 clients</div></div>
+    </div>
+    <div class="toolbar">
+      <button class="btn" id="fp-btn" onclick="toggleFP()">≡ Filter</button>
+      <button class="btn">↓ Export</button>
+      <button class="btn btn-sm" style="margin-left:auto">View archive (1)</button>
+      <!-- Filter panel -->
+      <div class="fp" id="fp">
+        <div class="fp-head">
+          <span class="fp-head-title">Filter</span>
+          <span class="fp-clear" onclick="clearFP()">Clear all</span>
+        </div>
+        <div class="fp-lbl">State</div>
+        <div class="fp-pills">
+          <span class="fp-pill on" onclick="togglePill(this)">All</span>
+          <span class="fp-pill" onclick="togglePill(this)">CA</span>
+          <span class="fp-pill" onclick="togglePill(this)">TX</span>
+          <span class="fp-pill" onclick="togglePill(this)">NY</span>
+          <span class="fp-pill" onclick="togglePill(this)">NJ</span>
+          <span class="fp-pill" onclick="togglePill(this)">WA</span>
+          <span class="fp-pill" onclick="togglePill(this)">MN</span>
+          <span class="fp-pill" onclick="togglePill(this)">WI</span>
+          <span class="fp-pill" onclick="togglePill(this)">IL</span>
+          <span class="fp-pill" onclick="togglePill(this)">IN</span>
+          <span class="fp-pill" onclick="togglePill(this)">OH</span>
+          <span class="fp-pill" onclick="togglePill(this)">MI</span>
+          <span class="fp-pill" onclick="togglePill(this)">MA</span>
+          <span class="fp-pill" onclick="togglePill(this)">NH</span>
+          <span class="fp-pill" onclick="togglePill(this)">CO</span>
+          <span class="fp-pill" onclick="togglePill(this)">UT</span>
+          <span class="fp-pill" onclick="togglePill(this)">ID</span>
+          <span class="fp-pill" onclick="togglePill(this)">OR</span>
+          <span class="fp-pill" onclick="togglePill(this)">FL</span>
+          <span class="fp-pill" onclick="togglePill(this)">NV</span>
+          <span class="fp-pill" onclick="togglePill(this)">AZ</span>
+          <span class="fp-pill" onclick="togglePill(this)">Federal</span>
+        </div>
+        <div class="fp-lbl">Tax type</div>
+        <div class="fp-pills">
+          <span class="fp-pill on" onclick="togglePill(this)">All</span>
+          <span class="fp-pill" onclick="togglePill(this)">Federal income</span>
+          <span class="fp-pill" onclick="togglePill(this)">State income</span>
+          <span class="fp-pill" onclick="togglePill(this)">Sales/Use</span>
+          <span class="fp-pill" onclick="togglePill(this)">Property</span>
+          <span class="fp-pill" onclick="togglePill(this)">Payroll (941)</span>
+          <span class="fp-pill" onclick="togglePill(this)">Franchise</span>
+          <span class="fp-pill" onclick="togglePill(this)">Excise</span>
+          <span class="fp-pill" onclick="togglePill(this)">PTE election</span>
+        </div>
+        <button class="btn btn-primary" onclick="closeFP()" style="width:110px">Done</button>
+      </div>
+    </div>
+    <div class="dtbl">
+      <div class="dg"><span class="dg-d">Apr 27 — May 3</span><span class="dg-r">This week · 8 deadlines</span></div>
+      <div class="alrt"><div class="alrt-in"><div class="alrt-dot"></div>CA FTB Notice 2026-04 — PTE deadline shifted Apr 30 → May 30. Affects Harbor Studio Partners.<span class="alrt-lk" onclick="goTab('review',document.querySelectorAll('.tab')[2])">Review & apply →</span></div></div>
+      <div class="dcols"><span>Client</span><span>Tax type</span><span>State</span><span>Status</span><span>Assignee</span><span></span></div>
+      <div class="dr blk" onclick="openDetail('Northwind Services LLC','Payroll 941','Federal','blocked','Maya Chen','IRS Pub 15 — Q1 2026 941 due Apr 30','No extension','IRS Pub 15 not received','Waiting on client to provide Q1 2026 payroll summary.')">
+        <span class="dr-c">Northwind Services LLC</span><span><span class="ch ct">Payroll 941</span></span><span><span class="ch cj">Federal</span></span><span><span class="ch cb">Blocked — IRS Pub 15 missing</span></span><span class="dr-a">Maya Chen</span><span class="dr-lk">Details →</span>
+      </div>
+      <div class="dr" onclick="openDetail('Harbor Studio Partners','PTE election','NY','active','Evan Malik','NY DTF — PTE annual election deadline','No extension','','')">
+        <span class="dr-c">Harbor Studio Partners</span><span><span class="ch ct">PTE election</span></span><span><span class="ch cj">NY</span></span><span><span class="ch ca">Active</span></span><span class="dr-a">Evan Malik</span><span class="dr-lk">Details →</span>
+      </div>
+      <div class="dr" onclick="openDetail('Northwind Services LLC','Sales/Use','CA','active','Maya Chen','CDTFA monthly filer','No extension','','')">
+        <span class="dr-c">Northwind Services LLC</span><span><span class="ch ct">Sales/Use</span></span><span><span class="ch cj">CA</span></span><span><span class="ch ca">Active</span></span><span class="dr-a">Maya Chen</span><span class="dr-lk">Details →</span>
+      </div>
+      <div class="dr" onclick="openDetail('Riverbend Manufacturing','Property','TX','active','Sarah Johnson','Harris County Appraisal District','No extension','','')">
+        <span class="dr-c">Riverbend Manufacturing</span><span><span class="ch ct">Property</span></span><span><span class="ch cj">TX</span></span><span><span class="ch ca">Active</span></span><span class="dr-a">Sarah Johnson</span><span class="dr-lk">Details →</span>
+      </div>
+      <div class="dr" onclick="openDetail('Kestrel Consulting Group','Payroll 941','Federal','active','Sarah Johnson','IRS — Q1 2026 941','No extension','','')">
+        <span class="dr-c">Kestrel Consulting Group</span><span><span class="ch ct">Payroll 941</span></span><span><span class="ch cj">Federal</span></span><span><span class="ch ca">Active</span></span><span class="dr-a">Sarah Johnson</span><span class="dr-lk">Details →</span>
+      </div>
+      <div class="dr" onclick="openDetail('Maple Hill Dental Group','Sales/Use','WI','active','Maya Chen','WI DOR — monthly','No extension','','')">
+        <span class="dr-c">Maple Hill Dental Group</span><span><span class="ch ct">Sales/Use</span></span><span><span class="ch cj">WI</span></span><span><span class="ch ca">Active</span></span><span class="dr-a">Maya Chen</span><span class="dr-lk">Details →</span>
+      </div>
+    </div>
+    <div class="dtbl">
+      <div class="dg"><span class="dg-d">May 1</span><span class="dg-r">In 5 days · 1 deadline</span></div>
+      <div class="dcols"><span>Client</span><span>Tax type</span><span>State</span><span>Status</span><span>Assignee</span><span></span></div>
+      <div class="dr" onclick="openDetail('Maple Hill Dental Group','State income','MN','active','Owen Patel','MN DOR — annual','No extension','','')">
+        <span class="dr-c">Maple Hill Dental Group</span><span><span class="ch ct">State income</span></span><span><span class="ch cj">MN</span></span><span><span class="ch ca">Active</span></span><span class="dr-a">Owen Patel</span><span class="dr-lk">Details →</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Deadline detail sub-view -->
+  <div class="detail-view" id="work-detail">
+    <div class="back-link" onclick="closeDetail()">← Back to work queue</div>
+    <div class="detail-head">
+      <div>
+        <div class="detail-title" id="d-title"></div>
+        <div class="detail-sub">Inspect the source, reminders, blockers, and extension state for this item.</div>
+      </div>
+      <div class="detail-actions">
+        <button class="btn">Archive</button>
+        <button class="btn btn-primary" id="d-action"></button>
+      </div>
+    </div>
+    <div class="detail-grid">
+      <div>
+        <div class="detail-card">
+          <div class="detail-card-lbl">Deadline</div>
+          <div class="detail-bigtext" id="d-big"></div>
+          <div class="detail-date">Apr 30 · In 4 days</div>
+          <div class="detail-fields">
+            <div class="df"><div class="df-lbl">Status</div><div class="df-val" id="d-status"></div></div>
+            <div class="df"><div class="df-lbl">Assignee</div><div class="df-val" id="d-assignee"></div></div>
+            <div class="df"><div class="df-lbl">Source</div><div class="df-val" id="d-source" style="font-size:12px"></div></div>
+            <div class="df"><div class="df-lbl">Extension</div><div class="df-val" id="d-ext"></div></div>
+          </div>
+        </div>
+      </div>
+      <div class="detail-right">
+        <div class="detail-card">
+          <div class="detail-card-lbl">Reminders</div>
+          <div style="font-size:17px;font-weight:700;color:var(--txt);margin-bottom:3px">Queued reminder timeline</div>
+          <div style="font-size:12px;color:var(--txt2);margin-bottom:10px">What is already scheduled for this deadline.</div>
+          <div class="rem-item"><div class="rem-title">Final-day push</div><div class="rem-sub">Email · scheduled</div><div class="rem-sub">Apr 29, 8:00 AM</div></div>
+        </div>
+        <div class="detail-card">
+          <div class="detail-card-lbl">Blocker</div>
+          <div style="font-size:17px;font-weight:700;color:var(--txt);margin-bottom:3px">Blocking status</div>
+          <div style="font-size:12px;color:var(--txt2);margin-bottom:10px">If this item is waiting on something, it will show here.</div>
+          <div id="d-blocker"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ===== CLIENTS ===== -->
+<div class="view" id="v-clients">
+  <div id="clients-main">
+    <div class="pg-head">
+      <div><div class="eyebrow">Clients</div><div class="pg-title">Client directory</div></div>
+      <div style="display:flex;gap:8px">
+        <button class="btn">Filter</button>
+        <button class="btn">Export</button>
+        <button class="btn btn-primary" onclick="showImport()">↑ Import</button>
+      </div>
+    </div>
+    <div class="cgrid">
+      <div class="cc hr"><div class="cc-n">Northwind Services LLC</div><div class="cc-t">LLC · CA, TX, NV</div><div class="cc-chips"><span class="cc-ch cf">Q2 941 doc missing</span><span class="cc-ch cw">CA nexus review</span></div><div class="cc-counts"><span><strong>3</strong> active</span><span><strong>2</strong> blocked</span></div><div class="cc-foot"><span class="cc-who">Maya Chen</span><span class="cc-lk">Details →</span></div></div>
+      <div class="cc wt"><div class="cc-n">Harbor Studio Partners</div><div class="cc-t">Partnership · NY, NJ</div><div class="cc-chips"><span class="cc-ch cw">PTE decision pending</span><span class="cc-ch ci">Federal ext filed</span></div><div class="cc-counts"><span><strong>2</strong> active</span><span><strong>0</strong> blocked</span></div><div class="cc-foot"><span class="cc-who">Evan Malik</span><span class="cc-lk">Details →</span></div></div>
+      <div class="cc wt"><div class="cc-n">Sierra Wholesale Inc.</div><div class="cc-t">C-Corp · TX, CA, AZ</div><div class="cc-chips"><span class="cc-ch cw">TX notice — CA nexus</span></div><div class="cc-counts"><span><strong>2</strong> active</span><span><strong>0</strong> blocked</span></div><div class="cc-foot"><span class="cc-who">Daniel Ortega</span><span class="cc-lk">Details →</span></div></div>
+      <div class="cc cl"><div class="cc-n">Pinecone Dental P.C.</div><div class="cc-t">Professional Corp · WA</div><div class="cc-chips"><span class="cc-ch ck">Single-state</span><span class="cc-ch ck">Payroll current</span></div><div class="cc-counts"><span><strong>0</strong> active</span><span><strong>0</strong> blocked</span></div><div class="cc-foot"><span class="cc-who">Dr. Lila Park</span><span class="cc-lk">Details →</span></div></div>
+      <div class="cc cl"><div class="cc-n">Riverbend Manufacturing</div><div class="cc-t">C-Corp · TX, OK, LA</div><div class="cc-chips"><span class="cc-ch ci">Property: 3 counties</span></div><div class="cc-counts"><span><strong>3</strong> active</span><span><strong>0</strong> blocked</span></div><div class="cc-foot"><span class="cc-who">Hank Reyes</span><span class="cc-lk">Details →</span></div></div>
+      <div class="cc cl"><div class="cc-n">Atlas Logistics LLC</div><div class="cc-t">LLC · IL, IN, OH, MI</div><div class="cc-chips"><span class="cc-ch ck">IFTA extensions approved</span></div><div class="cc-counts"><span><strong>3</strong> active</span><span><strong>0</strong> blocked</span></div><div class="cc-foot"><span class="cc-who">Priya Iyer</span><span class="cc-lk">Details →</span></div></div>
+      <div class="cc cl"><div class="cc-n">Kestrel Consulting Group</div><div class="cc-t">S-Corp · MA, NH</div><div class="cc-chips"><span class="cc-ch ck">Remote-first · PEO payroll</span></div><div class="cc-counts"><span><strong>1</strong> active</span><span><strong>0</strong> blocked</span></div><div class="cc-foot"><span class="cc-who">Owen Patel</span><span class="cc-lk">Details →</span></div></div>
+      <div class="cc cl"><div class="cc-n">Maple Hill Dental Group</div><div class="cc-t">Prof Corp · MN, WI</div><div class="cc-chips"><span class="cc-ch ci">Two-clinic group</span></div><div class="cc-counts"><span><strong>2</strong> active</span><span><strong>0</strong> blocked</span></div><div class="cc-foot"><span class="cc-who">Dr. Anna Holm</span><span class="cc-lk">Details →</span></div></div>
+      <div class="cc cl"><div class="cc-n">Glacier Outdoor Co.</div><div class="cc-t">C-Corp · CO, UT, ID</div><div class="cc-chips"><span class="cc-ch ci">E-commerce · Avalara</span></div><div class="cc-counts"><span><strong>3</strong> active</span><span><strong>0</strong> blocked</span></div><div class="cc-foot"><span class="cc-who">Tess Lindgren</span><span class="cc-lk">Details →</span></div></div>
+    </div>
+  </div>
+
+  <!-- Import wizard -->
+  <div class="import-view" id="import-wiz">
+    <div class="import-hd">
+      <div>
+        <div style="font-size:10px;color:var(--txt2);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px">Clients · Import</div>
+        <div class="import-title">Bring a portfolio of clients into DueDateHQ</div>
+        <div class="import-sub">Upload a CSV, confirm how its columns map to our client fields, and review duplicate detection before anything is written.</div>
+      </div>
+      <button class="btn" onclick="hideImport()">Cancel & back to clients</button>
+    </div>
+    <div class="import-steps">
+      <div class="step-item"><div class="step-num active" id="sn1">1</div><span class="step-lbl active" id="sl1">Choose file</span></div>
+      <div class="step-conn"></div>
+      <div class="step-item"><div class="step-num pending" id="sn2">2</div><span class="step-lbl pending" id="sl2">Map columns</span></div>
+      <div class="step-conn"></div>
+      <div class="step-item"><div class="step-num pending" id="sn3">3</div><span class="step-lbl pending" id="sl3">Review rows</span></div>
+      <div class="step-conn"></div>
+      <div class="step-item"><div class="step-num pending" id="sn4">4</div><span class="step-lbl pending" id="sl4">Done</span></div>
+    </div>
+    <div class="import-body">
+      <!-- Step 1 -->
+      <div class="istep on" id="is1">
+        <div class="upload-area" onclick="nextStep()">
+          <div style="font-size:26px;margin-bottom:8px;color:var(--txt2)">↑</div>
+          <div class="upload-lbl">Drop your CSV here, or click to browse</div>
+          <div class="upload-sub">clients_taxdome_export.csv · 847 bytes · 31 rows detected</div>
+          <div class="src-tags">
+            <span class="src-tag">TaxDome</span><span class="src-tag">Drake</span><span class="src-tag">Karbon</span><span class="src-tag">QuickBooks</span><span class="src-tag">Custom CSV</span>
+          </div>
+        </div>
+        <div class="step-footer"><button class="btn btn-primary" onclick="nextStep()">Continue →</button></div>
+      </div>
+      <!-- Step 2 -->
+      <div class="istep" id="is2">
+        <div style="font-size:13px;color:var(--txt2);margin-bottom:12px">AI detected 7 of 8 fields automatically. Review the mapping before continuing.</div>
+        <table class="map-tbl">
+          <thead><tr><th>CSV column</th><th>Sample value</th><th style="text-align:center">→</th><th>DueDateHQ field</th><th>Confidence</th></tr></thead>
+          <tbody>
+            <tr><td><span class="csv-col">client_name</span></td><td><span class="csv-sample">Northwind Services LLC</span></td><td class="map-arrow">→</td><td><select class="map-sel"><option selected>Client name</option></select></td><td><span class="conf-auto">Auto-matched</span></td></tr>
+            <tr><td><span class="csv-col">ein</span></td><td><span class="csv-sample">47-2938471</span></td><td class="map-arrow">→</td><td><select class="map-sel"><option selected>EIN / Tax ID</option></select></td><td><span class="conf-auto">Auto-matched</span></td></tr>
+            <tr><td><span class="csv-col">entity_type</span></td><td><span class="csv-sample">LLC</span></td><td class="map-arrow">→</td><td><select class="map-sel"><option selected>Entity type</option></select></td><td><span class="conf-auto">Auto-matched</span></td></tr>
+            <tr><td><span class="csv-col">primary_state</span></td><td><span class="csv-sample">CA</span></td><td class="map-arrow">→</td><td><select class="map-sel"><option selected>Primary state</option></select></td><td><span class="conf-auto">Auto-matched</span></td></tr>
+            <tr><td><span class="csv-col">additional_states</span></td><td><span class="csv-sample">TX, NV</span></td><td class="map-arrow">→</td><td><select class="map-sel"><option selected>Additional states</option></select></td><td><span class="conf-auto">Auto-matched</span></td></tr>
+            <tr><td><span class="csv-col">tax_types_csv</span></td><td><span class="csv-sample">Federal income, 941</span></td><td class="map-arrow">→</td><td><select class="map-sel"><option selected>Tax types</option></select></td><td><span class="conf-auto">Auto-matched</span></td></tr>
+            <tr><td><span class="csv-col">assigned_preparer</span></td><td><span class="csv-sample">Maya Chen</span></td><td class="map-arrow">→</td><td><select class="map-sel"><option selected>Assignee</option></select></td><td><span class="conf-auto">Auto-matched</span></td></tr>
+            <tr><td><span class="csv-col">misc_notes</span></td><td><span class="csv-sample">Payroll heavy, 3 states</span></td><td class="map-arrow">→</td><td><select class="map-sel"><option>— Skip column —</option><option>Notes</option><option>Tags</option></select></td><td><span class="conf-review">Review needed</span></td></tr>
+          </tbody>
+        </table>
+        <div class="step-footer"><button class="btn" onclick="prevStep()">← Back</button><button class="btn btn-primary" onclick="nextStep()">Continue →</button></div>
+      </div>
+      <!-- Step 3 -->
+      <div class="istep" id="is3">
+        <div style="font-size:13px;color:var(--txt2);margin-bottom:12px">30 rows parsed · 0 duplicates detected · 1 row needs attention</div>
+        <table class="rev-tbl">
+          <thead><tr><th>Client name</th><th>Entity</th><th>States</th><th>Tax types</th><th>Assignee</th><th>Status</th></tr></thead>
+          <tbody>
+            <tr><td>Northwind Services LLC</td><td>LLC</td><td>CA, TX, NV</td><td>Federal, 941, Sales/Use</td><td>Maya Chen</td><td><span class="row-ok">Ready</span></td></tr>
+            <tr><td>Harbor Studio Partners</td><td>Partnership</td><td>NY, NJ</td><td>Federal, PTE election</td><td>Evan Malik</td><td><span class="row-ok">Ready</span></td></tr>
+            <tr><td>Sierra Wholesale Inc.</td><td>C-Corp</td><td>TX, CA, AZ</td><td>Federal, State, Sales/Use</td><td>Daniel Ortega</td><td><span class="row-ok">Ready</span></td></tr>
+            <tr><td>Pinecone Dental P.C.</td><td>Prof Corp</td><td>WA</td><td>Federal, State, 941</td><td>Dr. Lila Park</td><td><span class="row-ok">Ready</span></td></tr>
+            <tr><td>Atlas Logistics LLC</td><td>LLC</td><td>IL, IN, OH, MI</td><td>Federal, State, Excise</td><td>Priya Iyer</td><td><span class="row-ok">Ready</span></td></tr>
+            <tr style="background:#fdf6e4"><td>Greenway Consulting LLC</td><td style="color:var(--warn-txt)">—</td><td>CO</td><td>Federal, State</td><td>Owen Patel</td><td><span class="row-warn">Entity type missing</span></td></tr>
+          </tbody>
+        </table>
+        <div class="step-footer"><button class="btn" onclick="prevStep()">← Back</button><button class="btn btn-primary" onclick="nextStep()">Import 30 clients →</button></div>
+      </div>
+      <!-- Step 4 -->
+      <div class="istep" id="is4">
+        <div class="import-done">
+          <div class="done-check">✓</div>
+          <div class="done-title">30 clients imported</div>
+          <div class="done-sub">Full-year deadline calendars generated. 1 client (Greenway Consulting) needs entity type before deadlines can be assigned.</div>
+          <button class="btn btn-primary" onclick="hideImport()">Go to client directory →</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ===== REVIEW ===== -->
+<div class="view" id="v-review">
+  <div class="pg-head" style="margin-bottom:14px">
+    <div>
+      <div class="eyebrow">Review</div>
+      <div class="pg-title">Official changes that need a decision</div>
+      <div style="font-size:12px;color:var(--txt2);margin-top:3px">Review only the tax-rule changes that affect the current client portfolio.</div>
+    </div>
+  </div>
+  <div class="ri-box">
+    <div><div class="ri-title">3 official changes need review</div><div class="ri-sub">2 auto-applied today · 84 sources healthy</div></div>
+    <div class="ri-meta"><div>Last full sync <strong>Apr 26, 6:00 AM</strong> · Next sync <strong>Apr 27, 6:00 AM</strong></div><div style="margin-top:4px"><span class="ri-healthy">Healthy</span></div></div>
+  </div>
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+    <div style="font-size:13px;font-weight:600;color:var(--txt)">Review queue</div>
+    <div style="font-size:12px;color:var(--txt2)">Open a row for source, diff, and affected clients.</div>
+  </div>
+  <div class="rq-item">
+    <div class="rq-top"><div><div class="rq-name">California PTE election deadline shifted</div><div class="rq-src">CA · FTB Notice 2026-04 · detected Apr 25, 11:42 AM</div></div><span class="rq-status pending">Pending review</span></div>
+    <div class="rq-body">California Franchise Tax Board pushed the 2026 PTE election deadline by 30 days. Eight clients with active PTE elections are affected.</div>
+    <div class="rq-tags"><span class="rq-tag">Affects <strong>8 clients</strong></span><span class="rq-tag"><strong>Change</strong> PTE election due Apr 30, 2026 → May 30, 2026</span></div>
+    <div class="rq-foot"><span class="rq-src-link">Official source ↗</span><div class="rq-actions"><button class="btn">Review details</button><button class="btn">Dismiss</button><button class="btn btn-primary">Apply to 8 clients</button></div></div>
+  </div>
+  <div class="rq-item">
+    <div class="rq-top"><div><div class="rq-name">Texas sales tax economic-nexus threshold update</div><div class="rq-src">TX · TX Comptroller 34-Tex.Admin.Code §3.286 · detected Apr 24, 4:08 PM</div></div><span class="rq-status pending">Pending review</span></div>
+    <div class="rq-body">Threshold for remote-seller registration drops from $500K to $400K. One client (Sierra Wholesale) sits in the new band — review nexus before next filing.</div>
+    <div class="rq-tags"><span class="rq-tag">Affects <strong>1 client</strong></span><span class="rq-tag"><strong>Change</strong> Economic nexus: $500,000 → $400,000 of TX-sourced sales / 12 mo</span></div>
+    <div class="rq-foot"><span class="rq-src-link">Official source ↗</span><div class="rq-actions"><button class="btn">Review details</button><button class="btn">Dismiss</button><button class="btn btn-primary">Apply to 1 client</button></div></div>
+  </div>
+  <div class="rq-item">
+    <div class="rq-top"><div><div class="rq-name">IRS extension granted for federally declared disaster — TX counties</div><div class="rq-src">Federal · IRS Notice 2026-31 · detected Apr 23, 9:15 AM</div></div><span class="rq-status pending">Pending review</span></div>
+    <div class="rq-body">IRS granted automatic extension to Nov 3, 2026 for taxpayers in 14 Texas counties affected by March storms. Riverbend Manufacturing (Harris County) is affected.</div>
+    <div class="rq-tags"><span class="rq-tag">Affects <strong>1 client</strong></span><span class="rq-tag"><strong>Change</strong> Federal income deadline: Apr 15 → Nov 3, 2026</span></div>
+    <div class="rq-foot"><span class="rq-src-link">Official source ↗</span><div class="rq-actions"><button class="btn">Review details</button><button class="btn">Dismiss</button><button class="btn btn-primary">Apply to 1 client</button></div></div>
+  </div>
+  <div class="section-divider">Auto-applied today</div>
+  <div class="rq-item auto-applied">
+    <div class="rq-top"><div><div class="rq-name">IRS payroll tax deposit schedule updated</div><div class="rq-src">Federal · IRS Rev. Proc. 2026-18 · auto-applied Apr 26, 6:00 AM</div></div><span class="rq-status applied">Auto-applied</span></div>
+    <div class="rq-body">Standard threshold adjustments for semi-weekly depositors. Applied to all 4 payroll clients automatically — no CPA action required.</div>
+    <div class="rq-foot"><span class="rq-src-link">Official source ↗</span><div class="rq-actions"><button class="btn btn-sm">View changes</button><button class="btn btn-sm">Undo</button></div></div>
+  </div>
+</div>
+
+<!-- ===== SETTINGS ===== -->
+<div class="view" id="v-settings">
+  <div class="pg-head"><div><div class="eyebrow">Settings</div><div class="pg-title">Workspace settings</div></div></div>
+  <div class="s-card">
+    <div class="s-lbl">Workspace</div><div class="s-title">Tenant identity</div><div class="s-sub">Display name, time zone, and fiscal year shown across the app.</div>
+    <div class="s-row"><div><div class="s-rl">Display name</div><div class="s-rs">Shown in the topbar and on exports.</div></div><input class="s-input" value="Johnson CPA PLLC"></div>
+    <div class="s-row"><div><div class="s-rl">Time zone</div><div class="s-rs">Used for reminder send times.</div></div><input class="s-input" value="America/Los_Angeles"></div>
+    <div class="s-row"><div><div class="s-rl">Fiscal year</div><div class="s-rs">Used to bucket extensions and YTD totals.</div></div><input class="s-input" value="Calendar (Jan – Dec)"></div>
+    <div class="s-row"><div><div class="s-rl">Tenant ID</div><div class="s-rs">Sent on every backend request — read only.</div></div><input class="s-input mono" value="2403c5e1-85ac-4593-86cc-02f8d97a8d92" readonly></div>
+    <div class="s-foot"><span style="font-size:12px;color:var(--txt2)">Anchored today: Apr 26, 2026</span><button class="btn btn-primary">Save changes</button></div>
+  </div>
+  <div class="s-card">
+    <div class="s-lbl">Notifications</div><div class="s-title">Reminder channels</div><div class="s-sub">Toggle which channels carry the 30/14/7/1 stepped reminders.</div>
+    <div class="s-row"><div><div class="s-rl">Email</div><div class="s-rs">Sent to assignee and firm admin.</div></div><span style="font-size:12px;color:#1e7a3e;font-weight:500">Enabled</span></div>
+    <div class="s-row"><div><div class="s-rl">Slack</div><div class="s-rs">Post to #tax-deadlines channel.</div></div><span style="font-size:12px;color:var(--txt2)">Not connected</span></div>
+    <div class="s-row"><div><div class="s-rl">SMS</div><div class="s-rs">Final-day push only.</div></div><span style="font-size:12px;color:var(--txt2)">Not connected</span></div>
+  </div>
+</div>
+
+</div><!-- /body -->
+</div><!-- /ddh -->
+
+<script>
+// Tab switching
+function goTab(v,el){
+  document.querySelectorAll('.tab').forEach(t=>t.classList.remove('on'));
+  el.classList.add('on');
+  document.querySelectorAll('.view').forEach(x=>x.classList.remove('on'));
+  document.getElementById('v-'+v).classList.add('on');
+  closeFP();
+}
+
+// Filter panel
+function toggleFP(){document.getElementById('fp').classList.toggle('open')}
+function closeFP(){document.getElementById('fp').classList.remove('open')}
+function clearFP(){
+  document.querySelectorAll('.fp-pill').forEach(p=>p.classList.remove('on'));
+  document.querySelectorAll('.fp-pills').forEach(g=>{g.querySelector('.fp-pill').classList.add('on')});
+}
+function togglePill(el){el.classList.toggle('on')}
+document.addEventListener('click',function(e){
+  if(!e.target.closest('#fp')&&!e.target.closest('#fp-btn'))closeFP();
+});
+
+// Deadline detail
+function openDetail(client,taxType,state,statusType,assignee,source,ext,blockerTitle,blockerDesc){
+  document.getElementById('work-main').style.display='none';
+  document.getElementById('work-detail').classList.add('on');
+  document.getElementById('d-title').textContent=client+' · '+taxType;
+  document.getElementById('d-big').textContent=taxType+' · '+state;
+  document.getElementById('d-assignee').textContent=assignee;
+  document.getElementById('d-source').textContent=source;
+  document.getElementById('d-ext').textContent=ext;
+  var s=document.getElementById('d-status');
+  var a=document.getElementById('d-action');
+  var b=document.getElementById('d-blocker');
+  if(statusType==='blocked'){
+    s.innerHTML='<span style="color:#a06a08;font-weight:600">Blocked</span>';
+    a.textContent='Resolve blocker';
+    b.innerHTML='<div style="font-size:13px;font-weight:600;color:var(--txt);margin-bottom:3px">'+blockerTitle+'</div><div style="font-size:12px;color:var(--txt2)">'+blockerDesc+'</div>';
+  }else{
+    s.innerHTML='<span style="color:#1e7a3e;font-weight:600">Active</span>';
+    a.textContent='Mark blocked';
+    b.innerHTML='<div style="font-size:13px;font-weight:600;color:var(--txt);margin-bottom:3px">No blocker</div><div style="font-size:12px;color:var(--txt2)">This deadline is not blocked right now.</div>';
+  }
+}
+function closeDetail(){
+  document.getElementById('work-main').style.display='block';
+  document.getElementById('work-detail').classList.remove('on');
+}
+
+// Import wizard
+var step=1;
+function showImport(){
+  document.getElementById('clients-main').style.display='none';
+  document.getElementById('import-wiz').classList.add('on');
+  step=1;updateSteps();
+}
+function hideImport(){
+  document.getElementById('clients-main').style.display='block';
+  document.getElementById('import-wiz').classList.remove('on');
+}
+function nextStep(){if(step<4){step++;updateSteps();}}
+function prevStep(){if(step>1){step--;updateSteps();}}
+function updateSteps(){
+  for(var i=1;i<=4;i++){
+    document.getElementById('is'+i).classList.toggle('on',i===step);
+    var n=document.getElementById('sn'+i);
+    var l=document.getElementById('sl'+i);
+    if(i<step){n.className='step-num done';l.className='step-lbl active';}
+    else if(i===step){n.className='step-num active';l.className='step-lbl active';}
+    else{n.className='step-num pending';l.className='step-lbl pending';}
+  }
+}
+</script>
+</body>
+</html>
