@@ -10,16 +10,23 @@
 // plan resolves to a ViewEnvelope, App overlays a drilldown card on top of
 // the active section.
 
-import { Dispatch, ReactElement, SetStateAction, useMemo, useState } from "react";
+import { ChangeEvent, Dispatch, ReactElement, SetStateAction, useEffect, useMemo, useRef, useState } from "react";
 import type { DirectAction, ViewEnvelope } from "./types";
 import {
+  BlockedIcon,
+  ChevronRightIcon,
+  DownloadIcon,
   DirectActionHandler,
   EmptyStateRow,
   EyebrowHeader,
+  ExtensionIcon,
   FilterPopover,
+  SaveIcon,
   SearchInput,
   SettingField,
-  Toggle
+  Toggle,
+  UploadIcon,
+  WorkIcon
 } from "./coreUI";
 import {
   bucketOfDeadline,
@@ -82,6 +89,7 @@ export type SectionContext = {
   setResolvedRuleIds?: Dispatch<SetStateAction<string[]>>;
   changedDeadlineIds?: string[];
   setChangedDeadlineIds?: Dispatch<SetStateAction<string[]>>;
+  importLaunchToken?: number;
 };
 
 export const sectionMeta: Record<SectionId, { eyebrow: string; title: string; subtitle: string }> = {
@@ -160,6 +168,10 @@ type ImportApplyResult = {
   created: number;
   merged: number;
   skipped: number;
+  createdClientIds: string[];
+  mergedClientIds: string[];
+  createdClientNames: string[];
+  mergedClientNames: string[];
 };
 
 function buildInitialClientRecords(): ClientRecord[] {
@@ -294,6 +306,10 @@ function applyImportedRowsToRecords(
   let created = 0;
   let merged = 0;
   let skipped = 0;
+  const createdClientIds: string[] = [];
+  const mergedClientIds: string[] = [];
+  const createdClientNames: string[] = [];
+  const mergedClientNames: string[] = [];
 
   rows.forEach((row, rowIndex) => {
     const decision = decisions[rowIndex];
@@ -309,6 +325,9 @@ function applyImportedRowsToRecords(
       const existing = next[existingIndex];
       const mergedClient: MockClient = {
         ...existing.client,
+        entity_type: imported.client.entity_type,
+        primary_contact_name: imported.client.primary_contact_name || existing.client.primary_contact_name,
+        primary_contact_email: imported.client.primary_contact_email || existing.client.primary_contact_email,
         states: Array.from(new Set([...existing.client.states, ...imported.client.states])),
         applicable_taxes: Array.from(
           new Set([...existing.client.applicable_taxes, ...imported.client.applicable_taxes])
@@ -349,14 +368,27 @@ function applyImportedRowsToRecords(
         ]
       };
       merged += 1;
+      mergedClientIds.push(existing.client.id);
+      mergedClientNames.push(existing.client.name);
       return;
     }
 
     next.push(imported);
     created += 1;
+    createdClientIds.push(imported.client.id);
+    createdClientNames.push(imported.client.name);
   });
 
-  return { records: next, created, merged, skipped };
+  return {
+    records: next,
+    created,
+    merged,
+    skipped,
+    createdClientIds,
+    mergedClientIds,
+    createdClientNames,
+    mergedClientNames
+  };
 }
 
 function bucketForBoard(deadline: MockDeadline, resolvedRuleIds: string[] = []): "notice" | "waiting" | "track" | "watchlist" | "completed" {
@@ -677,7 +709,8 @@ export function TodaySection({
           className="ghost-btn"
           onClick={() => onExport?.("Portfolio board — all active deadlines", "csv")}
         >
-          Export CSV
+          <DownloadIcon />
+          <span>Export</span>
         </button>
       </section>
 
@@ -986,14 +1019,16 @@ export function CalendarSection({
           className="ghost-btn"
           onClick={() => onExport?.(`Calendar — ${horizonDef.label}`, "pdf")}
         >
-          Export PDF
+          <DownloadIcon />
+          <span>Export</span>
         </button>
         <button
           type="button"
           className="ghost-btn"
           onClick={() => onNotify?.(`Calendar export prepared for ${horizonDef.label}.`, "green")}
         >
-          Save view
+          <SaveIcon />
+          <span>Save</span>
         </button>
       </section>
 
@@ -1105,11 +1140,24 @@ export function CalendarSection({
 // Clients
 // ============================================================================
 
-export function ClientsSection({ onExport, onNotify, deadlines: deadlineStore, changedDeadlineIds = [] }: SectionContext) {
+export function ClientsSection({
+  onExport,
+  onNotify,
+  deadlines: deadlineStore,
+  changedDeadlineIds = [],
+  importLaunchToken = 0
+}: SectionContext) {
   const [importMode, setImportMode] = useState(false);
   const [selectedClientId, setSelectedClientId] = useState<string | null>(null);
   const [records, setRecords] = useState<ClientRecord[]>(() => buildInitialClientRecords());
+  const [recentImportResult, setRecentImportResult] = useState<ImportApplyResult | null>(null);
   const deadlines = deadlineStore ?? mockDeadlines;
+
+  useEffect(() => {
+    if (!importLaunchToken) return;
+    setSelectedClientId(null);
+    setImportMode(true);
+  }, [importLaunchToken]);
 
   const recordsWithLiveDeadlines = useMemo(
     () =>
@@ -1141,6 +1189,7 @@ export function ClientsSection({ onExport, onNotify, deadlines: deadlineStore, c
         onApply={(rows, decisions) => {
           const result = applyImportedRowsToRecords(records, rows, decisions);
           setRecords(result.records);
+          setRecentImportResult(result);
           onNotify?.(
             `Import complete: ${result.created} created, ${result.merged} merged, ${result.skipped} skipped.`,
             "green"
@@ -1169,6 +1218,8 @@ export function ClientsSection({ onExport, onNotify, deadlines: deadlineStore, c
     <ClientDirectory
       records={recordsWithLiveDeadlines}
       changedDeadlineIds={changedDeadlineIds}
+      recentImportResult={recentImportResult}
+      onDismissImportResult={() => setRecentImportResult(null)}
       onExport={onExport}
       onImport={() => setImportMode(true)}
       onOpenClient={setSelectedClientId}
@@ -1179,12 +1230,16 @@ export function ClientsSection({ onExport, onNotify, deadlines: deadlineStore, c
 function ClientDirectory({
   records,
   changedDeadlineIds,
+  recentImportResult,
+  onDismissImportResult,
   onExport,
   onImport,
   onOpenClient
 }: {
   records: ClientRecord[];
   changedDeadlineIds: string[];
+  recentImportResult: ImportApplyResult | null;
+  onDismissImportResult: () => void;
   onExport?: (scope: string, format: "csv" | "pdf") => void;
   onImport: () => void;
   onOpenClient: (clientId: string) => void;
@@ -1267,12 +1322,51 @@ function ClientDirectory({
           className="ghost-btn"
           onClick={() => onExport?.("Client roster — full deadline pack", "pdf")}
         >
-          Export PDF
+          <DownloadIcon />
+          <span>Export</span>
         </button>
         <button type="button" className="primary" onClick={onImport}>
-          Import clients
+          <UploadIcon />
+          <span>Import</span>
         </button>
       </section>
+
+      {recentImportResult ? (
+        <section className="card import-result-banner">
+          <div className="import-result-copy">
+            <span className="eyebrow">Latest import</span>
+            <strong>
+              {recentImportResult.created} new · {recentImportResult.merged} updated · {recentImportResult.skipped} skipped
+            </strong>
+            <p className="muted">New rows created new client cards. Duplicate matches updated existing clients in place.</p>
+          </div>
+          <div className="import-result-groups">
+            {recentImportResult.createdClientNames.length ? (
+              <div className="import-result-group">
+                <span className="import-result-label">New clients</span>
+                <div className="import-result-chips">
+                  {recentImportResult.createdClientNames.map((name) => (
+                    <span key={name} className="badge-pill green">{name}</span>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+            {recentImportResult.mergedClientNames.length ? (
+              <div className="import-result-group">
+                <span className="import-result-label">Updated clients</span>
+                <div className="import-result-chips">
+                  {recentImportResult.mergedClientNames.map((name) => (
+                    <span key={name} className="badge-pill blue">{name}</span>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+          </div>
+          <button type="button" className="icon-btn" aria-label="Dismiss import result" onClick={onDismissImportResult}>
+            ×
+          </button>
+        </section>
+      ) : null}
 
       <section className="client-grid">
         {filtered.length === 0 ? (
@@ -1291,6 +1385,13 @@ function ClientDirectory({
                 records
                   .find((record) => record.client.id === c.id)
                   ?.deadlines.some((deadline) => changedDeadlineIds.includes(deadline.id)) ?? false
+              }
+              importState={
+                recentImportResult?.createdClientIds.includes(c.id)
+                  ? "new"
+                  : recentImportResult?.mergedClientIds.includes(c.id)
+                    ? "updated"
+                    : null
               }
               onOpenClient={onOpenClient}
             />
@@ -1386,6 +1487,83 @@ const sampleCsvRows: string[][] = [
   ]
 ];
 
+function splitCsvLine(line: string, delimiter: string) {
+  const out: string[] = [];
+  let current = "";
+  let inQuotes = false;
+  for (let i = 0; i < line.length; i += 1) {
+    const char = line[i];
+    if (char === '"') {
+      if (inQuotes && line[i + 1] === '"') {
+        current += '"';
+        i += 1;
+      } else {
+        inQuotes = !inQuotes;
+      }
+      continue;
+    }
+    if (!inQuotes && char === delimiter) {
+      out.push(current.trim());
+      current = "";
+      continue;
+    }
+    current += char;
+  }
+  out.push(current.trim());
+  return out;
+}
+
+function parseCsvText(text: string, delimiter: string, hasHeader: boolean) {
+  const lines = text
+    .replace(/\r\n/g, "\n")
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  if (!lines.length) {
+    return { headers: [...sampleCsvHeaders], rows: [] as string[][] };
+  }
+
+  const parsed = lines.map((line) => splitCsvLine(line, delimiter));
+  const width = Math.max(...parsed.map((row) => row.length));
+  const padded = parsed.map((row) => [...row, ...Array.from({ length: Math.max(0, width - row.length) }, () => "")]);
+
+  if (hasHeader) {
+    return {
+      headers: padded[0].map((header, index) => header || `Column ${index + 1}`),
+      rows: padded.slice(1)
+    };
+  }
+
+  return {
+    headers: Array.from({ length: width }, (_, index) => `Column ${index + 1}`),
+    rows: padded
+  };
+}
+
+function guessImportMapping(headers: string[]): Record<ImportFieldKey, string | null> {
+  const aliases: Record<ImportFieldKey, string[]> = {
+    name: ["company", "client name", "name"],
+    entity_type: ["type", "entity type"],
+    states: ["states", "registered states", "state footprint"],
+    primary_contact_name: ["contact", "primary contact", "contact name"],
+    primary_contact_email: ["email", "contact email", "primary contact email"],
+    applicable_taxes: ["taxes", "applicable taxes", "tax scope"],
+    notes: ["notes", "remarks", "memo"]
+  };
+
+  return importFields.reduce(
+    (acc, field) => {
+      const match = headers.find((header) =>
+        aliases[field.key].includes(header.trim().toLowerCase())
+      );
+      acc[field.key] = match ?? null;
+      return acc;
+    },
+    {} as Record<ImportFieldKey, string | null>
+  );
+}
+
 function ImportWizard({
   onClose,
   onApply
@@ -1398,26 +1576,19 @@ function ImportWizard({
   const [delimiter, setDelimiter] = useState(",");
   const [hasHeader, setHasHeader] = useState(true);
   const [result, setResult] = useState<ImportApplyResult | null>(null);
+  const [csvHeaders, setCsvHeaders] = useState<string[]>(sampleCsvHeaders);
+  const [csvRows, setCsvRows] = useState<string[][]>(sampleCsvRows);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   // Auto-detect column → field mapping. Re-derive when CSV changes; user can
   // override.
-  const autoMap: Record<ImportFieldKey, string | null> = {
-    name: "Company",
-    entity_type: "Type",
-    states: "States",
-    primary_contact_name: "Contact",
-    primary_contact_email: "Email",
-    applicable_taxes: "Taxes",
-    notes: "Notes"
-  };
-  const [mapping, setMapping] = useState<Record<ImportFieldKey, string | null>>(autoMap);
+  const [mapping, setMapping] = useState<Record<ImportFieldKey, string | null>>(guessImportMapping(sampleCsvHeaders));
 
   // Per-row decision (keep / merge / skip). The duplicate row index 1 is
   // pre-flagged as merge.
-  const initialDecisions = sampleCsvRows.map((_, i) =>
-    i === 1 ? "merge" : ("keep" as "keep" | "merge" | "skip")
+  const [decisions, setDecisions] = useState<Array<"keep" | "merge" | "skip">>(
+    sampleCsvRows.map((_, i) => (i === 1 ? "merge" : ("keep" as "keep" | "merge" | "skip")))
   );
-  const [decisions, setDecisions] = useState<Array<"keep" | "merge" | "skip">>(initialDecisions);
 
   const stepLabels = [
     { id: 1, label: "Choose file" },
@@ -1428,8 +1599,40 @@ function ImportWizard({
 
   function chooseSampleFile() {
     setFileName("client-portfolio-2026-Q2.csv");
+    setCsvHeaders(sampleCsvHeaders);
+    setCsvRows(sampleCsvRows);
+    setMapping(guessImportMapping(sampleCsvHeaders));
+    setDecisions(sampleCsvRows.map((_, i) => (i === 1 ? "merge" : ("keep" as "keep" | "merge" | "skip"))));
     setStep(2);
   }
+
+  async function handleFileChosen(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    const text = await file.text();
+    const parsed = parseCsvText(text, delimiter, hasHeader);
+    setFileName(file.name);
+    setCsvHeaders(parsed.headers);
+    setCsvRows(parsed.rows);
+    setMapping(guessImportMapping(parsed.headers));
+    setDecisions(
+      parsed.rows.map((row) =>
+        row[0]?.trim().toLowerCase() === "northwind services llc" ? "merge" : ("keep" as ImportDecision)
+      )
+    );
+    setStep(2);
+    event.target.value = "";
+  }
+
+  const canonicalRows = useMemo(() => {
+    return csvRows.map((row) =>
+      importFields.map((field) => {
+        const header = mapping[field.key];
+        const csvIndex = header ? csvHeaders.indexOf(header) : -1;
+        return csvIndex >= 0 ? row[csvIndex] || "" : "";
+      })
+    );
+  }, [csvHeaders, csvRows, mapping]);
 
   const created = result?.created ?? 0;
   const merged = result?.merged ?? 0;
@@ -1476,9 +1679,21 @@ function ImportWizard({
                 Up to 5,000 rows per import. We recommend including state, entity type, and applicable taxes.
               </span>
             </div>
-            <button type="button" className="primary" onClick={chooseSampleFile}>
-              Use sample file
-            </button>
+            <div className="import-drop-actions">
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".csv,text/csv"
+                className="sr-only"
+                onChange={handleFileChosen}
+              />
+              <button type="button" className="primary" onClick={() => fileInputRef.current?.click()}>
+                Upload CSV
+              </button>
+              <button type="button" className="ghost-btn" onClick={chooseSampleFile}>
+                Use sample file
+              </button>
+            </div>
           </div>
 
           <div className="import-options">
@@ -1523,8 +1738,8 @@ function ImportWizard({
             </div>
             {importFields.map((f) => {
               const csvHeader = mapping[f.key];
-              const csvIndex = csvHeader ? sampleCsvHeaders.indexOf(csvHeader) : -1;
-              const sampleValue = csvIndex >= 0 ? sampleCsvRows[0][csvIndex] : "—";
+              const csvIndex = csvHeader ? csvHeaders.indexOf(csvHeader) : -1;
+              const sampleValue = csvIndex >= 0 ? csvRows[0]?.[csvIndex] || "—" : "—";
               return (
                 <div key={f.key} className="import-map-row">
                   <span>
@@ -1542,7 +1757,7 @@ function ImportWizard({
                     }
                   >
                     <option value="">— skip —</option>
-                    {sampleCsvHeaders.map((h) => (
+                    {csvHeaders.map((h) => (
                       <option key={h}>{h}</option>
                     ))}
                   </select>
@@ -1566,7 +1781,7 @@ function ImportWizard({
         <section className="card import-step">
           <EyebrowHeader
             eyebrow="Step 3"
-            title={`Review ${sampleCsvRows.length} rows`}
+            title={`Review ${canonicalRows.length} rows`}
             subtitle="One duplicate detected (matched by company name and EIN). Pick how to resolve each row."
           />
           <div className="import-review-table">
@@ -1577,8 +1792,8 @@ function ImportWizard({
               <span>Status</span>
               <span>Decision</span>
             </div>
-            {sampleCsvRows.map((row, idx) => {
-              const isDuplicate = idx === 1;
+            {canonicalRows.map((row, idx) => {
+              const isDuplicate = row[0]?.trim().toLowerCase() === "northwind services llc";
               const decision = decisions[idx];
               return (
                 <div key={idx} className={`import-review-row ${isDuplicate ? "duplicate" : ""}`}>
@@ -1629,7 +1844,7 @@ function ImportWizard({
               type="button"
               className="primary"
               onClick={() => {
-                setResult(onApply(sampleCsvRows, decisions));
+                setResult(onApply(canonicalRows, decisions));
                 setStep(4);
               }}
             >
@@ -1662,6 +1877,28 @@ function ImportWizard({
               <span>Skipped</span>
             </div>
           </div>
+          <div className="import-complete-breakdown">
+            {result?.createdClientNames.length ? (
+              <div className="import-complete-group">
+                <span className="import-result-label">New client cards created</span>
+                <div className="import-result-chips">
+                  {result.createdClientNames.map((name) => (
+                    <span key={name} className="badge-pill green">{name}</span>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+            {result?.mergedClientNames.length ? (
+              <div className="import-complete-group">
+                <span className="import-result-label">Existing clients updated</span>
+                <div className="import-result-chips">
+                  {result.mergedClientNames.map((name) => (
+                    <span key={name} className="badge-pill blue">{name}</span>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+          </div>
           <div className="setting-foot">
             <button type="button" className="ghost-btn" onClick={() => setStep(1)}>
               Import another file
@@ -1679,10 +1916,12 @@ function ImportWizard({
 function ClientCardTile({
   client,
   hasChanged,
+  importState,
   onOpenClient
 }: {
   client: MockClient;
   hasChanged: boolean;
+  importState: "new" | "updated" | null;
   onOpenClient: (clientId: string) => void;
 }) {
   const visibleTaxes = client.applicable_taxes.slice(0, 3);
@@ -1707,34 +1946,38 @@ function ClientCardTile({
         ) : (
           <span className="badge-pill green">Calm</span>
         )}
+        {importState === "new" ? <span className="badge-pill blue">New</span> : null}
+        {importState === "updated" ? <span className="badge-pill blue">Updated</span> : null}
         {hasChanged ? <ChangeBadge /> : null}
       </div>
-      <div className="client-tile-stats">
-        <div>
+      <div className="client-tile-metrics">
+        <span className="client-metric">
+          <WorkIcon />
           <strong>{client.active_deadlines}</strong>
-          <span>Active</span>
-        </div>
-        <div>
+          <span>active</span>
+        </span>
+        <span className="client-metric">
+          <BlockedIcon />
           <strong>{client.blocked_deadlines}</strong>
-          <span>Blocked</span>
-        </div>
-        <div>
+          <span>blocked</span>
+        </span>
+        <span className="client-metric">
+          <ExtensionIcon />
           <strong>{client.extensions_filed}</strong>
-          <span>Extensions</span>
-        </div>
+          <span>extensions</span>
+        </span>
       </div>
       <div className="client-tile-taxes">
-        {visibleTaxes.map((t) => (
-          <span key={t} className="badge-pill thin">
-            {t}
-          </span>
-        ))}
-        {hiddenTaxCount > 0 ? <span className="badge-pill thin">+{hiddenTaxCount} more</span> : null}
+        <span>{visibleTaxes.join(" · ")}</span>
+        {hiddenTaxCount > 0 ? <span className="client-tile-tax-more">+{hiddenTaxCount} more</span> : null}
       </div>
       <p className="client-tile-notes">{client.notes}</p>
       <div className="client-tile-foot">
         <span className="muted">{client.primary_contact_name}</span>
-        <span className="client-tile-link">View details</span>
+        <span className="client-tile-link">
+          <span>Details</span>
+          <ChevronRightIcon />
+        </span>
       </div>
     </button>
   );

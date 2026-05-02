@@ -23,7 +23,7 @@ import type {
   VisualContext
 } from "./types";
 import { ViewRenderer } from "./cards";
-import { id, MessageBubble } from "./coreUI";
+import { id, MessageBubble, UploadIcon } from "./coreUI";
 import {
   appendBreadcrumb,
   buildQuickActions,
@@ -83,6 +83,7 @@ export function App() {
   const [portfolioRules, setPortfolioRules] = useState(() => mockRules.map((r) => ({ ...r })));
   const [resolvedRuleIds, setResolvedRuleIds] = useState<string[]>([]);
   const [changedDeadlineIds, setChangedDeadlineIds] = useState<string[]>([]);
+  const [importLaunchToken, setImportLaunchToken] = useState(0);
   const streamRef = useRef<HTMLDivElement | null>(null);
   const messageMenuRef = useRef<HTMLDivElement | null>(null);
 
@@ -416,6 +417,21 @@ export function App() {
           )}
         </div>
         <div className="topbar-right">
+          {appMode === "dashboard" ? (
+            <button
+              type="button"
+              className="topbar-import-btn"
+              onClick={() => {
+                setCurrentSection("clients");
+                setImportLaunchToken((current) => current + 1);
+              }}
+            >
+              <span className="topbar-import-icon" aria-hidden="true">
+                <UploadIcon />
+              </span>
+              <span>Import</span>
+            </button>
+          ) : null}
           <div className="tenant-name">Johnson CPA PLLC</div>
           <div className="message-shell" ref={messageMenuRef}>
             <button
@@ -502,6 +518,7 @@ export function App() {
               setResolvedRuleIds={setResolvedRuleIds}
               changedDeadlineIds={changedDeadlineIds}
               setChangedDeadlineIds={setChangedDeadlineIds}
+              importLaunchToken={importLaunchToken}
             />
           </section>
         </main>

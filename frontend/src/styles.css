@@ -40,6 +40,18 @@ input {
   font: inherit;
 }
 
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
 .app-shell {
   height: 100vh;
   display: flex;
@@ -73,6 +85,36 @@ input {
   display: flex;
   align-items: center;
   gap: 16px;
+}
+
+.topbar-import-btn {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 34px;
+  padding: 0 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: rgba(255, 255, 255, 0.04);
+  color: rgba(255, 255, 255, 0.92);
+  cursor: pointer;
+}
+
+.topbar-import-btn:hover {
+  border-color: var(--gold);
+  color: var(--gold);
+}
+
+.topbar-import-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+}
+
+.topbar-import-icon svg {
+  display: block;
 }
 
 .message-shell {
@@ -2147,6 +2189,9 @@ input {
 
 .ghost-btn {
   appearance: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
   background: var(--white);
   border: 1px solid var(--paper-3);
   border-radius: 8px;
@@ -2160,6 +2205,11 @@ input {
 .ghost-btn:hover {
   border-color: var(--ink-3);
   background: var(--paper);
+}
+
+.ghost-btn svg,
+.primary svg {
+  flex: 0 0 auto;
 }
 
 .link-btn {
@@ -2515,23 +2565,19 @@ input {
 .local-plan-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 0;
+  gap: 18px;
   margin: 18px 0 0;
   border-top: 1px solid var(--paper-3);
+  padding-top: 16px;
 }
 
 .local-plan-fact {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  padding: 16px 18px 12px;
-  min-height: 88px;
-  border-bottom: 1px solid var(--paper-3);
+  gap: 3px;
+  padding: 0;
+  min-height: 0;
   background: transparent;
-}
-
-.local-plan-fact + .local-plan-fact {
-  border-left: 1px solid var(--paper-3);
 }
 
 .local-plan-fact span {
@@ -2544,7 +2590,7 @@ input {
 
 .local-plan-fact strong {
   font-family: var(--serif);
-  font-size: 24px;
+  font-size: 28px;
   line-height: 1.05;
   color: var(--ink);
 }
@@ -2690,6 +2736,71 @@ input {
   gap: 14px;
 }
 
+.import-result-banner {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 16px 18px;
+}
+
+.import-result-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 240px;
+}
+
+.import-result-copy strong {
+  font-family: var(--serif);
+  font-size: 22px;
+  line-height: 1.1;
+}
+
+.import-result-copy p {
+  margin: 0;
+}
+
+.import-result-groups {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.import-result-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.import-result-label {
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+
+.import-result-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.import-complete-breakdown {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.import-complete-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
 .client-tile {
   display: flex;
   flex-direction: column;
@@ -2725,40 +2836,50 @@ input {
   font-size: 19px;
 }
 
-.client-tile-stats {
+.client-tile-metrics {
   display: flex;
-  gap: 16px;
-  align-items: baseline;
-  padding: 2px 0 0;
-  border-top: 1px solid var(--paper-3);
-  border-bottom: 1px solid var(--paper-3);
-  padding-block: 10px;
+  flex-wrap: wrap;
+  gap: 14px;
+  align-items: center;
+  padding-top: 2px;
 }
 
-.client-tile-stats > div {
-  display: flex;
-  align-items: baseline;
+.client-metric {
+  display: inline-flex;
+  align-items: center;
   gap: 6px;
   min-width: 0;
+  color: var(--ink-2);
 }
 
-.client-tile-stats strong {
+.client-metric svg {
+  color: var(--ink-3);
+  flex: 0 0 auto;
+}
+
+.client-metric strong {
   font-family: var(--serif);
-  font-size: 20px;
+  font-size: 18px;
   color: var(--ink);
 }
 
-.client-tile-stats span {
-  font-size: 11px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+.client-metric span {
+  font-size: 12px;
   color: var(--ink-3);
 }
 
 .client-tile-taxes {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
+  align-items: center;
+  gap: 8px;
+  font-size: 12.5px;
+  color: var(--ink-2);
+}
+
+.client-tile-tax-more {
+  color: var(--ink-3);
+  font-weight: 600;
 }
 
 .client-tile-notes {
@@ -2780,11 +2901,18 @@ input {
 }
 
 .client-tile-link {
-  font-size: 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11.5px;
   font-weight: 700;
   letter-spacing: 0.04em;
   text-transform: uppercase;
   color: var(--ink-2);
+}
+
+.client-tile-link svg {
+  color: var(--ink-3);
 }
 
 .client-detail-shell {
@@ -4276,6 +4404,13 @@ input {
 .import-drop-text .muted {
   font-size: 12.5px;
   color: var(--ink-3);
+}
+
+.import-drop-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
 }
 
 .import-options {

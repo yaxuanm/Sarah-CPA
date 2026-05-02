@@ -176,6 +176,100 @@ export function FilterIcon({ active }: { active?: boolean }) {
   );
 }
 
+// GitHub/Primer-inspired utility icons kept local so we do not add a new
+// dependency just for a few lightweight toolbar glyphs.
+export function UploadIcon() {
+  return (
+    <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
+      <path
+        d="M8 11V3.5M5.25 6.25 8 3.5l2.75 2.75M3 11.75v.75a.5.5 0 0 0 .5.5h9a.5.5 0 0 0 .5-.5v-.75"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+export function DownloadIcon() {
+  return (
+    <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
+      <path
+        d="M8 3.5V11M5.25 8.25 8 11l2.75-2.75M3 11.75v.75a.5.5 0 0 0 .5.5h9a.5.5 0 0 0 .5-.5v-.75"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+export function SaveIcon() {
+  return (
+    <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
+      <path
+        d="M4.25 2.75h7.5a.5.5 0 0 1 .5.5v10l-4.25-2.5-4.25 2.5v-10a.5.5 0 0 1 .5-.5Z"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+export function ChevronRightIcon() {
+  return (
+    <svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true">
+      <path
+        d="m6 3.75 4 4-4 4"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+export function WorkIcon() {
+  return (
+    <svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true">
+      <path
+        d="M3.25 4.25h9.5a.5.5 0 0 1 .5.5v7.5a.5.5 0 0 1-.5.5h-9.5a.5.5 0 0 1-.5-.5v-7.5a.5.5 0 0 1 .5-.5Zm2-1.5h5.5"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.4"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+export function BlockedIcon() {
+  return (
+    <svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true">
+      <circle cx="8" cy="8" r="5.25" fill="none" stroke="currentColor" strokeWidth="1.4" />
+      <path d="M5.1 10.9 10.9 5.1" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+export function ExtensionIcon() {
+  return (
+    <svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true">
+      <circle cx="8" cy="8" r="5.25" fill="none" stroke="currentColor" strokeWidth="1.4" />
+      <path d="M8 5.25v3.2l2.15 1.35" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
 export type FilterChipOption = { id: string; label: string };
 
 export type FilterGroupSpec = {
