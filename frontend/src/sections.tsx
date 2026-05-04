@@ -1,20 +1,34 @@
 import { Dispatch, ReactElement, SetStateAction, useEffect, useMemo, useState } from "react";
 import type { ViewEnvelope } from "./types";
 import {
+  BlockedIcon,
+  ChevronRightIcon,
   DownloadIcon,
   DirectActionHandler,
+  EmptyStateRow,
+  ExtensionIcon,
+  EyebrowHeader,
   FilterIcon,
-  UploadIcon
+  UploadIcon,
+  WorkIcon
 } from "./coreUI";
 import {
+  mockActivity,
+  mockBlockers,
+  EntityType,
   mockChannels,
   mockClients,
   mockDeadlines,
+  mockReminders,
   mockRules,
   mockSyncStatus,
   type MockClient,
+  type MockActivity,
+  type MockBlocker,
   type MockDeadline,
-  type MockRule
+  type MockReminder,
+  type MockRule,
+  TaxType
 } from "./mockData";
 
 export type SectionId = "work" | "clients" | "review" | "settings";
@@ -30,6 +44,7 @@ export type SectionContext = {
   view: ViewEnvelope;
   busy: boolean;
   dispatch: SectionDispatch;
+  openSection?: (section: SectionId, options?: { ruleId?: string }) => void;
   onPrompt: (prompt: string) => void;
   onAction: DirectActionHandler;
   onExport?: (scope: string, format: "csv" | "pdf") => void;
@@ -43,6 +58,7 @@ export type SectionContext = {
   setResolvedRuleIds?: Dispatch<SetStateAction<string[]>>;
   changedDeadlineIds?: string[];
   setChangedDeadlineIds?: Dispatch<SetStateAction<string[]>>;
+  reviewFocusRuleId?: string | null;
   importLaunchToken?: number;
 };
 
@@ -128,6 +144,57 @@ function statusLabel(deadline: MockDeadline) {
   return "Active";
 }
 
+function summarizeRuleImpact(before: MockDeadline, after: MockDeadline) {
+  if (before.due_date !== after.due_date) {
+    return `${before.tax_type} moved from ${before.due_label} to ${after.due_label}.`;
+  }
+  if (before.status !== after.status && after.status === "blocked") {
+    return `${before.tax_type} now requires CPA confirmation and is blocked.`;
+  }
+  if (before.source !== after.source) {
+    return `${before.tax_type} source and filing guidance were updated.`;
+  }
+  return `${before.tax_type} was updated for this client.`;
+}
+
+function applyRuleToDeadline(deadline: MockDeadline, ruleId: string): MockDeadline {
+  if (deadline.notice_rule_id !== ruleId) return deadline;
+
+  if (ruleId === "rule-001") {
+    return {
+      ...deadline,
+      due_date: "2026-05-30",
+      due_label: "May 30",
+      days_remaining: 34,
+      source: "FTB Notice 2026-04 - applied to client filing calendar",
+      notice_rule_id: undefined
+    };
+  }
+
+  if (ruleId === "rule-002") {
+    return {
+      ...deadline,
+      status: "blocked",
+      blocker_reason: "Nexus confirmation required after TX threshold change",
+      source: "TX Comptroller 34-Tex.Admin.Code §3.286 - pending nexus confirmation",
+      notice_rule_id: undefined
+    };
+  }
+
+  if (ruleId === "rule-005") {
+    return {
+      ...deadline,
+      source: "OR DOR Rate Notice 2026-Q2 - rate update applied to template",
+      notice_rule_id: undefined
+    };
+  }
+
+  return {
+    ...deadline,
+    notice_rule_id: undefined
+  };
+}
+
 function isThisWeek(deadline: MockDeadline) {
   return deadline.status !== "completed" && deadline.days_remaining >= 0 && deadline.days_remaining <= 7;
 }
@@ -146,11 +213,250 @@ function clientTags(client: MockClient) {
   return [client.applicable_taxes[0] || "Active profile"];
 }
 
+type ClientRecord = {
+  client: MockClient;
+  deadlines: MockDeadline[];
+  blockers: MockBlocker[];
+  reminders: MockReminder[];
+  activity: MockActivity[];
+};
+
+type ImportDecision = "keep" | "merge" | "skip";
+
+type ImportApplyResult = {
+  records: ClientRecord[];
+  created: number;
+  merged: number;
+  skipped: number;
+  createdClientIds: string[];
+  mergedClientIds: string[];
+  createdClientNames: string[];
+  mergedClientNames: string[];
+};
+
+function ChangeBadge({ kind = "changed" }: { kind?: "new" | "changed" }) {
+  return <span className={`badge-pill ${kind === "new" ? "green" : "blue"} thin`}>{kind === "new" ? "New" : "Changed"}</span>;
+}
+
+function buildInitialClientRecords(): ClientRecord[] {
+  return mockClients.map((client) => ({
+    client,
+    deadlines: mockDeadlines
+      .filter((deadline) => deadline.client_id === client.id)
+      .sort((a, b) => a.due_date.localeCompare(b.due_date)),
+    blockers: mockBlockers.filter((blocker) => blocker.client_id === client.id),
+    reminders: mockReminders
+      .filter((reminder) => reminder.client_id === client.id)
+      .sort((a, b) => a.send_at.localeCompare(b.send_at)),
+    activity: mockActivity.filter((entry) =>
+      [client.name, client.name.split(" ")[0]].some((needle) => entry.detail.includes(needle))
+    )
+  }));
+}
+
+function normalizeStates(raw: string): string[] {
+  return raw
+    .split(/[;,]/)
+    .map((value) => value.trim())
+    .filter(Boolean);
+}
+
+function normalizeTaxes(raw: string): TaxType[] {
+  return raw
+    .split(/[;,]/)
+    .map((value) => value.trim())
+    .filter(Boolean) as TaxType[];
+}
+
+function makeDueDate(offsetDays: number) {
+  const anchor = new Date("2026-04-26T00:00:00");
+  anchor.setDate(anchor.getDate() + offsetDays);
+  return anchor.toISOString().slice(0, 10);
+}
+
+function makeDueLabel(offsetDays: number) {
+  const dueDate = new Date(`${makeDueDate(offsetDays)}T00:00:00`);
+  return dueDate.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+}
+
+function deriveDeadlinesForImportedClient(client: MockClient, rowIndex: number): MockDeadline[] {
+  const taxOffsets: Record<TaxType, number> = {
+    "Payroll (941)": 4,
+    "Sales/Use": 11,
+    "State income": 19,
+    "Federal income": 19,
+    Franchise: 24,
+    Property: 35,
+    Excise: 29,
+    "PTE election": 9
+  };
+
+  return client.applicable_taxes.slice(0, 4).map((taxType, index) => {
+    const offset = taxOffsets[taxType] ?? 21 + index * 7;
+    const jurisdiction =
+      taxType === "Federal income" || taxType === "Payroll (941)"
+        ? "Federal"
+        : client.states[Math.min(index, client.states.length - 1)] || client.states[0] || "Federal";
+    return {
+      id: `imp-dl-${client.id}-${index + 1}`,
+      client_id: client.id,
+      client_name: client.name,
+      tax_type: taxType,
+      jurisdiction,
+      due_date: makeDueDate(offset),
+      due_label: makeDueLabel(offset),
+      days_remaining: offset,
+      status: "pending",
+      extension_status: null,
+      extended_due_date: null,
+      source: `Derived from imported ${client.entity_type} profile · row ${rowIndex + 1}`,
+      blocker_reason: null,
+      assignee: rowIndex % 2 === 0 ? "Sarah Johnson" : "Maya Chen"
+    };
+  });
+}
+
+function buildImportedRecordFromRow(row: string[], rowIndex: number): ClientRecord {
+  const client: MockClient = {
+    id: `imp-cl-${rowIndex + 1}-${row[0].toLowerCase().replace(/[^a-z0-9]+/g, "-")}`,
+    name: row[0],
+    entity_type: row[1] as EntityType,
+    states: normalizeStates(row[2]),
+    primary_contact_name: row[3],
+    primary_contact_email: row[4],
+    applicable_taxes: normalizeTaxes(row[5]),
+    active_deadlines: 0,
+    blocked_deadlines: 0,
+    extensions_filed: 0,
+    risk_label:
+      row[6].toLowerCase().includes("blocking") || row[6].toLowerCase().includes("nexus")
+        ? "watch"
+        : null,
+    notes: row[6]
+  };
+
+  const deadlines = deriveDeadlinesForImportedClient(client, rowIndex);
+  client.active_deadlines = deadlines.length;
+
+  return {
+    client,
+    deadlines,
+    blockers: [],
+    reminders: [],
+    activity: [
+      {
+        id: `imp-act-${client.id}`,
+        when: "Just now",
+        actor: "DueDateHQ",
+        action: "imported client",
+        detail: `Imported ${client.name} from CSV and derived ${deadlines.length} deadlines.`,
+        category: "import"
+      }
+    ]
+  };
+}
+
+function applyImportedRowsToRecords(
+  current: ClientRecord[],
+  rows: string[][],
+  decisions: ImportDecision[]
+): ImportApplyResult {
+  const next = [...current];
+  let created = 0;
+  let merged = 0;
+  let skipped = 0;
+  const createdClientIds: string[] = [];
+  const mergedClientIds: string[] = [];
+  const createdClientNames: string[] = [];
+  const mergedClientNames: string[] = [];
+
+  rows.forEach((row, rowIndex) => {
+    const decision = decisions[rowIndex];
+    if (decision === "skip") {
+      skipped += 1;
+      return;
+    }
+
+    const imported = buildImportedRecordFromRow(row, rowIndex);
+    const existingIndex = next.findIndex((record) => record.client.name === row[0]);
+
+    if (decision === "merge" && existingIndex >= 0) {
+      const existing = next[existingIndex];
+      const mergedClient: MockClient = {
+        ...existing.client,
+        entity_type: imported.client.entity_type,
+        primary_contact_name: imported.client.primary_contact_name || existing.client.primary_contact_name,
+        primary_contact_email: imported.client.primary_contact_email || existing.client.primary_contact_email,
+        states: Array.from(new Set([...existing.client.states, ...imported.client.states])),
+        applicable_taxes: Array.from(
+          new Set([...existing.client.applicable_taxes, ...imported.client.applicable_taxes])
+        ) as TaxType[],
+        notes: `${existing.client.notes} Imported update: ${imported.client.notes}`
+      };
+
+      const mergedDeadlines = [
+        ...existing.deadlines,
+        ...imported.deadlines.filter(
+          (deadline) =>
+            !existing.deadlines.some(
+              (currentDeadline) =>
+                currentDeadline.tax_type === deadline.tax_type &&
+                currentDeadline.jurisdiction === deadline.jurisdiction
+            )
+        )
+      ].sort((a, b) => a.due_date.localeCompare(b.due_date));
+
+      mergedClient.active_deadlines = mergedDeadlines.filter((d) => d.status !== "completed").length;
+      mergedClient.blocked_deadlines = existing.blockers.length;
+      mergedClient.extensions_filed = mergedDeadlines.filter((d) => d.extension_status).length;
+
+      next[existingIndex] = {
+        client: mergedClient,
+        deadlines: mergedDeadlines,
+        blockers: existing.blockers,
+        reminders: existing.reminders,
+        activity: [
+          {
+            id: `merge-${existing.client.id}-${rowIndex}`,
+            when: "Just now",
+            actor: "DueDateHQ",
+            action: "merged import row",
+            detail: `Merged imported CSV data into ${existing.client.name}.`,
+            category: "import"
+          },
+          ...existing.activity
+        ]
+      };
+      merged += 1;
+      mergedClientIds.push(existing.client.id);
+      mergedClientNames.push(existing.client.name);
+      return;
+    }
+
+    next.push(imported);
+    created += 1;
+    createdClientIds.push(imported.client.id);
+    createdClientNames.push(imported.client.name);
+  });
+
+  return {
+    records: next,
+    created,
+    merged,
+    skipped,
+    createdClientIds,
+    mergedClientIds,
+    createdClientNames,
+    mergedClientNames
+  };
+}
+
 export function WorkSection({
   deadlines: deadlineStore,
   rules: ruleStore,
   onExport,
   onNotify,
+  openSection,
   setResolvedRuleIds,
   setDeadlines: setDeadlineStore
 }: SectionContext) {
@@ -313,7 +619,13 @@ export function WorkSection({
             <div className="ddh-alert">
               <span className="ddh-alert-dot" />
               {pendingRules[0].source} - {pendingRules[0].title}. Affects {pendingRules[0].affected_count} clients.
-              <button type="button" onClick={() => setResolvedRuleIds?.((current) => current)}>
+              <button
+                type="button"
+                onClick={() => {
+                  openSection?.("review", { ruleId: pendingRules[0].id });
+                  onNotify?.("Opened Review and focused the pending rule change.", "blue");
+                }}
+              >
                 Review & apply
               </button>
             </div>
@@ -402,9 +714,64 @@ function FilterPills({ label, value, options, onSelect }: { label: string; value
 
 type ImportStep = 1 | 2 | 3 | 4;
 
-export function ClientsSection({ onExport, onNotify, importLaunchToken = 0 }: SectionContext) {
+const IMPORT_SAMPLE_ROWS = [
+  [
+    "Northwind Services LLC",
+    "LLC",
+    "CA, TX, NV",
+    "Maya Chen",
+    "maya@northwindservices.com",
+    "Federal income, State income, Payroll (941), Sales/Use",
+    "Payroll heavy across three states; refreshed from the latest source file."
+  ],
+  [
+    "Harbor Studio Partners",
+    "Partnership",
+    "NY, NJ",
+    "Evan Malik",
+    "evan@harborstudio.com",
+    "Federal income, State income, PTE election",
+    "PTE election decision pending; extension already filed federally."
+  ],
+  [
+    "Greenway Consulting LLC",
+    "LLC",
+    "CO",
+    "Avery Morris",
+    "avery@greenwayconsulting.com",
+    "Federal income, State income",
+    "New advisory client added from CSV import."
+  ],
+  [
+    "Harbor Ridge Retail",
+    "C-Corp",
+    "CA, AZ",
+    "Lena Ortiz",
+    "finance@harborridge.com",
+    "Federal income, Sales/Use, Franchise",
+    "New retail group with California and Arizona obligations."
+  ],
+  [
+    "Blue Summit Therapy Group",
+    "Professional Corp",
+    "WA, OR",
+    "Dr. Nia Brooks",
+    "ops@bluesummittherapy.com",
+    "Federal income, State income, Payroll (941)",
+    "New multi-state therapy practice requiring payroll setup."
+  ]
+] as const;
+
+export function ClientsSection({ onExport, onNotify, importLaunchToken = 0, deadlines: deadlineStore, changedDeadlineIds = [] }: SectionContext) {
   const [importOpen, setImportOpen] = useState(false);
   const [importStep, setImportStep] = useState<ImportStep>(1);
+  const [filterOpen, setFilterOpen] = useState(false);
+  const [stateFilter, setStateFilter] = useState("All");
+  const [taxFilter, setTaxFilter] = useState("All");
+  const [records, setRecords] = useState<ClientRecord[]>(() => buildInitialClientRecords());
+  const [recentImportResult, setRecentImportResult] = useState<ImportApplyResult | null>(null);
+  const [selectedClientId, setSelectedClientId] = useState<string | null>(null);
+  const deadlines = deadlineStore ?? mockDeadlines;
 
   useEffect(() => {
     if (importLaunchToken) {
@@ -423,18 +790,71 @@ export function ClientsSection({ onExport, onNotify, importLaunchToken = 0 }: Se
     setImportStep(1);
   }
 
+  const recordsWithLiveDeadlines = useMemo(
+    () =>
+      records.map((record) => {
+        const liveDeadlines = deadlines
+          .filter((deadline) => deadline.client_id === record.client.id)
+          .sort((a, b) => a.due_date.localeCompare(b.due_date));
+        const extensionCount = liveDeadlines.filter((deadline) => deadline.extension_status).length;
+        const blockedCount = liveDeadlines.filter((deadline) => deadline.status === "blocked").length;
+        const activeCount = liveDeadlines.filter((deadline) => deadline.status !== "completed").length;
+        return {
+          ...record,
+          client: {
+            ...record.client,
+            active_deadlines: activeCount,
+            blocked_deadlines: blockedCount,
+            extensions_filed: extensionCount
+          },
+          deadlines: liveDeadlines
+        };
+      }),
+    [records, deadlines]
+  );
+
+  const filteredRecords = useMemo(
+    () =>
+      recordsWithLiveDeadlines.filter((record) => {
+        if (stateFilter !== "All" && !record.client.states.includes(stateFilter)) return false;
+        if (taxFilter !== "All" && !record.client.applicable_taxes.includes(taxFilter as TaxType)) return false;
+        return true;
+      }),
+    [recordsWithLiveDeadlines, stateFilter, taxFilter]
+  );
+
   if (importOpen) {
     return (
       <ImportWizard
         step={importStep}
         onStep={setImportStep}
         onClose={closeImport}
+        onApply={(rows, decisions) => {
+          const result = applyImportedRowsToRecords(records, rows, decisions);
+          setRecords(result.records);
+          setRecentImportResult(result);
+          onNotify?.(`Import complete: ${result.created} new, ${result.merged} updated, ${result.skipped} skipped.`, "green");
+          return result;
+        }}
         onDone={() => {
-          onNotify?.("30 clients imported. Full-year deadline calendars generated.", "green");
           closeImport();
         }}
       />
     );
+  }
+
+  if (selectedClientId) {
+    const record = recordsWithLiveDeadlines.find((entry) => entry.client.id === selectedClientId);
+    if (record) {
+      return (
+        <ClientDetailSurface
+          record={record}
+          changedDeadlineIds={changedDeadlineIds}
+          onBack={() => setSelectedClientId(null)}
+          onExport={onExport}
+        />
+      );
+    }
   }
 
   return (
@@ -445,30 +865,134 @@ export function ClientsSection({ onExport, onNotify, importLaunchToken = 0 }: Se
           <h1>Client directory</h1>
         </div>
         <div className="ddh-actions">
-          <button type="button" className="ddh-btn">Filter</button>
+          <button type="button" className="ddh-btn" onClick={() => setFilterOpen((current) => !current)}>
+            <FilterIcon active={filterOpen} /> Filter
+          </button>
           <button type="button" className="ddh-btn" onClick={() => onExport?.("Client directory", "pdf")}>Export</button>
           <button type="button" className="ddh-btn ddh-btn-primary" onClick={openImport}><UploadIcon /> Import</button>
         </div>
       </div>
 
+      {filterOpen ? (
+        <div className="ddh-toolbar">
+          <FilterPanel
+            stateFilter={stateFilter}
+            taxFilter={taxFilter}
+            onState={setStateFilter}
+            onTax={setTaxFilter}
+            onClear={() => {
+              setStateFilter("All");
+              setTaxFilter("All");
+            }}
+            onDone={() => setFilterOpen(false)}
+          />
+        </div>
+      ) : null}
+
+      {recentImportResult ? (
+        <article className="card import-result-banner">
+          <div className="import-result-copy">
+            <span className="eyebrow">Latest import</span>
+            <strong>{recentImportResult.created} new · {recentImportResult.merged} updated</strong>
+            <p>{recentImportResult.skipped} skipped. Client cards below now reflect the imported portfolio changes.</p>
+          </div>
+          <div className="import-result-groups">
+            {recentImportResult.createdClientNames.length ? (
+              <div className="import-result-group">
+                <span className="import-result-label">New client cards created</span>
+                <div className="import-result-chips">
+                  {recentImportResult.createdClientNames.map((name) => (
+                    <span key={name} className="badge-pill green thin">{name}</span>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+            {recentImportResult.mergedClientNames.length ? (
+              <div className="import-result-group">
+                <span className="import-result-label">Existing clients updated</span>
+                <div className="import-result-chips">
+                  {recentImportResult.mergedClientNames.map((name) => (
+                    <span key={name} className="badge-pill blue thin">{name}</span>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+          </div>
+          <button type="button" className="ghost-btn" onClick={() => setRecentImportResult(null)}>Dismiss</button>
+        </article>
+      ) : null}
+
       <div className="ddh-client-grid">
-        {mockClients.slice(0, 9).map((client) => (
-          <ClientTile key={client.id} client={client} />
-        ))}
+        {filteredRecords.slice(0, 12).map((record) => {
+          const hasChanged = record.deadlines.some((deadline) => changedDeadlineIds.includes(deadline.id));
+          const importState = recentImportResult?.createdClientIds.includes(record.client.id)
+            ? "new"
+            : recentImportResult?.mergedClientIds.includes(record.client.id)
+              ? "updated"
+              : null;
+          return (
+            <ClientTile
+              key={record.client.id}
+              client={record.client}
+              hasChanged={hasChanged}
+              importState={importState}
+              onOpenClient={setSelectedClientId}
+            />
+          );
+        })}
       </div>
     </section>
   );
 }
 
-function ClientTile({ client }: { client: MockClient }) {
+function ClientTile({
+  client,
+  hasChanged,
+  importState,
+  onOpenClient
+}: {
+  client: MockClient;
+  hasChanged: boolean;
+  importState: "new" | "updated" | null;
+  onOpenClient: (clientId: string) => void;
+}) {
   const tags = clientTags(client);
   return (
-    <article className={`ddh-client-card ${client.risk_label === "high" ? "high" : client.risk_label === "watch" ? "watch" : ""}`}>
-      <h2>{client.name}</h2>
-      <p>{client.entity_type} - {client.states.join(", ")}</p>
+    <button
+      type="button"
+      className={`ddh-client-card ${client.risk_label === "high" ? "high" : client.risk_label === "watch" ? "watch" : ""}`}
+      onClick={() => onOpenClient(client.id)}
+    >
+      <div className="client-tile-head">
+        <div>
+          <h2>{client.name}</h2>
+          <p>{client.entity_type} - {client.states.join(", ")}</p>
+        </div>
+        <div className="client-tile-statuses">
+          {client.risk_label === "high" ? (
+            <span className="badge-pill red">High risk</span>
+          ) : client.risk_label === "watch" ? (
+            <span className="badge-pill gold">Watch</span>
+          ) : (
+            <span className="badge-pill green">Calm</span>
+          )}
+          {importState === "new" ? <ChangeBadge kind="new" /> : null}
+          {importState === "updated" ? <span className="badge-pill blue thin">Updated</span> : null}
+          {hasChanged ? <ChangeBadge /> : null}
+        </div>
+      </div>
       <div className="ddh-client-tags">
         {tags.map((tag, index) => (
-          <span key={tag} className={`ddh-client-tag ${client.risk_label === "high" && index === 0 ? "danger" : client.risk_label === "watch" ? "warn" : "neutral"}`}>
+          <span
+            key={tag}
+            className={`ddh-client-tag ${
+              client.risk_label === "high" && index === 0
+                ? "danger"
+                : client.risk_label === "watch"
+                  ? "warn"
+                  : "neutral"
+            }`}
+          >
             {tag}
           </span>
         ))}
@@ -476,12 +1000,17 @@ function ClientTile({ client }: { client: MockClient }) {
       <div className="ddh-client-counts">
         <span><strong>{client.active_deadlines}</strong> active</span>
         <span><strong>{client.blocked_deadlines}</strong> blocked</span>
+        <span><strong>{client.extensions_filed}</strong> extensions</span>
       </div>
+      <p>{client.notes}</p>
       <div className="ddh-client-foot">
         <span>{client.primary_contact_name}</span>
-        <button type="button">Details</button>
+        <span className="client-tile-link">
+          <span>Details</span>
+          <ChevronRightIcon />
+        </span>
       </div>
-    </article>
+    </button>
   );
 }
 
@@ -489,13 +1018,17 @@ function ImportWizard({
   step,
   onStep,
   onClose,
+  onApply,
   onDone
 }: {
   step: ImportStep;
   onStep: (step: ImportStep) => void;
   onClose: () => void;
+  onApply: (rows: string[][], decisions: ImportDecision[]) => ImportApplyResult;
   onDone: () => void;
 }) {
+  const [result, setResult] = useState<ImportApplyResult | null>(null);
+
   function next() {
     if (step < 4) onStep((step + 1) as ImportStep);
   }
@@ -527,8 +1060,20 @@ function ImportWizard({
       <div className="ddh-import-body">
         {step === 1 ? <ImportStepOne onNext={next} /> : null}
         {step === 2 ? <ImportStepTwo onBack={back} onNext={next} /> : null}
-        {step === 3 ? <ImportStepThree onBack={back} onNext={next} /> : null}
-        {step === 4 ? <ImportStepDone onDone={onDone} /> : null}
+        {step === 3 ? (
+          <ImportStepThree
+            onBack={back}
+            onApply={() => {
+              const decisions: ImportDecision[] = IMPORT_SAMPLE_ROWS.map((row) =>
+                row[0].trim().toLowerCase() === "northwind services llc" ? "merge" : "keep"
+              );
+              const applied = onApply(IMPORT_SAMPLE_ROWS.map((row) => [...row]), decisions);
+              setResult(applied);
+              onStep(4);
+            }}
+          />
+        ) : null}
+        {step === 4 ? <ImportStepDone result={result} onDone={onDone} /> : null}
       </div>
     </section>
   );
@@ -538,9 +1083,9 @@ function ImportStepOne({ onNext }: { onNext: () => void }) {
   return (
     <>
       <button type="button" className="ddh-upload-area" onClick={onNext}>
-        <span className="ddh-upload-icon">↑</span>
+        <span className="ddh-upload-icon"><UploadIcon /></span>
         <strong>Drop your CSV here, or click to browse</strong>
-        <small>clients_taxdome_export.csv - 847 bytes - 31 rows detected</small>
+        <small>clients_taxdome_export.csv · 5 rows detected · 1 existing client match</small>
         <span className="ddh-source-tags">
           {["TaxDome", "Drake", "Karbon", "QuickBooks", "Custom CSV"].map((source) => <em key={source}>{source}</em>)}
         </span>
@@ -582,40 +1127,195 @@ function ImportStepTwo({ onBack, onNext }: { onBack: () => void; onNext: () => v
   );
 }
 
-function ImportStepThree({ onBack, onNext }: { onBack: () => void; onNext: () => void }) {
+function ImportStepThree({ onBack, onApply }: { onBack: () => void; onApply: () => void }) {
   const rows = [
-    ["Northwind Services LLC", "LLC", "CA, TX, NV", "Federal, 941, Sales/Use", "Maya Chen", "Ready"],
-    ["Harbor Studio Partners", "Partnership", "NY, NJ", "Federal, PTE election", "Evan Malik", "Ready"],
-    ["Sierra Wholesale Inc.", "C-Corp", "TX, CA, AZ", "Federal, State, Sales/Use", "Daniel Ortega", "Ready"],
-    ["Pinecone Dental P.C.", "Prof Corp", "WA", "Federal, State, 941", "Dr. Lila Park", "Ready"],
-    ["Greenway Consulting LLC", "-", "CO", "Federal, State", "Owen Patel", "Entity type missing"]
+    ["Northwind Services LLC", "LLC", "CA, TX, NV", "Federal income, State income, Payroll (941), Sales/Use", "Maya Chen", "Merge with existing"],
+    ["Harbor Studio Partners", "Partnership", "NY, NJ", "Federal income, State income, PTE election", "Evan Malik", "Create"],
+    ["Greenway Consulting LLC", "LLC", "CO", "Federal income, State income", "Avery Morris", "Create"],
+    ["Harbor Ridge Retail", "C-Corp", "CA, AZ", "Federal income, Sales/Use, Franchise", "Lena Ortiz", "Create"],
+    ["Blue Summit Therapy Group", "Prof Corp", "WA, OR", "Federal income, State income, 941", "Dr. Nia Brooks", "Create"]
   ];
   return (
     <>
-      <p className="ddh-import-note">30 rows parsed - 0 duplicates detected - 1 row needs attention</p>
+      <p className="ddh-import-note">5 rows parsed · 1 existing client match · 4 new client cards will be created.</p>
       <table className="ddh-review-table">
-        <thead><tr><th>Client</th><th>Entity</th><th>States</th><th>Tax types</th><th>Assignee</th><th>Status</th></tr></thead>
+        <thead><tr><th>Client</th><th>Entity</th><th>States</th><th>Tax types</th><th>Assignee</th><th>Action</th></tr></thead>
         <tbody>
           {rows.map((row) => (
-            <tr key={row[0]} className={row[5] !== "Ready" ? "warn" : ""}>
-              {row.map((cell, index) => <td key={index}><span className={index === 5 ? (cell === "Ready" ? "auto" : "review") : ""}>{cell}</span></td>)}
+            <tr key={row[0]} className={row[5] !== "Create" ? "warn" : ""}>
+              {row.map((cell, index) => <td key={index}><span className={index === 5 ? (cell === "Create" ? "auto" : "review") : ""}>{cell}</span></td>)}
             </tr>
           ))}
         </tbody>
       </table>
-      <div className="ddh-step-foot"><button type="button" className="ddh-btn" onClick={onBack}>Back</button><button type="button" className="ddh-btn ddh-btn-primary" onClick={onNext}>Import 30 clients</button></div>
+      <div className="ddh-step-foot"><button type="button" className="ddh-btn" onClick={onBack}>Back</button><button type="button" className="ddh-btn ddh-btn-primary" onClick={onApply}>Apply import</button></div>
     </>
   );
 }
 
-function ImportStepDone({ onDone }: { onDone: () => void }) {
+function ImportStepDone({ result, onDone }: { result: ImportApplyResult | null; onDone: () => void }) {
   return (
     <div className="ddh-import-done">
       <div>✓</div>
-      <h2>30 clients imported</h2>
-      <p>Full-year deadline calendars generated. 1 client needs entity type before deadlines can be assigned.</p>
+      <h2>{result ? `${result.created} new · ${result.merged} updated` : "Import complete"}</h2>
+      <p>Full-year deadline calendars generated. New clients were added to the directory and existing matches were updated in place.</p>
+      {result ? (
+        <div className="import-complete-breakdown">
+          {result.createdClientNames.length ? (
+            <div className="import-complete-group">
+              <span className="import-result-label">New client cards created</span>
+              <div className="import-result-chips">
+                {result.createdClientNames.map((name) => (
+                  <span key={name} className="badge-pill green thin">{name}</span>
+                ))}
+              </div>
+            </div>
+          ) : null}
+          {result.mergedClientNames.length ? (
+            <div className="import-complete-group">
+              <span className="import-result-label">Existing clients updated</span>
+              <div className="import-result-chips">
+                {result.mergedClientNames.map((name) => (
+                  <span key={name} className="badge-pill blue thin">{name}</span>
+                ))}
+              </div>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
       <button type="button" className="ddh-btn ddh-btn-primary" onClick={onDone}>Go to client directory</button>
     </div>
+  );
+}
+
+function ClientDetailSurface({
+  record,
+  changedDeadlineIds,
+  onBack,
+  onExport
+}: {
+  record: ClientRecord;
+  changedDeadlineIds: string[];
+  onBack: () => void;
+  onExport?: (scope: string, format: "csv" | "pdf") => void;
+}) {
+  const { client, deadlines, blockers, reminders, activity: recentActivity } = record;
+  const extensionDeadlines = deadlines.filter((deadline) => deadline.extension_status);
+  const hasChangedDeadlines = deadlines.some((deadline) => changedDeadlineIds.includes(deadline.id));
+  const nextDeadline = deadlines[0] || null;
+  const latestActivity = recentActivity[0] || null;
+
+  return (
+    <section className="ddh-work-detail client-detail-lite">
+      <button type="button" className="ddh-back-link" onClick={onBack}>
+        Back to clients
+      </button>
+      <div className="detail-head">
+        <div>
+          <h2>
+            {client.name}
+            {hasChangedDeadlines ? <ChangeBadge /> : null}
+          </h2>
+          <p>Review the client profile, derived deadlines, blockers, extensions, and reminders in one place.</p>
+        </div>
+        <div className="detail-actions">
+          <button
+            type="button"
+            className="ddh-btn"
+            onClick={() => onExport?.(`${client.name} — full deadline pack`, "csv")}
+          >
+            Export CSV
+          </button>
+          <button
+            type="button"
+            className="ddh-btn"
+            onClick={() => onExport?.(`${client.name} — full deadline pack`, "pdf")}
+          >
+            Export PDF
+          </button>
+        </div>
+      </div>
+
+      <div className="detail-grid client-detail-grid">
+        <article className="detail-card">
+          <div className="detail-card-lbl">Client</div>
+          <div className="detail-bigtext">{client.entity_type} · {client.states.join(", ")}</div>
+          <div className="detail-date">{client.primary_contact_name} · {client.primary_contact_email}</div>
+          <div className="detail-fields">
+            <div className="df"><span>Taxes</span><strong>{client.applicable_taxes.slice(0, 3).join(" · ")}{client.applicable_taxes.length > 3 ? ` +${client.applicable_taxes.length - 3}` : ""}</strong></div>
+            <div className="df"><span>Next due</span><strong>{nextDeadline ? `${nextDeadline.due_label} · ${formatDaysRemaining(nextDeadline)}` : "No deadlines"}</strong></div>
+            <div className="df"><span>Open blockers</span><strong>{blockers.length}</strong></div>
+            <div className="df"><span>Extensions</span><strong>{extensionDeadlines.length}</strong></div>
+          </div>
+          <p className="client-tile-notes">{client.notes}</p>
+        </article>
+
+        <aside className="detail-right">
+          <article className="detail-card detail-history-card">
+            <div className="detail-card-lbl">Client history</div>
+            <h3>Recent status and activity</h3>
+            <p>A compact readout of what is blocking work, what is queued, and what changed most recently.</p>
+            <div className="detail-history-list">
+              <div className="detail-history-row">
+                <span className="detail-history-kicker">Blocking</span>
+                <strong>{blockers.length ? blockers[0].reason : "No blocker"}</strong>
+                <span>{blockers.length ? `Waiting on ${blockers[0].waiting_on}` : "Nothing is blocking this client right now."}</span>
+              </div>
+              <div className="detail-history-row">
+                <span className="detail-history-kicker">Reminders</span>
+                <strong>{reminders.length} reminder{reminders.length === 1 ? "" : "s"} queued</strong>
+                <span>{reminders[0] ? `${reminders[0].step}-day ${reminders[0].channel} · ${reminders[0].send_at}` : "No reminder events are scheduled."}</span>
+              </div>
+              <div className="detail-history-row">
+                <span className="detail-history-kicker">Latest activity</span>
+                <strong>{latestActivity ? latestActivity.action : "No recent activity"}</strong>
+                <span>{latestActivity ? `${latestActivity.when} · ${latestActivity.detail}` : "This client has no activity log entries in the current demo."}</span>
+              </div>
+            </div>
+          </article>
+        </aside>
+      </div>
+
+      <article className="detail-card client-deadlines-card">
+        <div className="detail-card-lbl">Deadline calendar</div>
+        <h3>{deadlines.length} deadline{deadlines.length === 1 ? "" : "s"} derived from the current profile</h3>
+        <p>Generated from entity type, state footprint, and filing scope.</p>
+        {deadlines.length === 0 ? (
+          <EmptyStateRow
+            title="No deadlines yet"
+            body="This client has no generated deadlines in the current demo dataset."
+          />
+        ) : (
+          <div className="deadlines-table" role="table">
+            <div className="deadlines-table-head" role="row">
+              <span role="columnheader">Tax type</span>
+              <span role="columnheader">Jurisdiction</span>
+              <span role="columnheader">Due</span>
+              <span role="columnheader">Status</span>
+              <span role="columnheader">Assignee</span>
+              <span role="columnheader">Change</span>
+            </div>
+            {deadlines.map((deadline) => (
+              <div key={deadline.id} className="deadlines-table-row" role="row">
+                <span className="deadlines-cell client" role="cell">{deadline.tax_type}</span>
+                <span role="cell">{deadline.jurisdiction}</span>
+                <span className="deadlines-cell due" role="cell">
+                  <strong>{deadline.due_label}</strong>
+                  <span className="muted">{formatDaysRemaining(deadline)}</span>
+                </span>
+                <span role="cell">
+                  <span className={`badge-pill ${statusClass(deadline) === "cb" ? "red" : statusClass(deadline) === "ci" ? "gold" : "blue"} thin`}>
+                    {statusLabel(deadline)}
+                  </span>
+                </span>
+                <span role="cell">{deadline.assignee}</span>
+                <span role="cell">{changedDeadlineIds.includes(deadline.id) ? <ChangeBadge /> : null}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </article>
+    </section>
   );
 }
 
@@ -626,20 +1326,37 @@ export function ReviewSection({
   deadlines: deadlineStore,
   setDeadlines,
   setChangedDeadlineIds,
-  onNotify
+  onNotify,
+  reviewFocusRuleId
 }: SectionContext) {
   const rules = ruleStore ?? mockRules;
   const pendingRules = rules.filter((rule) => rule.status === "pending-review");
+  const appliedRules = rules.filter((rule) => rule.status === "applied");
   const autoApplied = rules.filter((rule) => rule.status === "auto-applied");
+  const dismissedRules = rules.filter((rule) => rule.status === "dismissed");
+  const [selectedRuleId, setSelectedRuleId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!reviewFocusRuleId) return;
+    setSelectedRuleId(reviewFocusRuleId);
+  }, [reviewFocusRuleId]);
 
   function applyRule(ruleId: string) {
     const changedIds: string[] = [];
-    setRules?.((current) => current.map((rule) => rule.id === ruleId ? { ...rule, status: "auto-applied" } : rule));
+    setRules?.((current) => current.map((rule) => rule.id === ruleId ? { ...rule, status: "applied" } : rule));
     setDeadlines?.((current) =>
       current.map((deadline) => {
         if (deadline.notice_rule_id !== ruleId) return deadline;
-        changedIds.push(deadline.id);
-        return { ...deadline, notice_rule_id: undefined, due_label: "May 30", due_date: "2026-05-30", days_remaining: 34 };
+        const next = applyRuleToDeadline(deadline, ruleId);
+        if (
+          next.due_date !== deadline.due_date ||
+          next.status !== deadline.status ||
+          next.source !== deadline.source ||
+          next.notice_rule_id !== deadline.notice_rule_id
+        ) {
+          changedIds.push(deadline.id);
+        }
+        return next;
       })
     );
     setResolvedRuleIds?.((current) => current.includes(ruleId) ? current : [...current, ruleId]);
@@ -651,6 +1368,12 @@ export function ReviewSection({
     setRules?.((current) => current.map((rule) => rule.id === ruleId ? { ...rule, status: "dismissed" } : rule));
     setResolvedRuleIds?.((current) => current.includes(ruleId) ? current : [...current, ruleId]);
     onNotify?.("Rule dismissed for this portfolio.", "gold");
+  }
+
+  function reopenRule(ruleId: string) {
+    setRules?.((current) => current.map((rule) => rule.id === ruleId ? { ...rule, status: "pending-review" } : rule));
+    setResolvedRuleIds?.((current) => current.filter((id) => id !== ruleId));
+    onNotify?.("Rule moved back to Pending review.", "blue");
   }
 
   return (
@@ -677,11 +1400,58 @@ export function ReviewSection({
         <span>Open a row for source, diff, and affected clients.</span>
       </div>
       {pendingRules.map((rule) => (
-        <ReviewRule key={rule.id} rule={rule} deadlines={deadlineStore ?? mockDeadlines} onApply={applyRule} onDismiss={dismissRule} />
+        <ReviewRule
+          key={rule.id}
+          rule={rule}
+          deadlines={deadlineStore ?? mockDeadlines}
+          selected={selectedRuleId === rule.id}
+          onSelectRule={setSelectedRuleId}
+          onApply={applyRule}
+          onDismiss={dismissRule}
+          onReopen={reopenRule}
+        />
+      ))}
+      {appliedRules.length ? <div className="ddh-section-divider">Applied by CPA</div> : null}
+      {appliedRules.map((rule) => (
+        <ReviewRule
+          key={rule.id}
+          rule={rule}
+          deadlines={deadlineStore ?? mockDeadlines}
+          variant="applied"
+          selected={selectedRuleId === rule.id}
+          onSelectRule={setSelectedRuleId}
+          onApply={applyRule}
+          onDismiss={dismissRule}
+          onReopen={reopenRule}
+        />
       ))}
       {autoApplied.length ? <div className="ddh-section-divider">Auto-applied today</div> : null}
       {autoApplied.map((rule) => (
-        <ReviewRule key={rule.id} rule={rule} deadlines={deadlineStore ?? mockDeadlines} auto onApply={applyRule} onDismiss={dismissRule} />
+        <ReviewRule
+          key={rule.id}
+          rule={rule}
+          deadlines={deadlineStore ?? mockDeadlines}
+          variant="auto"
+          selected={selectedRuleId === rule.id}
+          onSelectRule={setSelectedRuleId}
+          onApply={applyRule}
+          onDismiss={dismissRule}
+          onReopen={reopenRule}
+        />
+      ))}
+      {dismissedRules.length ? <div className="ddh-section-divider">Dismissed</div> : null}
+      {dismissedRules.map((rule) => (
+        <ReviewRule
+          key={rule.id}
+          rule={rule}
+          deadlines={deadlineStore ?? mockDeadlines}
+          variant="dismissed"
+          selected={selectedRuleId === rule.id}
+          onSelectRule={setSelectedRuleId}
+          onApply={applyRule}
+          onDismiss={dismissRule}
+          onReopen={reopenRule}
+        />
       ))}
     </section>
   );
@@ -690,25 +1460,48 @@ export function ReviewSection({
 function ReviewRule({
   rule,
   deadlines,
-  auto,
+  variant,
+  selected,
+  onSelectRule,
   onApply,
-  onDismiss
+  onDismiss,
+  onReopen
 }: {
   rule: MockRule;
   deadlines: MockDeadline[];
-  auto?: boolean;
+  variant?: "auto" | "applied" | "dismissed";
+  selected: boolean;
+  onSelectRule: (ruleId: string) => void;
   onApply: (id: string) => void;
   onDismiss: (id: string) => void;
+  onReopen: (id: string) => void;
 }) {
   const affected = rule.affected_count || deadlines.filter((deadline) => deadline.notice_rule_id === rule.id).length;
+  const isApplied = variant === "applied";
+  const isAuto = variant === "auto";
+  const isDismissed = variant === "dismissed";
+  const impactRows = mockDeadlines
+    .filter((base) => base.notice_rule_id === rule.id)
+    .map((base) => {
+      const current = deadlines.find((deadline) => deadline.id === base.id) ?? base;
+      return {
+        id: base.id,
+        clientName: base.client_name,
+        taxType: base.tax_type,
+        before: base.due_label,
+        after: current.due_label,
+        summary: summarizeRuleImpact(base, current),
+        changed: base.due_date !== current.due_date || base.status !== current.status || base.source !== current.source
+      };
+    });
   return (
-    <article className={`ddh-rule ${auto ? "auto" : ""}`}>
+    <article className={`ddh-rule ${isAuto ? "auto" : isApplied ? "applied" : isDismissed ? "dismissed" : ""}`}>
       <div className="ddh-rule-top">
         <div>
           <h2>{rule.title}</h2>
           <p>{rule.jurisdiction} - {rule.source} - detected {new Date(rule.detected_at).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}</p>
         </div>
-        <span>{auto ? "Auto-applied" : "Pending review"}</span>
+        <span>{isAuto ? "Auto-applied" : isApplied ? "Applied" : isDismissed ? "Dismissed" : "Pending review"}</span>
       </div>
       <p>{rule.summary}</p>
       <div className="ddh-rule-tags">
@@ -716,27 +1509,71 @@ function ReviewRule({
         <span><strong>Change</strong> {rule.diff_before} to {rule.diff_after}</span>
       </div>
       <div className="ddh-rule-foot">
-        <button type="button">Official source</button>
+        <button type="button" onClick={() => window.open(rule.source.startsWith("http") ? rule.source : "https://www.google.com/search?q=" + encodeURIComponent(rule.source), "_blank", "noopener,noreferrer")}>Official source</button>
         <div>
-          {auto ? (
+          {isAuto || isApplied || isDismissed ? (
             <>
-              <button type="button" className="ddh-btn ddh-btn-sm">View changes</button>
-              <button type="button" className="ddh-btn ddh-btn-sm">Undo</button>
+              <button type="button" className="ddh-btn ddh-btn-sm" onClick={() => onSelectRule(selected ? "" : rule.id)}>
+                {selected ? "Hide changes" : "View changes"}
+              </button>
+              <button type="button" className="ddh-btn ddh-btn-sm" onClick={() => onReopen(rule.id)}>Undo</button>
             </>
           ) : (
             <>
-              <button type="button" className="ddh-btn">Review details</button>
+              <button type="button" className="ddh-btn" onClick={() => onSelectRule(selected ? "" : rule.id)}>
+                {selected ? "Close details" : "Review details"}
+              </button>
               <button type="button" className="ddh-btn" onClick={() => onDismiss(rule.id)}>Dismiss</button>
               <button type="button" className="ddh-btn ddh-btn-primary" onClick={() => onApply(rule.id)}>Apply to {affected} client{affected === 1 ? "" : "s"}</button>
             </>
           )}
         </div>
       </div>
+      {selected ? (
+        <div className="rule-impact-list">
+          {isDismissed ? (
+            <div className="rule-impact-row">
+              <div className="rule-impact-head">
+                <strong>Dismissed from the current portfolio</strong>
+                <span className="badge-pill gold thin">Dismissed</span>
+              </div>
+              <div className="rule-impact-copy">
+                <p>This change will not update client deadlines until it is restored to review.</p>
+              </div>
+            </div>
+          ) : impactRows.length ? (
+            impactRows.map((impact) => (
+              <div key={impact.id} className="rule-impact-row">
+                <div className="rule-impact-head">
+                  <strong>{impact.clientName}</strong>
+                  <span className="badge-pill blue thin">{impact.taxType}</span>
+                  {impact.changed ? <ChangeBadge /> : null}
+                </div>
+                <div className="rule-impact-copy">
+                  <span className="muted">
+                    {impact.before !== impact.after ? `${impact.before} → ${impact.after}` : impact.after}
+                  </span>
+                  <p>{impact.summary}</p>
+                </div>
+              </div>
+            ))
+          ) : (
+            <div className="rule-impact-row">
+              <div className="rule-impact-head">
+                <strong>No client-level changes to show yet</strong>
+              </div>
+              <div className="rule-impact-copy">
+                <p>This change does not currently map to a visible deadline in the demo dataset.</p>
+              </div>
+            </div>
+          )}
+        </div>
+      ) : null}
     </article>
   );
 }
 
-export function SettingsSection({ tenantId }: SectionContext) {
+export function SettingsSection({ tenantId, onNotify }: SectionContext) {
   return (
     <section>
       <div className="ddh-page-head"><div><div className="ddh-eyebrow">Settings</div><h1>Workspace settings</h1></div></div>
@@ -745,7 +1582,16 @@ export function SettingsSection({ tenantId }: SectionContext) {
         <SettingRow label="Time zone" sub="Used for reminder send times." value="America/Los_Angeles" />
         <SettingRow label="Fiscal year" sub="Used to bucket extensions and YTD totals." value="Calendar (Jan - Dec)" />
         <SettingRow label="Tenant ID" sub="Sent on every backend request - read only." value={tenantId} mono />
-        <div className="ddh-settings-foot"><span>Anchored today: Apr 26, 2026</span><button type="button" className="ddh-btn ddh-btn-primary">Save changes</button></div>
+        <div className="ddh-settings-foot">
+          <span>Anchored today: Apr 26, 2026</span>
+          <button
+            type="button"
+            className="ddh-btn ddh-btn-primary"
+            onClick={() => onNotify?.("Settings saved for this demo workspace.", "green")}
+          >
+            Save changes
+          </button>
+        </div>
       </SettingsCard>
       <SettingsCard label="Notifications" title="Reminder channels" subtitle="Toggle which channels carry the 30/14/7/1 stepped reminders.">
         {mockChannels.slice(0, 3).map((channel) => (

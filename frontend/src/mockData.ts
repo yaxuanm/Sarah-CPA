@@ -81,7 +81,7 @@ export type MockRule = {
   source: string;
   detected_at: string;
   affected_count: number;
-  status: "pending-review" | "auto-applied" | "dismissed";
+  status: "pending-review" | "applied" | "auto-applied" | "dismissed";
   summary: string;
   diff_before: string;
   diff_after: string;

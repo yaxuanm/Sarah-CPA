@@ -2949,6 +2949,15 @@ input {
   gap: 10px;
 }
 
+.client-tile-statuses {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  flex-wrap: wrap;
+  flex-shrink: 0;
+}
+
 .client-tile-head .badge-pill {
   flex-shrink: 0;
 }
@@ -4565,6 +4574,48 @@ body {
   margin: 0 0 10px;
   color: #6b6b66;
   font-size: 12px;
+}
+
+.detail-history-card {
+  padding-bottom: 10px;
+}
+
+.detail-history-list {
+  display: grid;
+  gap: 0;
+  margin-top: 6px;
+  border-top: 0.5px solid rgba(0, 0, 0, 0.07);
+}
+
+.detail-history-row {
+  display: grid;
+  gap: 4px;
+  padding: 12px 0;
+  border-bottom: 0.5px solid rgba(0, 0, 0, 0.07);
+}
+
+.detail-history-row:last-child {
+  border-bottom: 0;
+}
+
+.detail-history-kicker {
+  color: #6b6b66;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+}
+
+.detail-history-row strong {
+  color: #1a1a18;
+  font-size: 14px;
+  line-height: 1.35;
+}
+
+.detail-history-row span:last-child {
+  color: #6b6b66;
+  font-size: 12px;
+  line-height: 1.5;
 }
 
 .rem-item {

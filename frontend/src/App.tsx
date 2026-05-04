@@ -83,6 +83,7 @@ export function App() {
   const [portfolioRules, setPortfolioRules] = useState(() => mockRules.map((r) => ({ ...r })));
   const [resolvedRuleIds, setResolvedRuleIds] = useState<string[]>([]);
   const [changedDeadlineIds, setChangedDeadlineIds] = useState<string[]>([]);
+  const [reviewFocusRuleId, setReviewFocusRuleId] = useState<string | null>(null);
   const streamRef = useRef<HTMLDivElement | null>(null);
   const messageMenuRef = useRef<HTMLDivElement | null>(null);
 
@@ -391,6 +392,7 @@ export function App() {
             current={currentSection}
             onSelect={(section) => {
               setCurrentSection(section);
+              if (section !== "review") setReviewFocusRuleId(null);
               setAppMode("dashboard");
               setDrilldownOpen(false);
             }}
@@ -465,6 +467,16 @@ export function App() {
               view={view ?? { type: "GuidanceCard", data: {}, selectable_items: [] }}
               busy={busy}
               dispatch={dispatchSectionPlan}
+              openSection={(section, options) => {
+                setCurrentSection(section);
+                if (section === "review") {
+                  setReviewFocusRuleId(options?.ruleId || null);
+                } else {
+                  setReviewFocusRuleId(null);
+                }
+                setAppMode("dashboard");
+                setDrilldownOpen(false);
+              }}
               onPrompt={() =>
                 showSectionNotice(
                   "That action belongs to Chat mode. Use the Chat button in the top bar if you want to continue in the conversational workspace.",
@@ -487,6 +499,7 @@ export function App() {
               setResolvedRuleIds={setResolvedRuleIds}
               changedDeadlineIds={changedDeadlineIds}
               setChangedDeadlineIds={setChangedDeadlineIds}
+              reviewFocusRuleId={reviewFocusRuleId}
             />
           </section>
         </main>
