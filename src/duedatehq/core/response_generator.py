@@ -120,48 +120,24 @@ class ResponseGenerator:
         if selected and self._looks_like_draft_request(text):
             return self._build_client_message_draft_surface(text, session, selected[0])
 
-        context_label = selected[0].get("client_name") if selected else "当前工作队列"
-        render_spec = {
-            "version": "0.1",
-            "surface": "work_card",
-            "title": "我先帮你把这件事理清楚",
-            "intent_summary": text,
-            "blocks": [
-                {
-                    "type": "decision_brief",
-                    "title": "我理解的是",
-                    "body": (
-                        f"你想继续处理 {context_label}，但这句话还没有指向某一个具体截止事项或动作。"
-                        "我可以先帮你整理现状，也可以继续查依据。"
-                    ),
-                },
-                {
-                    "type": "fact_strip",
-                    "facts": [
-                        {"label": "当前对象", "value": str(context_label), "tone": "blue"},
-                        {"label": "当前阶段", "value": "先整理，不改记录", "tone": "gold"},
-                        {"label": "状态变更", "value": "尚未发生", "tone": "green"},
-                    ],
-                },
-                {
-                    "type": "choice_set",
-                    "question": "如果这个工作面不对，可以直接继续说你的需求。",
-                    "choices": [
-                        {"label": "补充说明", "intent": "我再补充一下需求", "style": "primary"},
-                        {"label": "回到今日清单", "intent": "查看今天的待处理事项", "style": "secondary"},
-                    ],
-                },
-            ],
-        }
+        context_label = selected[0].get("client_name") if selected else None
+        clarification = (
+            f"这句话还没有指向 {context_label} 的某一个具体截止事项或动作。"
+            if context_label
+            else "这句话还没有指向某一个具体对象、截止事项或动作。"
+        )
         return {
-            "message": self._truncate(message or "我先把这件事整理成一个可推进的工作面。"),
-            "view": {
-                "type": "RenderSpecSurface",
-                "data": {"render_spec": render_spec},
-                "selectable_items": selected,
-            },
-            "actions": [],
-            "state_summary": "根据开放需求生成受约束工作面。",
+            "message": self._truncate(
+                message
+                or f"{clarification} 你可以说客户、截止日，或想完成的动作。"
+            ),
+            "view": None,
+            "actions": [
+                {"label": "查看今天的待处理事项"},
+                {"label": "查看客户总数"},
+                {"label": "说明具体客户或截止事项"},
+            ],
+            "state_summary": "等待用户补充具体业务方向。",
         }
 
     def _build_client_message_draft_surface(
@@ -196,8 +172,8 @@ class ResponseGenerator:
                     "type": "decision_brief",
                     "title": "这是一封需要你发出去的消息",
                     "body": (
-                        f"我根据当前选中的 {client_name} - {tax_type} 生成了草稿。"
-                        "DueDateHQ 只生成内容，不会替你发送，也不会修改记录。"
+                        f"基于当前选中的 {client_name} - {tax_type} 生成草稿。"
+                        "DueDateHQ 只生成内容，不发送消息，也不修改记录。"
                     ),
                 },
                 {
@@ -241,7 +217,7 @@ class ResponseGenerator:
             ],
         }
         return {
-            "message": self._truncate(f"我已经为 {client_name} 生成客户消息草稿。发出后再回来记录。"),
+            "message": self._truncate(f"{client_name} 的客户消息草稿已生成。发出后再回来记录。"),
             "view": {
                 "type": "RenderSpecSurface",
                 "data": {"render_spec": render_spec},
@@ -352,7 +328,7 @@ class ResponseGenerator:
                 "data": {
                     "title": "今天需要处理的事项",
                     "headline": "先看最可能卡住申报的事项",
-                    "description": "这是今天最值得你注意的工作队列。打开一项后，我会只围绕那一项继续帮你处理。",
+                    "description": "这是今天最值得注意的工作队列。打开一项后，后续操作会围绕该事项展开。",
                     "items": visible,
                     "total": len(items),
                     "has_more": len(items) > 5,
@@ -558,7 +534,7 @@ class ResponseGenerator:
         return self.generate_render_spec_surface(
             latest_user_input or intent_label,
             session,
-            f"{intent_label} 没有命中专用工作面，已生成受约束 render spec。",
+            f"{intent_label} 没有命中专用工作流。你可以说客户、截止日，或想完成的动作。",
         )
 
     def _build_actions(self, tenant_id: str, deadline_id: str, intent_label: str) -> list[dict[str, Any]]:

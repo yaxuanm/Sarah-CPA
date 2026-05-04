@@ -574,7 +574,7 @@ function RenderSpecSurface({
   return (
     <article className="card spec-card">
       <EyebrowHeader
-        eyebrow={spec.surface_kind || "Rendered for this question"}
+        eyebrow={spec.surface_kind || "Generated workspace"}
         title={spec.title}
       />
       <p className="spec-summary">{spec.intent_summary}</p>

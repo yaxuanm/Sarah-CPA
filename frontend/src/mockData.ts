@@ -1,8 +1,9 @@
 // mockData.ts
 // Demo seed data for the DueDateHQ frontend. The 5-section IA pages render
 // against this dataset directly so each tab feels lived-in even when the
-// FastAPI backend isn't running. When the backend IS up, sections still keep
-// this mock as fallback while the live result merges in.
+// FastAPI backend isn't running. When the backend is up, sections still keep
+// this mock data for the static product screens while agent-rendered results
+// arrive through the conversation flow.
 //
 // Keep all dates anchored to today=2026-04-26 so the upcoming-deadline math
 // reads naturally in screenshots.

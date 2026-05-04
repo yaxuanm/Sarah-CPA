@@ -94,11 +94,23 @@ class RuleBasedIntentPlanner:
                 "selectable_items": session.get("selectable_items", []),
             }
 
+        if self._looks_like_greeting(lowered):
+            return {
+                "special": "render_spec_needed",
+                "intent_label": "chat_only",
+                "message": "你好！有什么需要我处理的？可以告诉我客户名称和想做的事，比如查截止日期或排工作计划。",
+                "user_input": text,
+                "selectable_items": session.get("selectable_items", []),
+            }
+
+        if self._looks_like_client_list(lowered):
+            return self._client_list_plan(tenant_id)
+
         if self._looks_like_ad_hoc_generation(lowered):
             return {
                 "special": "render_spec_needed",
                 "intent_label": "ad_hoc_render_spec",
-                "message": "我会根据这个需求生成一个临时工作面，而不是回到通用面板。",
+                "message": "我还没抓准你要处理哪件事。你可以说客户、截止日，或想完成的动作。",
                 "user_input": text,
                 "selectable_items": session.get("selectable_items", []),
             }
@@ -112,9 +124,6 @@ class RuleBasedIntentPlanner:
         if self._looks_like_upcoming(lowered):
             return self._upcoming_deadlines_plan(tenant_id)
 
-        if self._looks_like_client_list(lowered):
-            return self._client_list_plan(tenant_id)
-
         target = self._selected_deadline(lowered, session)
         if target and self._looks_like_focus(lowered):
             return self._client_deadline_plan(tenant_id, target["client_id"])
@@ -122,7 +131,7 @@ class RuleBasedIntentPlanner:
         return {
             "special": "render_spec_needed",
             "intent_label": "ad_hoc_render_spec",
-            "message": "我会根据这个需求生成一个临时工作面，而不是回到通用面板。",
+            "message": "我还没抓准你要处理哪件事。你可以说客户、截止日，或想完成的动作。",
             "user_input": text,
             "selectable_items": session.get("selectable_items", []),
         }
@@ -560,7 +569,9 @@ class RuleBasedIntentPlanner:
                 "客户列表",
                 "所有客户",
                 "有哪些客户",
+                "多少客户",
                 "多少个客户",
+                "有多少客户",
                 "我有多少个客户",
                 "客户清单",
                 "客户名单",
@@ -643,6 +654,10 @@ class RuleBasedIntentPlanner:
                 "what you can do",
             ]
         )
+
+    def _looks_like_greeting(self, lowered: str) -> bool:
+        cleaned = re.sub(r"[\s!！。,.，?？]+", "", lowered)
+        return cleaned in {"你好", "您好", "hi", "hello", "hey"}
 
     def _looks_like_completed_list_request(self, lowered: str) -> bool:
         return any(

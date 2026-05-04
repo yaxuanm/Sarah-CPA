@@ -360,7 +360,7 @@ export function normalizeDashboardDate(label: string, daysRemaining: number): st
   if (!Number.isNaN(parsed.getTime())) {
     return parsed.toISOString().slice(0, 10);
   }
-  const fallback = new Date("2026-04-20T00:00:00");
-  fallback.setDate(fallback.getDate() + Math.max(daysRemaining, 0));
-  return fallback.toISOString().slice(0, 10);
+  const derivedDate = new Date("2026-04-20T00:00:00");
+  derivedDate.setDate(derivedDate.getDate() + Math.max(daysRemaining, 0));
+  return derivedDate.toISOString().slice(0, 10);
 }

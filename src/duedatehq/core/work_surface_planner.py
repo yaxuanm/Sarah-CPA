@@ -75,7 +75,7 @@ class WorkSurfacePlanner:
     """Plan purpose-built work surfaces between Agent understanding and rendering.
 
     This is intentionally small for the first slice. It makes the missing layer
-    explicit, so long-tail needs stop falling straight into a generic fallback.
+    explicit, so long-tail needs are handled by the agent layer first.
     """
 
     def __init__(self, engine: Any) -> None:

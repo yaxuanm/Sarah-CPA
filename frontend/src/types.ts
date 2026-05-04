@@ -1,9 +1,11 @@
-export type MessageRole = "system" | "user" | "status";
+export type MessageRole = "system" | "user" | "status" | "material";
 
 export type ChatMessage = {
   id: string;
   role: MessageRole;
   text: string;
+  view?: ViewEnvelope;
+  actions?: ActionPlan[];
 };
 
 export type ViewEnvelope = {
@@ -26,6 +28,16 @@ export type ActionPlan = {
   label: string;
   plan?: Record<string, unknown> | null;
   action?: DirectAction;
+};
+
+export type WorkspaceItem = {
+  id: string;
+  view: ViewEnvelope;
+  actions: ActionPlan[];
+  title: string;
+  summary: string;
+  highlight: string[];
+  createdFrom: string;
 };
 
 export type DirectAction = {

@@ -34,6 +34,7 @@ export type SectionContext = {
   onAction: DirectActionHandler;
   onExport?: (scope: string, format: "csv" | "pdf") => void;
   onOpenClient?: (clientId: string) => void;
+  onNavigate?: (section: SectionId) => void;
   onNotify?: (text: string, tone?: "green" | "blue" | "gold" | "red") => void;
   deadlines?: MockDeadline[];
   setDeadlines?: Dispatch<SetStateAction<MockDeadline[]>>;
@@ -151,7 +152,7 @@ export function WorkSection({
   rules: ruleStore,
   onExport,
   onNotify,
-  setResolvedRuleIds,
+  onNavigate,
   setDeadlines: setDeadlineStore
 }: SectionContext) {
   const deadlines = deadlineStore ?? mockDeadlines;
@@ -313,7 +314,7 @@ export function WorkSection({
             <div className="ddh-alert">
               <span className="ddh-alert-dot" />
               {pendingRules[0].source} - {pendingRules[0].title}. Affects {pendingRules[0].affected_count} clients.
-              <button type="button" onClick={() => setResolvedRuleIds?.((current) => current)}>
+              <button type="button" onClick={() => onNavigate?.("review")}>
                 Review & apply
               </button>
             </div>
@@ -405,6 +406,7 @@ type ImportStep = 1 | 2 | 3 | 4;
 export function ClientsSection({ onExport, onNotify, importLaunchToken = 0 }: SectionContext) {
   const [importOpen, setImportOpen] = useState(false);
   const [importStep, setImportStep] = useState<ImportStep>(1);
+  const [selectedClientId, setSelectedClientId] = useState<string | null>(null);
 
   useEffect(() => {
     if (importLaunchToken) {
@@ -437,6 +439,54 @@ export function ClientsSection({ onExport, onNotify, importLaunchToken = 0 }: Se
     );
   }
 
+  const selectedClient = selectedClientId ? mockClients.find((client) => client.id === selectedClientId) : null;
+  if (selectedClient) {
+    const clientDeadlines = mockDeadlines.filter((deadline) => deadline.client_id === selectedClient.id);
+    return (
+      <section className="ddh-work-detail">
+        <button type="button" className="ddh-back-link" onClick={() => setSelectedClientId(null)}>
+          Back to client directory
+        </button>
+        <div className="detail-head">
+          <div>
+            <h2>{selectedClient.name}</h2>
+            <p>{selectedClient.entity_type} - {selectedClient.states.join(", ")} - {selectedClient.primary_contact_email}</p>
+          </div>
+          <div className="detail-actions">
+            <button type="button" className="ddh-btn" onClick={() => onExport?.(`${selectedClient.name} profile`, "pdf")}>Export profile</button>
+            <button type="button" className="ddh-btn ddh-btn-primary" onClick={() => onNotify?.(`Opened ${selectedClient.name} in the client workspace.`, "blue")}>Open workspace</button>
+          </div>
+        </div>
+        <div className="detail-grid">
+          <article className="detail-card">
+            <div className="detail-card-lbl">Client profile</div>
+            <div className="detail-bigtext">{selectedClient.primary_contact_name}</div>
+            <div className="detail-date">{selectedClient.notes}</div>
+            <div className="detail-fields">
+              <div className="df"><span>Active</span><strong>{selectedClient.active_deadlines} deadlines</strong></div>
+              <div className="df"><span>Blocked</span><strong>{selectedClient.blocked_deadlines} deadlines</strong></div>
+              <div className="df"><span>Extensions</span><strong>{selectedClient.extensions_filed} filed</strong></div>
+              <div className="df"><span>Tax types</span><strong>{selectedClient.applicable_taxes.join(", ")}</strong></div>
+            </div>
+          </article>
+          <aside className="detail-right">
+            <article className="detail-card">
+              <div className="detail-card-lbl">Upcoming work</div>
+              <h3>{clientDeadlines.length} portfolio deadlines</h3>
+              <p>Active and archived records currently known for this client.</p>
+              {clientDeadlines.slice(0, 4).map((deadline) => (
+                <div className="rem-item" key={deadline.id}>
+                  <strong>{deadline.tax_type} - {deadline.jurisdiction}</strong>
+                  <span>{deadline.due_label} - {statusLabel(deadline)}</span>
+                </div>
+              ))}
+            </article>
+          </aside>
+        </div>
+      </section>
+    );
+  }
+
   return (
     <section>
       <div className="ddh-page-head">
@@ -453,14 +503,14 @@ export function ClientsSection({ onExport, onNotify, importLaunchToken = 0 }: Se
 
       <div className="ddh-client-grid">
         {mockClients.slice(0, 9).map((client) => (
-          <ClientTile key={client.id} client={client} />
+          <ClientTile key={client.id} client={client} onOpen={() => setSelectedClientId(client.id)} />
         ))}
       </div>
     </section>
   );
 }
 
-function ClientTile({ client }: { client: MockClient }) {
+function ClientTile({ client, onOpen }: { client: MockClient; onOpen: () => void }) {
   const tags = clientTags(client);
   return (
     <article className={`ddh-client-card ${client.risk_label === "high" ? "high" : client.risk_label === "watch" ? "watch" : ""}`}>
@@ -479,7 +529,7 @@ function ClientTile({ client }: { client: MockClient }) {
       </div>
       <div className="ddh-client-foot">
         <span>{client.primary_contact_name}</span>
-        <button type="button">Details</button>
+        <button type="button" onClick={onOpen}>Details</button>
       </div>
     </article>
   );
@@ -736,22 +786,41 @@ function ReviewRule({
   );
 }
 
-export function SettingsSection({ tenantId }: SectionContext) {
+export function SettingsSection({ tenantId, onNotify }: SectionContext) {
+  const [displayName, setDisplayName] = useState("Johnson CPA PLLC");
+  const [timeZone, setTimeZone] = useState("America/Los_Angeles");
+  const [fiscalYear, setFiscalYear] = useState("Calendar (Jan - Dec)");
+  const [channels, setChannels] = useState(() => mockChannels.slice(0, 3).map((channel) => ({ ...channel })));
+
+  function saveSettings() {
+    onNotify?.("Workspace settings saved for this session.", "green");
+  }
+
   return (
     <section>
       <div className="ddh-page-head"><div><div className="ddh-eyebrow">Settings</div><h1>Workspace settings</h1></div></div>
       <SettingsCard label="Workspace" title="Tenant identity" subtitle="Display name, time zone, and fiscal year shown across the app.">
-        <SettingRow label="Display name" sub="Shown in the topbar and on exports." value="Johnson CPA PLLC" />
-        <SettingRow label="Time zone" sub="Used for reminder send times." value="America/Los_Angeles" />
-        <SettingRow label="Fiscal year" sub="Used to bucket extensions and YTD totals." value="Calendar (Jan - Dec)" />
+        <SettingRow label="Display name" sub="Shown in the topbar and on exports." value={displayName} onChange={setDisplayName} />
+        <SettingRow label="Time zone" sub="Used for reminder send times." value={timeZone} onChange={setTimeZone} />
+        <SettingRow label="Fiscal year" sub="Used to bucket extensions and YTD totals." value={fiscalYear} onChange={setFiscalYear} />
         <SettingRow label="Tenant ID" sub="Sent on every backend request - read only." value={tenantId} mono />
-        <div className="ddh-settings-foot"><span>Anchored today: Apr 26, 2026</span><button type="button" className="ddh-btn ddh-btn-primary">Save changes</button></div>
+        <div className="ddh-settings-foot"><span>Anchored today: Apr 26, 2026</span><button type="button" className="ddh-btn ddh-btn-primary" onClick={saveSettings}>Save changes</button></div>
       </SettingsCard>
       <SettingsCard label="Notifications" title="Reminder channels" subtitle="Toggle which channels carry the 30/14/7/1 stepped reminders.">
-        {mockChannels.slice(0, 3).map((channel) => (
+        {channels.map((channel) => (
           <div key={channel.id} className="ddh-setting-row">
             <div><strong>{channel.label}</strong><span>{channel.description}</span></div>
-            <em className={channel.enabled ? "enabled" : ""}>{channel.enabled ? "Enabled" : "Not connected"}</em>
+            <button
+              type="button"
+              className={`ddh-channel-toggle ${channel.enabled ? "enabled" : ""}`}
+              onClick={() =>
+                setChannels((current) =>
+                  current.map((item) => item.id === channel.id ? { ...item, enabled: !item.enabled } : item)
+                )
+              }
+            >
+              {channel.enabled ? "Enabled" : "Not connected"}
+            </button>
           </div>
         ))}
       </SettingsCard>
@@ -770,11 +839,28 @@ function SettingsCard({ label, title, subtitle, children }: { label: string; tit
   );
 }
 
-function SettingRow({ label, sub, value, mono }: { label: string; sub: string; value: string; mono?: boolean }) {
+function SettingRow({
+  label,
+  sub,
+  value,
+  mono,
+  onChange
+}: {
+  label: string;
+  sub: string;
+  value: string;
+  mono?: boolean;
+  onChange?: (value: string) => void;
+}) {
   return (
     <div className="ddh-setting-row">
       <div><strong>{label}</strong><span>{sub}</span></div>
-      <input className={mono ? "mono" : ""} value={value} readOnly />
+      <input
+        className={mono ? "mono" : ""}
+        value={value}
+        readOnly={!onChange}
+        onChange={(event) => onChange?.(event.target.value)}
+      />
     </div>
   );
 }
@@ -783,12 +869,13 @@ export const sectionOrder: SectionId[] = ["work", "clients", "review", "settings
 
 export function SectionNav({
   current,
-  onSelect
+  onSelect,
+  pendingReviewCount
 }: {
   current: SectionId;
   onSelect: (id: SectionId) => void;
+  pendingReviewCount: number;
 }) {
-  const pendingRules = mockRules.filter((rule) => rule.status === "pending-review").length;
   return (
     <nav className="section-nav">
       {sectionOrder.map((id) => (
@@ -799,7 +886,7 @@ export function SectionNav({
           onClick={() => onSelect(id)}
         >
           {sectionMeta[id].eyebrow}
-          {id === "review" && pendingRules ? <span className="tab-badge">{pendingRules}</span> : null}
+          {id === "review" && pendingReviewCount ? <span className="tab-badge">{pendingReviewCount}</span> : null}
         </button>
       ))}
     </nav>

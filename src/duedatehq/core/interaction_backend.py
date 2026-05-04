@@ -11,7 +11,6 @@ from .models import DeadlineStatus
 from .response_generator import ResponseGenerator
 from .surface_composer import SurfaceComposer
 from .system_state import record_operation, remember_response_state
-from .work_surface_planner import WorkSurfacePlanner
 from .workspace_registry import get_workspace_spec, workspace_allows_edits
 
 
@@ -40,7 +39,6 @@ class InteractionBackend:
         self.intent_planner = intent_planner
         self.intent_library = intent_library
         self.agent_kernel = agent_kernel
-        self.work_surface_planner = WorkSurfacePlanner(response_generator.engine)
         self.surface_composer = SurfaceComposer(response_generator)
 
     def process_message(self, user_input: str, session: dict[str, Any]) -> dict[str, Any]:
@@ -89,8 +87,36 @@ class InteractionBackend:
             self._append_history(session, "system", workspace_guard_response.get("message", ""))
             return {"status": "ok", **workspace_guard_response, "session_id": session.get("session_id")}
 
-        kernel_decision = self.agent_kernel.decide(text, session) if self.agent_kernel else None
-        kernel_response = self._answer_from_agent_decision(kernel_decision, text, session) if kernel_decision else None
+        if not self.agent_kernel:
+            response = self._agent_unavailable_response("现在没有可用的 agent，所以我不能研判这个问题。")
+            self._remember_response(session, response)
+            self._remember_last_turn(
+                session,
+                text,
+                {"intent_label": "agent_unavailable", "op_class": "read"},
+                response,
+                plan_source="agent_required",
+            )
+            self._append_history(session, "system", response.get("message", ""))
+            return {"status": "ok", **response, "session_id": session.get("session_id")}
+
+        kernel_decision = self.agent_kernel.decide(text, session)
+        if not kernel_decision:
+            reason = session.get("last_agent_error")
+            detail = f"原因：{reason}" if reason else "没有返回具体错误。"
+            response = self._agent_unavailable_response(f"agent 现在不可用，{detail} 我不会用规则或模板继续处理。")
+            self._remember_response(session, response)
+            self._remember_last_turn(
+                session,
+                text,
+                {"intent_label": "agent_no_decision", "op_class": "read"},
+                response,
+                plan_source="agent_required",
+            )
+            self._append_history(session, "system", response.get("message", ""))
+            return {"status": "ok", **response, "session_id": session.get("session_id")}
+
+        kernel_response = self._answer_from_agent_decision(kernel_decision, text, session)
         if kernel_response:
             self._remember_response(session, kernel_response)
             session["last_agent_kernel"] = {
@@ -112,43 +138,17 @@ class InteractionBackend:
             self._append_history(session, "system", kernel_response.get("message", ""))
             return {"status": "ok", **kernel_response, "session_id": session.get("session_id")}
 
-        known_plan = self._known_route_plan(text, session)
-        if known_plan:
-            return self._process_plan_turn(text, known_plan, session, plan_source="known_route")
-
-        work_surface_plan = self.work_surface_planner.plan(text, session)
-        if work_surface_plan:
-            response = self.surface_composer.compose_work_surface(work_surface_plan, session, text)
-            self._remember_response(session, response)
-            self._remember_last_turn(
-                session,
-                text,
-                {"intent_label": work_surface_plan.surface_plan.surface_kind, "op_class": "read"},
-                response,
-                plan_source="work_surface_planner_fallback",
-            )
-            self._append_history(session, "system", response.get("message", ""))
-            return {"status": "ok", **response, "session_id": session.get("session_id")}
-
-        advice_response = self._answer_current_context_question(text, session)
-        if advice_response:
-            plan = {
-                "intent_label": "context_advice",
-                "op_class": "read",
-            }
-            self._remember_response(session, advice_response)
-            self._remember_last_turn(
-                session,
-                text,
-                plan,
-                advice_response,
-                plan_source="context_answer",
-            )
-            self._append_history(session, "system", advice_response.get("message", ""))
-            return {"status": "ok", **advice_response, "session_id": session.get("session_id")}
-
-        plan = self.intent_planner.plan(text, session)
-        return self._process_plan_turn(text, plan, session)
+        response = self._agent_unavailable_response("agent 没有给出可执行的对话或展示决策，我不会用规则或模板继续处理。")
+        self._remember_response(session, response)
+        self._remember_last_turn(
+            session,
+            text,
+            {"intent_label": "agent_unhandled_decision", "op_class": "read"},
+            response,
+            plan_source="agent_required",
+        )
+        self._append_history(session, "system", response.get("message", ""))
+        return {"status": "ok", **response, "session_id": session.get("session_id")}
 
     def _process_plan_turn(
         self,
@@ -159,7 +159,7 @@ class InteractionBackend:
         plan_source: str | None = None,
     ) -> dict[str, Any]:
         response = self.process_plan(plan, session)
-        if response.get("view", {}).get("type") == "ConfirmCard":
+        if (response.get("view") or {}).get("type") == "ConfirmCard":
             options = response["view"]["data"].get("options", [])
             primary = next((option for option in options if option.get("plan")), None)
             if primary:
@@ -169,6 +169,18 @@ class InteractionBackend:
         self._remember_last_turn(session, text, plan, response, plan_source=plan_source)
         self._append_history(session, "system", response.get("message", ""))
         return {"status": "ok", **response, "session_id": session.get("session_id")}
+
+    def _agent_unavailable_response(self, message: str) -> dict[str, Any]:
+        return {
+            "message": message,
+            "view": None,
+            "actions": [],
+            "state_summary": "agent required",
+            "secretary": {
+                "reply": message,
+                "action": {"type": "none"},
+            },
+        }
 
     def process_plan(self, plan: dict[str, Any], session: dict[str, Any]) -> dict[str, Any]:
         if plan.get("special") == "reference_unresolvable":
@@ -303,39 +315,6 @@ class InteractionBackend:
             "session_id": session.get("session_id"),
         }
 
-    def _known_route_plan(self, user_input: str, session: dict[str, Any]) -> dict[str, Any] | None:
-        """Resolve deterministic UI routes after the Agent Kernel hands off.
-
-        Only object navigation belongs here. Open-ended requests like
-        "prepare request" or "draft an email" must stay agent-led because the
-        useful surface depends on current context and user intent.
-        """
-        return self._relative_visible_item_plan(user_input, session)
-
-    def _relative_visible_item_plan(self, user_input: str, session: dict[str, Any]) -> dict[str, Any] | None:
-        lowered = user_input.casefold()
-        if not any(token in lowered for token in ["打开", "查看", "看", "focus", "open", "show"]):
-            return None
-        selectable = session.get("selectable_items") or []
-        if not selectable:
-            return None
-        match = re.search(r"(?:第\s*)?([1-9])\s*(?:条|个|项|item)", lowered)
-        if not match:
-            match = re.search(r"item\s*([1-9])", lowered)
-        if match:
-            index = int(match.group(1)) - 1
-            if 0 <= index < len(selectable):
-                item = selectable[index]
-                return self._client_deadline_plan(session["tenant_id"], item["client_id"])
-            return None
-        if any(token in lowered for token in ["第一", "第一个", "first", "1st"]):
-            return self._client_deadline_plan(session["tenant_id"], selectable[0]["client_id"])
-        if any(token in lowered for token in ["第二", "second", "2nd"]) and len(selectable) > 1:
-            return self._client_deadline_plan(session["tenant_id"], selectable[1]["client_id"])
-        if any(token in lowered for token in ["第三", "third", "3rd"]) and len(selectable) > 2:
-            return self._client_deadline_plan(session["tenant_id"], selectable[2]["client_id"])
-        return None
-
     def _client_deadline_plan(self, tenant_id: str, client_id: str) -> dict[str, Any]:
         return {
             "plan": [
@@ -444,8 +423,6 @@ class InteractionBackend:
         user_input: str,
         session: dict[str, Any],
     ) -> dict[str, Any] | None:
-        if getattr(decision, "route", None) == "pass_to_planner":
-            return None
         if getattr(decision, "route", None) == "prepare_action":
             return None
         if decision.render_policy in {"render_new_view", "update_current_view"}:
@@ -466,6 +443,8 @@ class InteractionBackend:
 
         if decision.render_policy == "keep_current_view":
             view = current_view
+        elif decision.render_policy == "no_view_needed":
+            view = None
         else:
             view = self.response_generator.generate_guidance(message, [])["view"]
         return {
@@ -473,6 +452,7 @@ class InteractionBackend:
             "view": view,
             "actions": session.get("current_actions", []),
             "state_summary": session.get("state_summary"),
+            "secretary": decision.secretary_envelope,
         }
 
     def _render_agent_strategy_response(
@@ -481,7 +461,10 @@ class InteractionBackend:
         user_input: str,
         session: dict[str, Any],
     ) -> dict[str, Any] | None:
-        return self.surface_composer.compose_agent_strategy(decision, user_input, session)
+        response = self.surface_composer.compose_agent_strategy(decision, user_input, session)
+        if response and decision.secretary_envelope:
+            response["secretary"] = decision.secretary_envelope
+        return response
 
     def _compose_work_surface_response(
         self,
@@ -565,7 +548,7 @@ class InteractionBackend:
                 {
                     "type": "decision_brief",
                     "title": "先说明边界",
-                    "body": plan.surface_plan.data_boundary_notice or "我会基于当前可用数据判断。",
+                    "body": plan.surface_plan.data_boundary_notice or "基于当前可用数据判断。",
                 },
                 {
                     "type": "fact_strip",
@@ -839,7 +822,7 @@ class InteractionBackend:
                 }
                 for index, client in enumerate(clients[:6], start=1)
             ]
-        return [{"label": "当前页面", "detail": "我先基于当前页面给出判断；如果你要更细的依据，可以继续追问。"}]
+        return [{"label": "当前页面", "detail": "基于当前页面给出判断；需要更细的依据时，可以继续追问。"}]
 
     def _strategy_title(self, decision: AgentKernelDecision) -> str:
         goal = (decision.view_goal or decision.need_type or "工作面").strip()

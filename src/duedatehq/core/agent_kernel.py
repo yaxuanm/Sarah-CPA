@@ -5,13 +5,14 @@ import json
 import os
 from typing import Any, Protocol
 
-try:  # Anthropic is optional for local deterministic tests.
+try:  # Anthropic is optional for local tests.
     from anthropic import Anthropic
 except ImportError:  # pragma: no cover - exercised only without the optional dependency
     Anthropic = None  # type: ignore[assignment]
 
 from .models import BlockerStatus, DeadlineStatus, TaskStatus
 from .nlu_service import resolve_claude_model
+from .secretary_envelope import parse_secretary_envelope
 from .workspace_registry import workspace_registry_prompt
 
 
@@ -33,7 +34,6 @@ ALLOWED_ROUTES = {
     "render_strategy_surface",
     "prepare_action",
     "ask_clarifying_question",
-    "pass_to_planner",
 }
 
 ALLOWED_RENDER_POLICIES = {
@@ -41,7 +41,6 @@ ALLOWED_RENDER_POLICIES = {
     "no_view_needed",
     "render_new_view",
     "update_current_view",
-    "pass_to_planner",
 }
 
 
@@ -61,9 +60,38 @@ class AgentKernelDecision:
     requires_confirmation: bool = False
     confidence: float = 0.0
     reason: str | None = None
+    secretary_envelope: dict[str, Any] | None = None
 
     @classmethod
     def from_dict(cls, payload: dict[str, Any]) -> "AgentKernelDecision":
+        envelope = parse_secretary_envelope(payload)
+        if envelope:
+            if envelope.action.type == "none":
+                return cls(
+                    route="ask_clarifying_question",
+                    need_type="chat_only",
+                    render_policy="no_view_needed",
+                    data_requests=[],
+                    answer_mode="answer_only",
+                    answer=envelope.reply,
+                    confidence=1.0,
+                    reason="secretary envelope requested chat-only response",
+                    secretary_envelope=envelope.to_dict(),
+                )
+            template = envelope.action.template or (envelope.action.workspace.template if envelope.action.workspace else "generated_workspace")
+            return cls(
+                route="render_strategy_surface",
+                need_type=template,
+                render_policy="render_new_view",
+                data_requests=_data_requests_for_secretary_template(template),
+                answer_mode="answer_and_render",
+                view_goal=_view_goal_from_secretary_envelope(envelope.to_dict()),
+                answer=envelope.reply,
+                confidence=1.0,
+                reason="secretary envelope requested render action",
+                secretary_envelope=envelope.to_dict(),
+            )
+
         data_requests = [
             str(item)
             for item in payload.get("data_requests", [])
@@ -86,11 +114,11 @@ class AgentKernelDecision:
                     }
                 )
         return cls(
-            route=str(payload.get("route") or "pass_to_planner"),
-            need_type=str(payload.get("need_type") or "pass_to_planner"),
-            render_policy=str(payload.get("render_policy") or "pass_to_planner"),
+            route=str(payload.get("route") or "ask_clarifying_question"),
+            need_type=str(payload.get("need_type") or "chat_only"),
+            render_policy=str(payload.get("render_policy") or "no_view_needed"),
             data_requests=data_requests,
-            answer_mode=str(payload.get("answer_mode") or "pass_to_planner"),
+            answer_mode=str(payload.get("answer_mode") or "answer_only"),
             view_goal=str(payload["view_goal"]) if payload.get("view_goal") else None,
             answer=str(payload["answer"]) if payload.get("answer") else None,
             selected_refs=[str(item) for item in selected_refs] if isinstance(selected_refs, list) else [],
@@ -112,122 +140,31 @@ class AgentKernelDecision:
         return True
 
 
+def _data_requests_for_secretary_template(template: str) -> list[str]:
+    lowered = template.casefold()
+    if "deadline" in lowered:
+        return ["all_clients", "all_deadlines"]
+    if "workload" in lowered or "plan" in lowered:
+        return ["all_clients", "all_deadlines"]
+    if "client" in lowered:
+        return ["all_clients", "client_deadlines"]
+    return ["current_view"]
+
+
+def _view_goal_from_secretary_envelope(envelope: dict[str, Any]) -> str:
+    action = envelope.get("action") if isinstance(envelope.get("action"), dict) else {}
+    workspace = action.get("workspace") if isinstance(action.get("workspace"), dict) else {}
+    fields = workspace.get("fields") if isinstance(workspace.get("fields"), dict) else {}
+    entity = fields.get("entity") if isinstance(fields.get("entity"), dict) else {}
+    action_field = fields.get("action") if isinstance(fields.get("action"), dict) else {}
+    pieces = [str(action_field.get("value") or "").strip(), str(entity.get("value") or "").strip()]
+    goal = " ".join(piece for piece in pieces if piece)
+    return goal or str(action.get("template") or workspace.get("template") or "按需材料")
+
+
 class AgentKernel(Protocol):
     def decide(self, user_input: str, session: dict[str, Any]) -> AgentKernelDecision | None:
         ...
-
-
-class DeterministicAgentKernel:
-    """Small local guardrail for workflow turns when Claude is unavailable.
-
-    Semantic synthesis should come from ClaudeAgentKernel. This fallback only
-    protects obvious workflow/navigation turns and simple current-page answers,
-    so old keyword policies do not compete with the Agent loop.
-    """
-
-    def decide(self, user_input: str, session: dict[str, Any]) -> AgentKernelDecision | None:
-        text = user_input.strip().casefold()
-        if not text:
-            return None
-        if self._looks_like_tax_change_need(text):
-            return None
-
-        if self._looks_like_navigation_or_write(text):
-            return AgentKernelDecision(
-                route="pass_to_planner",
-                need_type="workflow_or_navigation",
-                render_policy="pass_to_planner",
-                data_requests=[],
-                answer_mode="pass_to_planner",
-                confidence=0.95,
-                reason="existing planner handles navigation and write flows",
-            )
-
-        current_view = session.get("current_view")
-        if isinstance(current_view, dict) and current_view.get("type") and self._looks_like_surface_question(text):
-            need_type = "explain_current_view" if current_view.get("type") == "ListCard" else "answer_advice"
-            return AgentKernelDecision(
-                route="answer_current_view",
-                need_type=need_type,
-                render_policy="keep_current_view",
-                data_requests=["current_view"],
-                answer_mode="answer_only",
-                view_goal="answer from the current work surface without replacing it",
-                confidence=0.82,
-                reason="current visible surface likely contains enough context",
-            )
-
-        return None
-
-    def _looks_like_navigation_or_write(self, text: str) -> bool:
-        terms = [
-            "打开",
-            "切到",
-            "转到",
-            "回到",
-            "返回",
-            "标记",
-            "完成",
-            "确认",
-            "取消",
-            "起草",
-            "生成",
-            "发送",
-            "show source",
-            "back",
-            "go to",
-            "open ",
-            "focus ",
-            "mark ",
-            "complete",
-            "confirm",
-            "cancel",
-            "draft",
-            "prepare",
-        ]
-        return any(term in text for term in terms)
-
-    def _looks_like_surface_question(self, text: str) -> bool:
-        if self._looks_like_tax_change_need(text):
-            return False
-        blocked_source_terms = ["来源", "变更", "变了", "谁改", "历史", "source", "history", "changed"]
-        if any(term in text for term in blocked_source_terms):
-            return False
-        broad_queue_terms = ["今天", "today", "列表", "待处理", "todo", "queue"]
-        explain_terms = ["分别", "哪些", "是什么", "解释", "说明", "说一下", "list them", "what are", "explain"]
-        if any(term in text for term in broad_queue_terms) and not any(term in text for term in explain_terms):
-            return False
-        question_terms = [
-            "?",
-            "？",
-            "什么",
-            "哪些",
-            "分别",
-            "解释",
-            "说明",
-            "说一下",
-            "怎么",
-            "为什么",
-            "急",
-            "重要",
-            "风险",
-            "优先",
-            "下一步",
-            "怎么办",
-            "what",
-            "which",
-            "why",
-            "how",
-            "urgent",
-            "priority",
-            "risk",
-        ]
-        return any(term in text for term in question_terms)
-
-    def _looks_like_tax_change_need(self, text: str) -> bool:
-        subject_terms = ["政策", "法规", "规则", "税务", "税法", "税收", "policy", "regulation", "rule", "tax", "notice"]
-        change_terms = ["更新", "变化", "变更", "新闻", "新规", "最近", "关注", "update", "change", "news", "recent"]
-        return any(term in text for term in subject_terms) and any(term in text for term in change_terms)
 
 
 class ClaudeAgentKernel:
@@ -248,29 +185,36 @@ class ClaudeAgentKernel:
     ) -> None:
         self.engine = engine
         self.api_key = api_key or os.getenv("ANTHROPIC_API_KEY") or os.getenv("CLAUDE_API_KEY") or os.getenv("claude_api_key")
+        self.auth_token = os.getenv("ANTHROPIC_AUTH_TOKEN")
+        self.base_url = os.getenv("ANTHROPIC_BASE_URL")
         self.model = resolve_claude_model(model or os.getenv("CLAUDE_AGENT_MODEL") or os.getenv("CLAUDE_POLICY_MODEL") or os.getenv("CLAUDE_NLU_MODEL"))
-        self.client = Anthropic(api_key=self.api_key) if Anthropic is not None and self.api_key else None
+        self.client = (
+            Anthropic(api_key=self.api_key, auth_token=self.auth_token, base_url=self.base_url)
+            if Anthropic is not None and (self.api_key or self.auth_token)
+            else None
+        )
         self.max_tool_rounds = max_tool_rounds
-        self.fallback = DeterministicAgentKernel()
 
     def decide(self, user_input: str, session: dict[str, Any]) -> AgentKernelDecision | None:
-        deterministic = self.fallback.decide(user_input, session)
         if not self.client:
-            return deterministic
+            session["last_agent_error"] = "agent client 未初始化：缺少 ANTHROPIC_API_KEY、CLAUDE_API_KEY 或 ANTHROPIC_AUTH_TOKEN。"
+            return None
 
         try:
             raw = self._call_model(self._build_system_prompt(session), user_input, session)
-        except Exception:
-            return deterministic
+        except Exception as exc:  # noqa: BLE001 - surface agent availability clearly to the caller.
+            session["last_agent_error"] = f"{type(exc).__name__}: {exc}"
+            return None
         try:
             payload = self._extract_json_object(raw)
-        except json.JSONDecodeError:
-            return deterministic
+        except json.JSONDecodeError as exc:
+            session["last_agent_error"] = f"agent 返回的内容不是可解析 JSON：{exc}"
+            return None
         decision = AgentKernelDecision.from_dict(payload)
         if not decision.is_allowed() or decision.confidence < 0.65:
-            return deterministic
-        if decision.route == "pass_to_planner":
-            return deterministic or decision
+            session["last_agent_error"] = "agent 返回的决策未通过 schema 或置信度校验。"
+            return None
+        session.pop("last_agent_error", None)
         return decision
 
     def _call_model(self, system_prompt: str, user_input: str, session: dict[str, Any]) -> str:
@@ -307,7 +251,7 @@ class ClaudeAgentKernel:
                     ],
                 }
             )
-        return '{"route":"pass_to_planner","need_type":"tool_loop_exhausted","render_policy":"pass_to_planner","data_requests":[],"answer_mode":"pass_to_planner","confidence":0}'
+        return '{"route":"ask_clarifying_question","need_type":"agent_tool_loop_exhausted","render_policy":"no_view_needed","data_requests":[],"answer_mode":"answer_only","answer":"agent 这轮没有完成研判。","confidence":0}'
 
     def _build_system_prompt(self, session: dict[str, Any]) -> str:
         context = {
@@ -328,15 +272,17 @@ class ClaudeAgentKernel:
             "recent_history": session.get("history_window", [])[-8:],
         }
         return f"""
-You are DueDateHQ's Agent Kernel.
+You are DueDateHQ's personal secretary.
 
-The product principle is: smart agent understands the user's need, then renders the right work surface.
-You are not a fixed intent classifier. Use native tool use plus a ReAct loop:
-1. Understand the user's actual job-to-be-done.
-2. Call tools when visible context is not enough.
-3. Observe tool results and decide whether more data is needed.
-4. Decide whether to answer, render a work surface, prepare an action, ask a question, or hand off to planner.
-5. Choose a view from AVAILABLE_VIEWS. Keep writes behind confirmation.
+The product principle is: conversation never stops. Rendering is a gesture in the conversation,
+like putting a file on the desk, not a replacement for replying.
+
+Use native tool use plus a ReAct loop:
+1. Reply naturally first, like a real secretary.
+2. Decide whether showing material is more information-dense than describing it.
+3. Call tools when real data is needed before showing material.
+4. If the user's intent or entity is missing, reply with a clarification and do not render.
+5. If you render, naturally announce the gesture in the reply, e.g. "我把 Acme 的截止日期拉出来给你看。"
 
 Infer what the user needs right now from:
 - the user message
@@ -347,15 +293,53 @@ Infer what the user needs right now from:
 - selectable items
 - allowed data/action space
 
-Return ONLY JSON. No markdown.
+Prefer the Secretary Envelope schema below. Return ONLY JSON. No markdown.
+
+Secretary Envelope schema:
+{{
+  "reply": "natural assistant reply; always present",
+    "action": {{
+      "type": "render | none",
+      "announce": "verb phrase used in reply, e.g. 拉出来 | 拿出来 | 整理出来",
+      "template": "deadline_view | workload_plan | client_summary | tax_change_radar | generated_workspace",
+      "summary": "one judgment sentence for the display header",
+      "highlight": ["ids mentioned in reply, e.g. deadline_001 or client_id"],
+      "workspace": null | {{
+      "template": "same as template",
+      "fields": {{
+        "entity": {{"value": "Acme Holdings LLC", "source": "user_input"}},
+        "action": {{"value": "查看截止日期", "source": "user_input"}},
+        "data": {{"value": null, "source": "pending"}}
+      }}
+    }}
+  }}
+}}
+
+Field source rules:
+- Every workspace field must include source.
+- Allowed source values are exactly: user_input, tool_result, pending.
+- source="inferred" is forbidden.
+- Do not render material for an entity the user did not mention or that tools did not return.
+- Data fields must come from tool_result. Use pending only before tool calls; after tool calls, replace pending with tool_result when possible.
+
+Action rules:
+- If the user input has no clear action verb, action.type="none" and reply asks what to handle.
+- If the action is clear but the entity/object is missing, action.type="none" and reply asks for that entity.
+- If action and entity are clear, action.type="render" only when material is more useful than text.
+- Broad portfolio questions such as "最近有啥值得注意的", "what needs attention", "what should I look at", or "any risks" are clear enough: render a portfolio/triage surface using available deadlines, rules, notices, clients, and blockers.
+- Never render instead of clarifying.
+- Never render without a natural reply.
+- If reply names a specific client/deadline as the key point, put the matching id in action.highlight and use the same judgment in action.summary.
+
+Legacy decision schema is still accepted for compatibility:
 
 Schema:
 {{
-  "route": "answer_current_view | render_strategy_surface | prepare_action | ask_clarifying_question | pass_to_planner",
+  "route": "answer_current_view | render_strategy_surface | prepare_action | ask_clarifying_question",
   "need_type": "short semantic label, e.g. client_risk_review, workload_comparison, explain_current_view",
-  "render_policy": "keep_current_view | no_view_needed | update_current_view | render_new_view | pass_to_planner",
+  "render_policy": "keep_current_view | no_view_needed | update_current_view | render_new_view",
   "data_requests": ["current_view | visible_deadlines | all_clients | all_deadlines | client_deadlines | blockers | tasks | rules | rule_review_queue | notices"],
-  "answer_mode": "answer_only | answer_and_render | render_only | pass_to_planner",
+  "answer_mode": "answer_only | answer_and_render | render_only",
   "view_goal": "what the right-side surface should help the user decide",
   "surface_kind": "TaxChangeRadar | ClientImpactMatrix | WeeklyExecutionList | SourceAudit | null",
   "answer": "optional concise answer if current context is already enough",
@@ -374,8 +358,7 @@ Rules:
 - If the user asks for a synthesis, comparison, prioritization, overview, status, explanation of multiple visible items, or "what should I do", prefer render_strategy_surface and request the minimum allowed data.
 - If the user asks about policy updates, tax news, rule changes, notices, regulations, or recent changes that may affect clients, use render_strategy_surface with surface_kind="TaxChangeRadar" and request rules, rule_review_queue, notices, all_clients, and all_deadlines.
 - For unknown but useful UI needs, choose render_strategy_surface with a clear view_goal.
-- For normal natural-language workflow requests, reason about the user's real need first. Do not pass to the planner just because the text contains words like open, prepare, draft, mark, send, or complete.
-- Use pass_to_planner only when the message is clearly a deterministic UI/navigation command already covered by visible action contracts, or when you cannot improve on the existing deterministic planner.
+- For normal natural-language workflow requests, reason about the user's real need first. Do not hand off to a rule-based planner.
 - Never execute writes. If a write may be needed, choose prepare_action and requires_confirmation=true.
 - Do not invent facts. If facts are needed, call tools before final JSON.
 - If a user asks a normal advisory question, answer conversationally and still choose whether the current view should stay or a better surface should be rendered.

@@ -28,6 +28,11 @@ def remember_response_state(session: dict[str, Any], response: dict[str, Any]) -
     lets the conversation/workspace surfaces render from that same state.
     """
     initialize_system_state(session)
+    if "view" not in response or response.get("view") is None:
+        session["current_actions"] = response.get("actions", [])
+        session["state_summary"] = response.get("state_summary")
+        return session
+
     view = response.get("view") or {}
     previous_workspace = session.get("current_workspace")
     next_workspace = workspace_snapshot(view, response.get("state_summary"))

@@ -559,7 +559,7 @@ class SurfaceComposer:
                 }
                 for index, client in enumerate(clients[:6], start=1)
             ]
-        return [{"label": "当前页面", "detail": "我先基于当前页面给出判断；如果你要更细的依据，可以继续追问。"}]
+        return [{"label": "当前页面", "detail": "基于当前页面给出判断；需要更细的依据时，可以继续追问。"}]
 
     def _strategy_title(self, decision: AgentKernelDecision) -> str:
         goal = (decision.view_goal or decision.need_type or "工作面").strip()

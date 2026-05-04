@@ -180,18 +180,26 @@ def test_interaction_backend_message_renders_today_and_remembers_selectable_item
     assert session["operation_log"][0]["intent_label"] == "today"
 
 
-def test_interaction_backend_long_tail_need_renders_constrained_surface(app):
+def test_interaction_backend_long_tail_need_asks_for_chat_clarification_before_rendering(app):
     _, _, _, session = _seed_interaction_data(app)
 
     response = app.interaction_backend.process_message("帮我写一封很强硬但礼貌的客户催资料邮件", session)
 
     assert response["status"] == "ok"
-    assert response["view"]["type"] == "RenderSpecSurface"
-    spec = response["view"]["data"]["render_spec"]
-    assert spec["surface"] == "work_card"
-    assert spec["version"] == "0.1"
-    assert any(block["type"] == "choice_set" for block in spec["blocks"])
-    assert response["view"]["type"] == session["current_view"]["type"]
+    assert response["view"] is None
+    assert "客户、截止日" in response["message"]
+    assert session["current_view"] is None
+
+
+def test_interaction_backend_greeting_is_chat_only(app):
+    _, _, _, session = _seed_interaction_data(app)
+
+    response = app.interaction_backend.process_message("你好", session)
+
+    assert response["status"] == "ok"
+    assert response["view"] is None
+    assert response["message"].startswith("你好")
+    assert session["current_view"] is None
 
 
 def test_interaction_backend_draft_request_uses_current_task_context(app):

@@ -48,7 +48,7 @@ class FakeClaudeAgentKernel(ClaudeAgentKernel):
         self.model_text = model_text
 
     def _call_model(self, system_prompt: str, user_input: str, session: dict) -> str:
-        assert "DueDateHQ's Agent Kernel" in system_prompt
+        assert "DueDateHQ's personal secretary" in system_prompt
         assert user_input
         assert isinstance(session, dict)
         return self.model_text
@@ -87,6 +87,55 @@ def test_claude_agent_kernel_parses_constrained_decision():
         {"label": "看风险最高客户", "intent": "打开风险最高的客户", "style": "primary"},
         {"label": "回到今日清单", "intent": "查看今天的待处理事项", "style": "secondary"},
     ]
+
+
+def test_claude_agent_kernel_parses_secretary_chat_envelope():
+    kernel = FakeClaudeAgentKernel(
+        json.dumps(
+            {
+                "reply": "你好！有什么需要我处理的？",
+                "action": {"type": "none"},
+            }
+        )
+    )
+
+    decision = kernel.decide("你好", {})
+
+    assert decision is not None
+    assert decision.render_policy == "no_view_needed"
+    assert decision.answer == "你好！有什么需要我处理的？"
+    assert decision.secretary_envelope["action"]["type"] == "none"
+
+
+def test_claude_agent_kernel_parses_secretary_render_envelope():
+    kernel = FakeClaudeAgentKernel(
+        json.dumps(
+            {
+                "reply": "好的，我把 Acme 的截止日期拉出来给你看。",
+                "action": {
+                    "type": "render",
+                    "announce": "拉出来",
+                    "template": "deadline_view",
+                    "workspace": {
+                        "template": "deadline_view",
+                        "fields": {
+                            "entity": {"value": "Acme LLC", "source": "user_input"},
+                            "action": {"value": "查看截止日期", "source": "user_input"},
+                            "data": {"value": [], "source": "tool_result"},
+                        },
+                    },
+                },
+            }
+        )
+    )
+
+    decision = kernel.decide("帮我看 Acme 的截止日期", {})
+
+    assert decision is not None
+    assert decision.route == "render_strategy_surface"
+    assert decision.render_policy == "render_new_view"
+    assert decision.data_requests == ["all_clients", "all_deadlines"]
+    assert decision.secretary_envelope["action"]["announce"] == "拉出来"
 
 
 def test_claude_agent_kernel_low_confidence_uses_fallback():

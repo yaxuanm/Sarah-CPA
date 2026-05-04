@@ -67,6 +67,17 @@ def test_rule_based_planner_builds_client_plan_from_name(app):
     assert plan["plan"][0]["args"]["client_id"] == client.client_id
 
 
+def test_rule_based_planner_routes_client_count_question(app):
+    tenant, _, _, session = _seed_planner_data(app)
+
+    plan = app.intent_planner.plan("现在有多少客户", session)
+
+    assert plan["intent_label"] == "client_list"
+    assert plan["op_class"] == "read"
+    assert plan["plan"][0]["cli_group"] == "client"
+    assert plan["plan"][0]["args"]["tenant_id"] == tenant.tenant_id
+
+
 def test_rule_based_planner_opens_numbered_visible_item(app):
     _, _, _, session = _seed_planner_data(app)
     session["selectable_items"].append(

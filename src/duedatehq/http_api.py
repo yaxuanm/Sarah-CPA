@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from .app import create_app
+from .core.secretary_envelope import envelope_from_response
 from .core.system_state import record_operation, remember_response_state
 
 
@@ -33,6 +34,8 @@ def create_fastapi_app(db_path: str | None = None):
         allow_origins=[
             "http://127.0.0.1:5173",
             "http://localhost:5173",
+            "http://127.0.0.1:5174",
+            "http://localhost:5174",
         ],
         allow_credentials=True,
         allow_methods=["*"],
@@ -89,7 +92,7 @@ def create_fastapi_app(db_path: str | None = None):
 
         def events():
             user_input = body.get("user_input", "")
-            yield _sse("message_delta", {"delta": _instant_response_prefix(user_input, session)})
+            yield _sse("agent_step", {"label": "接收请求", "detail": "先回应，再判断是否需要拿材料。", "tone": "blue"})
             yield _sse("thinking", {"message": _thinking_status(user_input, session)})
             previous_feedback_count = len(session.get("flywheel_feedback_events", []))
             try:
@@ -122,12 +125,61 @@ def create_fastapi_app(db_path: str | None = None):
                     "template_id": last_turn.get("template_id"),
                 },
             )
+            secretary = response.get("secretary") if isinstance(response.get("secretary"), dict) else envelope_from_response(response)
+            reply = str(secretary.get("reply") or response.get("message") or "")
+            for chunk in _message_chunks(reply):
+                yield _sse("message_delta", {"delta": chunk})
+            action = secretary.get("action") if isinstance(secretary.get("action"), dict) else {}
+            if action.get("type") == "render":
+                render_template = str(action.get("template") or (response.get("view") or {}).get("type") or "generated_workspace")
+                yield _sse("agent_step", {"label": "准备材料", "detail": action.get("announce") or "拿出材料", "tone": "gold"})
+                yield _sse(
+                    "action_started",
+                    {
+                        "type": "render",
+                        "announce": action.get("announce"),
+                        "template": render_template,
+                    },
+                )
+                slots = _slots_from_secretary_action(action, session)
+                yield _sse("agent_step", {"label": "resolve_template", "detail": render_template, "tone": "blue"})
+                template_result = app_state.template_tools.run_render_loop(
+                    intent=render_template,
+                    slots=slots,
+                    tenant_id=session["tenant_id"],
+                    session=session,
+                    response_view=response.get("view") if isinstance(response.get("view"), dict) else None,
+                )
+                resolution = template_result["resolution"]
+                yield _sse(
+                    "agent_step",
+                    {
+                        "label": "fetch_slot_data",
+                        "detail": f"{resolution.get('status')}:{resolution.get('template_id') or resolution.get('base_template_id') or resolution.get('staging_template_id')}",
+                        "tone": "gold",
+                    },
+                )
+                yield _sse("agent_step", {"label": "dispatch_render", "detail": template_result["render_event"]["render_id"], "tone": "green"})
+                yield _sse(
+                    "render_event",
+                    {
+                        **template_result["render_event"],
+                        "resolution": resolution,
+                        "actions": response.get("actions", []),
+                        "summary": action.get("summary"),
+                        "highlight": action.get("highlight") if isinstance(action.get("highlight"), list) else [],
+                        "cross_reference": {
+                            "reply": reply,
+                            "summary": action.get("summary"),
+                            "highlight": action.get("highlight") if isinstance(action.get("highlight"), list) else [],
+                        },
+                    },
+                )
+                yield _sse("workspace_rendered", {"view": response.get("view"), "actions": response.get("actions", [])})
             yield _sse("view_rendered", {"view": response.get("view"), "actions": response.get("actions", [])})
             new_feedback = _latest_new_feedback_event(session, previous_feedback_count)
             if new_feedback:
                 yield _sse("feedback_recorded", new_feedback)
-            for chunk in _message_chunks(str(response.get("message") or "")):
-                yield _sse("message_delta", {"delta": chunk})
             yield _sse("done", {"response": response, "session": session})
 
         return StreamingResponse(events(), media_type="text/event-stream")
@@ -137,6 +189,18 @@ def create_fastapi_app(db_path: str | None = None):
         return app_state.intent_library.stats()
 
     return api
+
+
+def _slots_from_secretary_action(action: dict[str, Any], session: dict[str, Any]) -> dict[str, Any]:
+    slots: dict[str, Any] = {}
+    workspace = action.get("workspace") if isinstance(action.get("workspace"), dict) else {}
+    fields = workspace.get("fields") if isinstance(workspace.get("fields"), dict) else {}
+    for name, field in fields.items():
+        if isinstance(field, dict):
+            slots[str(name)] = field.get("value")
+    if session.get("current_view"):
+        slots.setdefault("current_view_type", (session.get("current_view") or {}).get("type") if isinstance(session.get("current_view"), dict) else None)
+    return slots
 
 
 def _prepare_session(body: dict[str, Any]) -> dict[str, Any]:

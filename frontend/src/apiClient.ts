@@ -1,8 +1,24 @@
 import type { ActionPlan, DirectAction, ViewEnvelope } from "./types";
 
 export type StreamUpdate =
+  | { event: "agent_step"; label: string; detail?: string; tone?: string }
   | { event: "thinking"; message: string }
   | { event: "intent_confirmed"; intentLabel?: string; planSource?: string }
+  | { event: "action_started"; actionType?: string; announce?: string; template?: string }
+  | {
+      event: "render_event";
+      renderId: string;
+      templateId: string;
+      filledSlots: Record<string, unknown>;
+      slotSources?: Record<string, string>;
+      resolution?: Record<string, unknown>;
+      summary?: string;
+      highlight?: string[];
+      crossReference?: { reply?: string; summary?: string; highlight?: string[] };
+      view?: ViewEnvelope | null;
+      actions: ActionPlan[];
+    }
+  | { event: "workspace_rendered"; view: ViewEnvelope | null; actions: ActionPlan[] }
   | { event: "view_rendered"; view: ViewEnvelope | null; actions: ActionPlan[] }
   | { event: "feedback_recorded"; signal?: string }
   | { event: "message_delta"; delta: string }
@@ -109,10 +125,30 @@ function parseSseChunk(chunk: string): StreamUpdate | null {
   if (!event || !rawData) return null;
   const data = JSON.parse(rawData);
 
+  if (event === "agent_step") return { event, label: data.label || "Working", detail: data.detail, tone: data.tone };
   if (event === "thinking") return { event, message: data.message };
   if (event === "intent_confirmed") {
     return { event, intentLabel: data.intent_label, planSource: data.plan_source };
   }
+  if (event === "action_started") {
+    return { event, actionType: data.type, announce: data.announce, template: data.template };
+  }
+  if (event === "render_event") {
+    return {
+      event,
+      renderId: data.render_id,
+      templateId: data.template_id,
+      filledSlots: data.filled_slots || {},
+      slotSources: data.slot_sources,
+      resolution: data.resolution,
+      summary: data.summary,
+      highlight: Array.isArray(data.highlight) ? data.highlight : [],
+      crossReference: data.cross_reference,
+      view: data.view,
+      actions: data.actions || []
+    };
+  }
+  if (event === "workspace_rendered") return { event, view: data.view, actions: data.actions || [] };
   if (event === "view_rendered") return { event, view: data.view, actions: data.actions || [] };
   if (event === "feedback_recorded") return { event, signal: data.signal };
   if (event === "message_delta") return { event, delta: data.delta || "" };

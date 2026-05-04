@@ -169,7 +169,7 @@ export function humanIntentStatus(intentLabel?: string, planSource?: string): st
     notification_preview: "I'll show the next reminder set first.",
     upcoming_deadlines: "I'll open future deadlines first so you can narrow the scope.",
     completed_deadlines: "I'll show completed items first so you can review them.",
-    ad_hoc_render_spec: "This request is open-ended, so I'll turn it into a constrained work surface first."
+    ad_hoc_render_spec: "This request is open-ended, so the conversation needs one more concrete detail first."
   };
   const base = labels[intentLabel || ""] || "I'm organizing this request.";
   if (!planSource || planSource === "context_answer") return base;

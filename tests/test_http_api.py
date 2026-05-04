@@ -128,6 +128,36 @@ def test_bootstrap_today_uses_fast_default_entry(tmp_path):
     assert payload["session"]["operation_log"][0]["plan_source"] == "bootstrap"
 
 
+def test_chat_stream_emits_render_event_after_reply_for_client_count(tmp_path):
+    pytest.importorskip("fastapi")
+    pytest.importorskip("httpx")
+    from fastapi.testclient import TestClient
+
+    api = create_fastapi_app(str(tmp_path / "http-render-event.sqlite3"))
+    tenant = _seed_api_deadline(api)
+    client = TestClient(api)
+
+    with client.stream(
+        "POST",
+        "/chat/stream",
+        json={
+            "tenant_id": tenant.tenant_id,
+            "user_input": "现在有多少客户",
+            "session": {"session_id": "render-event-session", "tenant_id": tenant.tenant_id},
+        },
+    ) as response:
+        assert response.status_code == 200
+        body = "".join(response.iter_text())
+
+    assert "event: message_delta" in body
+    assert "共有 1 个客户" in body
+    assert "event: render_event" in body
+    assert body.index("event: message_delta") < body.index("event: render_event")
+    assert body.index("event: agent_step\ndata: {\"label\": \"resolve_template\"") < body.index("event: render_event")
+    assert '"template_id": "client_list"' in body
+    assert '"slot_sources":' in body
+
+
 def test_action_endpoint_executes_direct_read_without_agent(tmp_path):
     pytest.importorskip("fastapi")
     pytest.importorskip("httpx")

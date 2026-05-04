@@ -1,4 +1,4 @@
-import type { RenderBlock, RenderSpec, VisualContext } from "./types";
+import type { RenderBlock, RenderSpec } from "./types";
 
 const ALLOWED_BLOCKS = new Set<RenderBlock["type"]>([
   "decision_brief",
@@ -8,47 +8,6 @@ const ALLOWED_BLOCKS = new Set<RenderBlock["type"]>([
   "choice_set",
   "empty_state"
 ]);
-
-export function buildFallbackRenderSpec(userInput: string, context?: VisualContext): RenderSpec {
-  const cleaned = userInput.trim();
-  const clientMatch = cleaned.match(/(Acme|Greenway|Brighton|Icom|Dental|LLC|Inc|Corp)[\w\s.-]*/i);
-  const client = clientMatch?.[0]?.trim() || context?.selected_client || context?.visible_clients[0] || "the current work";
-  const visible = context?.visible_clients.length ? ` Visible context: ${context.visible_clients.join(", ")}.` : "";
-  const current = context?.summary ? ` Current page: ${context.summary}.` : "";
-  const primaryAction = context?.visible_actions[0] || "Clarify the next step";
-  const secondaryAction = context?.visible_actions[1] || "Show supporting facts";
-
-  return {
-    version: "0.1",
-    surface: "work_card",
-    title: context?.selected_client ? `${context.selected_client}: decide the next move` : "Turn this request into a work surface",
-    intent_summary: `User asked: ${cleaned}`,
-    blocks: [
-      {
-        type: "decision_brief",
-        title: "What I understood",
-        body: `You are asking about ${client}. I used the current and recently viewed work context before generating this surface.${current}${visible}`
-      },
-      {
-        type: "fact_strip",
-        facts: [
-          { label: "Scope", value: client, tone: "blue" },
-          { label: "Mode", value: "Draft before changing records", tone: "gold" },
-          { label: "Data safety", value: "No write action yet", tone: "green" }
-        ]
-      },
-      {
-        type: "choice_set",
-        question: "What should happen next?",
-        choices: [
-          { label: primaryAction, intent: primaryAction, style: "primary" },
-          { label: secondaryAction, intent: secondaryAction, style: "secondary" },
-          { label: "Leave this for later", intent: "later", style: "secondary" }
-        ]
-      }
-    ]
-  };
-}
 
 export function buildClientRequestDraft(clientName: string, missingItem: string, dueDate: string): RenderSpec {
   return {

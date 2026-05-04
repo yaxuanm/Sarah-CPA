@@ -22,7 +22,6 @@ class FlywheelRouterStats:
     total_requests: int = 0
     cache_hits: int = 0
     planner_calls: int = 0
-    fallback_calls: int = 0
     learned_templates: int = 0
 
     @property
@@ -42,12 +41,10 @@ class FlywheelIntentRouter:
         *,
         intent_library: InMemoryIntentLibrary,
         planner: PlannerLike,
-        fallback_planner: PlannerLike | None = None,
         learn_guidance_intents: bool = True,
     ) -> None:
         self.intent_library = intent_library
         self.planner = planner
-        self.fallback_planner = fallback_planner
         self.learn_guidance_intents = learn_guidance_intents
         self.stats = FlywheelRouterStats()
 
@@ -67,17 +64,9 @@ class FlywheelIntentRouter:
             )
             return match.plan
 
-        try:
-            self.stats.planner_calls += 1
-            plan = self.planner.plan(text, session)
-            source = "planner"
-        except Exception as exc:
-            if self.fallback_planner is None:
-                raise
-            self.stats.fallback_calls += 1
-            plan = self.fallback_planner.plan(text, session)
-            source = "fallback"
-            session.setdefault("flywheel_errors", []).append({"input": text, "error": str(exc)})
+        self.stats.planner_calls += 1
+        plan = self.planner.plan(text, session)
+        source = "planner"
 
         template_id = None
         suppress_learning = bool(session.pop("_suppress_flywheel_learning_once", False))
@@ -131,17 +120,16 @@ class FlywheelIntentRouter:
         return "".join(char if char.isalnum() else " " for char in text.casefold())
 
     def is_confirm(self, text: str) -> bool:
-        return self.planner.is_confirm(text) or bool(self.fallback_planner and self.fallback_planner.is_confirm(text))
+        return self.planner.is_confirm(text)
 
     def is_cancel(self, text: str) -> bool:
-        return self.planner.is_cancel(text) or bool(self.fallback_planner and self.fallback_planner.is_cancel(text))
+        return self.planner.is_cancel(text)
 
     def snapshot(self) -> dict[str, Any]:
         return {
             "total_requests": self.stats.total_requests,
             "cache_hits": self.stats.cache_hits,
             "planner_calls": self.stats.planner_calls,
-            "fallback_calls": self.stats.fallback_calls,
             "learned_templates": self.stats.learned_templates,
             "cache_hit_rate": self.stats.cache_hit_rate,
             "planner_call_rate": self.stats.planner_call_rate,
