@@ -16,7 +16,6 @@
       --blue: #2563eb;
       --green: #157347;
       --red: #c8322b;
-      --shadow: 0 28px 90px rgba(25, 22, 17, 0.18);
       font-family: "Avenir Next", "Segoe UI", sans-serif;
     }
 
@@ -28,10 +27,7 @@
       margin: 0;
       min-height: 100vh;
       color: var(--ink);
-      background:
-        radial-gradient(circle at 15% 10%, rgba(242, 164, 12, 0.18), transparent 32%),
-        radial-gradient(circle at 85% 0%, rgba(37, 99, 235, 0.13), transparent 30%),
-        linear-gradient(135deg, #e4ded3 0%, var(--paper) 45%, #d8d1c5 100%);
+      background: var(--paper);
     }
 
     button {
@@ -39,17 +35,13 @@
     }
 
     .deck-shell {
-      width: min(1220px, calc(100vw - 48px));
-      min-height: calc(100vh - 48px);
-      margin: 24px auto;
+      width: 100vw;
+      min-height: 100vh;
+      margin: 0;
       display: grid;
       grid-template-rows: auto 1fr auto;
       overflow: hidden;
-      background: rgba(255, 253, 248, 0.88);
-      border: 1px solid rgba(255, 255, 255, 0.74);
-      border-radius: 30px;
-      box-shadow: var(--shadow);
-      backdrop-filter: blur(14px);
+      background: var(--paper);
     }
 
     .topbar {
@@ -101,14 +93,14 @@
 
     .slides {
       position: relative;
-      min-height: 650px;
+      min-height: 0;
     }
 
     .slide {
       position: absolute;
       inset: 0;
       display: none;
-      padding: 52px 58px;
+      padding: 64px 80px;
       overflow: auto;
     }
 
@@ -406,7 +398,7 @@
       gap: 18px;
       padding: 16px 24px;
       border-top: 1px solid rgba(222, 215, 202, 0.75);
-      background: rgba(255, 253, 248, 0.72);
+      background: var(--paper);
     }
 
     .progress {
@@ -514,7 +506,6 @@
         width: 100vw;
         min-height: 100vh;
         margin: 0;
-        border-radius: 0;
       }
 
       .slide {
