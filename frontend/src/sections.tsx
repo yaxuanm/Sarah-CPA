@@ -1,6 +1,7 @@
 import { ChangeEvent, Dispatch, DragEvent, ReactElement, SetStateAction, useEffect, useMemo, useRef, useState } from "react";
 import type { ViewEnvelope } from "./types";
 import {
+  ArchiveIcon,
   BlockedIcon,
   ChevronRightIcon,
   DownloadIcon,
@@ -932,8 +933,8 @@ export function WorkSection({
                       setActionMenuOpen(false);
                     }}
                   >
+                    <span className="menu-item-icon"><ExtensionIcon /></span>
                     <span>{!selectedDeadline.extension_status ? "File extension" : "Revoke extension"}</span>
-                    <small>{!selectedDeadline.extension_status ? "Record an extension and update this deadline." : "Undo the extension and restore the original due date."}</small>
                   </button>
                   <button
                     type="button"
@@ -953,8 +954,8 @@ export function WorkSection({
                       setActionMenuOpen(false);
                     }}
                   >
+                    <span className="menu-item-icon"><BlockedIcon /></span>
                     <span>{selectedDeadline.status === "blocked" ? "Resolve blocker" : "Mark blocked"}</span>
-                    <small>{selectedDeadline.status === "blocked" ? "Move this item back to active work." : "Move this item to the blocked queue."}</small>
                   </button>
                   <button
                     type="button"
@@ -966,8 +967,8 @@ export function WorkSection({
                       onNotify?.(`${selectedDeadline.client_name} archived from the work queue.`, "blue");
                     }}
                   >
+                    <span className="menu-item-icon"><ArchiveIcon /></span>
                     <span>Archive</span>
-                    <small>Mark this item as handled and remove it from the active queue.</small>
                   </button>
                 </div>
               ) : null}

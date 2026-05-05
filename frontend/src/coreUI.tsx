@@ -270,6 +270,21 @@ export function ExtensionIcon() {
   );
 }
 
+export function ArchiveIcon() {
+  return (
+    <svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true">
+      <path
+        d="M3.25 4.75h9.5M4.25 4.75v7.5a.5.5 0 0 0 .5.5h6.5a.5.5 0 0 0 .5-.5v-7.5M5.5 2.75h5l.75 2h-6.5l.75-2ZM6.25 7.25h3.5"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.4"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
 export type FilterChipOption = { id: string; label: string };
 
 export type FilterGroupSpec = {

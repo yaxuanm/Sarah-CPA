@@ -2435,7 +2435,7 @@ input {
 }
 
 .action-menu {
-  width: 280px;
+  width: 210px;
 }
 
 .export-menu-item {
@@ -2474,6 +2474,39 @@ input {
 .export-menu-item small {
   color: var(--ink-2);
   font-size: 11px;
+}
+
+.action-menu .export-menu-item {
+  display: grid;
+  grid-template-columns: 24px 1fr;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 10px;
+}
+
+.action-menu .export-menu-item span {
+  font-size: 13px;
+}
+
+.menu-item-icon {
+  width: 24px;
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  background: var(--paper);
+  color: var(--ink-2);
+}
+
+.action-menu .export-menu-item:hover .menu-item-icon {
+  background: #fff;
+  color: var(--ink);
+}
+
+.action-menu .export-menu-item.danger .menu-item-icon,
+.action-menu .export-menu-item.danger span {
+  color: #9a2b22;
 }
 
 .filter-label {
