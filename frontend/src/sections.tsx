@@ -124,7 +124,8 @@ const taxTypeOptions = [
 
 function formatDaysRemaining(deadline: MockDeadline) {
   if (deadline.status === "completed") return "Filed";
-  if (deadline.extension_status && deadline.extended_due_date) return `Extended -> ${deadline.extended_due_date}`;
+  if (deadline.extension_status === "approved" && deadline.extended_due_date) return `Extended -> ${deadline.extended_due_date}`;
+  if (deadline.extension_status === "submitted" && deadline.extended_due_date) return "Extension pending approval";
   if (deadline.days_remaining < 0) return `Overdue by ${Math.abs(deadline.days_remaining)} days`;
   if (deadline.days_remaining === 0) return "Due today";
   if (deadline.days_remaining === 1) return "Due tomorrow";
@@ -145,7 +146,7 @@ function statusLabel(deadline: MockDeadline) {
   if (deadline.days_remaining < 0 && deadline.status !== "completed" && !deadline.extension_status) return "Overdue";
   if (deadline.status === "blocked") return deadline.blocker_reason ? `Blocked - ${deadline.blocker_reason}` : "Blocked";
   if (deadline.status === "extension-approved") return "Extension approved";
-  if (deadline.status === "extension-filed") return "Extension filed";
+  if (deadline.status === "extension-filed") return "Extension requested";
   return "Active";
 }
 
@@ -160,6 +161,74 @@ function defaultTaskNote(deadline: MockDeadline) {
   return "Review the source, reminders, blockers, and extension state for this item.";
 }
 
+function clientContactEmail(deadline: MockDeadline) {
+  const client = mockClients.find((item) => item.id === deadline.client_id);
+  return client?.primary_contact_email || `client-${deadline.client_id.replace(/^cl-/, "")}@example.com`;
+}
+
+function clientContactName(deadline: MockDeadline) {
+  const client = mockClients.find((item) => item.id === deadline.client_id);
+  return client?.primary_contact_name || "Client contact";
+}
+
+function defaultClientEmailSubject(deadline: MockDeadline) {
+  if (deadline.status === "blocked") return `${deadline.client_name}: information needed for ${workTitle(deadline)}`;
+  if (deadline.days_remaining < 0) return `${deadline.client_name}: overdue ${workTitle(deadline)} follow-up`;
+  return `${deadline.client_name}: upcoming ${workTitle(deadline)} deadline`;
+}
+
+function defaultClientEmailBody(deadline: MockDeadline) {
+  const greeting = `Hi ${clientContactName(deadline).split(" ")[0]},`;
+  if (deadline.blocker_reason) {
+    return [
+      greeting,
+      "",
+      `We are waiting on the following item before we can continue ${workTitle(deadline)}: ${deadline.blocker_reason}.`,
+      "",
+      `Could you send the supporting information by ${deadline.due_label}?`,
+      "",
+      "Thank you."
+    ].join("\n");
+  }
+  return [
+    greeting,
+    "",
+    `We are preparing for ${workTitle(deadline)}, currently due ${deadline.due_label}.`,
+    "",
+    "Please send any missing support documents or let us know if anything has changed.",
+    "",
+    "Thank you."
+  ].join("\n");
+}
+
+function generateAiClientEmailDraft(deadline: MockDeadline, previousBody = "") {
+  const contactFirstName = clientContactName(deadline).split(" ")[0];
+  const urgencyLine =
+    deadline.days_remaining < 0
+      ? `This item is overdue by ${Math.abs(deadline.days_remaining)} days, so we should ask for a same-day response.`
+      : deadline.days_remaining <= 3
+        ? `This is due very soon (${deadline.due_label}), so we should make the ask specific and easy to answer.`
+        : `This is due ${deadline.due_label}, so we can keep the tone helpful but direct.`;
+  const ask = deadline.blocker_reason
+    ? `Please send or confirm: ${deadline.blocker_reason}.`
+    : `Please send any missing support documents or confirm that nothing has changed for ${workTitle(deadline)}.`;
+  const priorContext = previousBody.trim() ? "\n\nI drafted this based on the current work item details and tightened the client ask." : "";
+  return {
+    subject: defaultClientEmailSubject(deadline),
+    body: [
+      `Hi ${contactFirstName},`,
+      "",
+      `We are working on ${workTitle(deadline)} for ${deadline.client_name}. ${urgencyLine}`,
+      "",
+      ask,
+      "",
+      "Once we have this, we can move the work item forward and keep the filing timeline on track.",
+      "",
+      "Thank you."
+    ].join("\n") + priorContext
+  };
+}
+
 function daysRemainingFromDueDate(dueDate: string) {
   const anchor = new Date("2026-04-26T00:00:00");
   const target = new Date(`${dueDate}T00:00:00`);
@@ -169,6 +238,24 @@ function daysRemainingFromDueDate(dueDate: string) {
 function dueLabelFromDate(dueDate: string) {
   const target = new Date(`${dueDate}T00:00:00`);
   return target.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+}
+
+function addDays(dateText: string, days: number) {
+  const target = new Date(`${dateText}T00:00:00`);
+  target.setDate(target.getDate() + days);
+  return target.toISOString().slice(0, 10);
+}
+
+function deriveExtensionDueDate(deadline: MockDeadline) {
+  if (
+    deadline.tax_type === "Federal income" ||
+    deadline.tax_type === "State income" ||
+    deadline.tax_type === "Franchise" ||
+    deadline.tax_type === "PTE election"
+  ) {
+    return addDays(deadline.due_date, 153);
+  }
+  return addDays(deadline.due_date, 30);
 }
 
 function summarizeRuleImpact(before: MockDeadline, after: MockDeadline) {
@@ -182,6 +269,133 @@ function summarizeRuleImpact(before: MockDeadline, after: MockDeadline) {
     return `${before.tax_type} source and filing guidance were updated.`;
   }
   return `${before.tax_type} was updated for this client.`;
+}
+
+type RuleImpactRow = {
+  id: string;
+  clientName: string;
+  taxType: string;
+  before: string;
+  after: string;
+  summary: string;
+  changed: boolean;
+};
+
+function ruleDiffLabels(rule: MockRule) {
+  if (rule.id === "rule-001") {
+    return {
+      before: "PTE election due Apr 30, 2026",
+      after: "PTE election due May 30, 2026"
+    };
+  }
+  return {
+    before: rule.diff_before,
+    after: rule.diff_after
+  };
+}
+
+function ruleClientScore(rule: MockRule, client: MockClient, clientDeadlines: MockDeadline[]) {
+  const text = `${client.entity_type} ${client.states.join(" ")} ${client.applicable_taxes.join(" ")} ${client.notes}`.toLowerCase();
+  if (rule.id === "rule-001") {
+    let score = 0;
+    if (client.applicable_taxes.includes("PTE election")) score += 6;
+    if (client.states.includes("CA")) score += 5;
+    if (["LLC", "Partnership", "S-Corp"].includes(client.entity_type)) score += 3;
+    if (text.includes("pte")) score += 3;
+    if (clientDeadlines.some((deadline) => deadline.tax_type === "State income" || deadline.tax_type === "Franchise")) score += 1;
+    return score;
+  }
+  if (rule.id === "rule-002") {
+    return client.states.includes("TX") && text.includes("sales") ? 10 : client.states.includes("TX") ? 4 : 0;
+  }
+  if (rule.id === "rule-005") {
+    return client.states.includes("OR") && text.includes("construction") ? 10 : client.states.includes("OR") ? 4 : 0;
+  }
+  return clientDeadlines.some((deadline) => deadline.notice_rule_id === rule.id) ? 10 : 0;
+}
+
+function buildRuleImpactRows(rule: MockRule, deadlines: MockDeadline[], applied: boolean): RuleImpactRow[] {
+  const { before, after } = ruleDiffLabels(rule);
+  const explicitRows = mockDeadlines
+    .filter((base) => base.notice_rule_id === rule.id)
+    .map((base) => {
+      const current = deadlines.find((deadline) => deadline.id === base.id) ?? base;
+      return {
+        id: base.id,
+        clientName: base.client_name,
+        taxType: rule.id === "rule-001" ? "PTE election" : base.tax_type,
+        before: rule.id === "rule-001" ? before : base.due_label,
+        after: rule.id === "rule-001" ? after : current.due_label,
+        summary: rule.id === "rule-001"
+          ? "PTE election calendar, reminder queue, and client deadline view will move to the new FTB date."
+          : summarizeRuleImpact(base, current),
+        changed: applied || base.due_date !== current.due_date || base.status !== current.status || base.source !== current.source
+      };
+    });
+
+  const existingClientIds = new Set(
+    explicitRows
+      .map((row) => mockClients.find((client) => client.name === row.clientName)?.id)
+      .filter(Boolean)
+  );
+  const targetCount = rule.affected_count || explicitRows.length;
+  if (explicitRows.length >= targetCount) return explicitRows;
+
+  const generatedRows = mockClients
+    .filter((client) => !existingClientIds.has(client.id))
+    .map((client) => {
+      const clientDeadlines = deadlines.filter((deadline) => deadline.client_id === client.id);
+      return {
+        client,
+        score: ruleClientScore(rule, client, clientDeadlines)
+      };
+    })
+    .filter((item) => item.score > 0)
+    .sort((a, b) => b.score - a.score || a.client.name.localeCompare(b.client.name))
+    .slice(0, Math.max(0, targetCount - explicitRows.length))
+    .map(({ client }) => ({
+      id: `${rule.id}-${client.id}`,
+      clientName: client.name,
+      taxType: rule.id === "rule-001" ? "PTE election" : rule.jurisdiction,
+      before,
+      after,
+      summary:
+        rule.id === "rule-001"
+          ? "This client matches the PTE-election impact criteria; applying updates its derived calendar and reminders."
+          : "This client matches the rule impact criteria; applying updates the relevant client calendar item.",
+      changed: applied
+    }));
+
+  return [...explicitRows, ...generatedRows];
+}
+
+function officialSourceUrl(rule: MockRule) {
+  if (rule.source.startsWith("http")) return rule.source;
+  if (rule.id === "rule-001") return "https://www.ftb.ca.gov/about-ftb/newsroom/index.html";
+  if (rule.id === "rule-002") return "https://comptroller.texas.gov/about/media-center/news/index.php";
+  if (rule.id === "rule-003") return "https://www.irs.gov/newsroom/tax-relief-in-disaster-situations";
+  if (rule.id === "rule-004") return "https://www.revenue.state.mn.us/news";
+  if (rule.id === "rule-005") return "https://www.oregon.gov/dor/news/";
+  return `https://www.google.com/search?q=${encodeURIComponent(rule.source)}`;
+}
+
+function officialSourceSummary(rule: MockRule) {
+  if (rule.id === "rule-001") {
+    return "California Franchise Tax Board newsroom notice shifting the annual PTE election due date for affected filers.";
+  }
+  if (rule.id === "rule-002") {
+    return "Texas Comptroller economic nexus guidance lowering the remote-seller threshold and requiring a CPA scope check.";
+  }
+  if (rule.id === "rule-003") {
+    return "IRS disaster-relief update describing automatic filing extensions for taxpayers in covered Texas counties.";
+  }
+  if (rule.id === "rule-004") {
+    return "Minnesota DOR bulletin updating the corporate franchise filing package and related NOL schedule.";
+  }
+  if (rule.id === "rule-005") {
+    return "Oregon rate notice updating the construction excise percentage used on recurring templates.";
+  }
+  return "Official source detail for this change.";
 }
 
 function applyRuleToDeadline(deadline: MockDeadline, ruleId: string): MockDeadline {
@@ -263,6 +477,10 @@ type ImportApplyResult = {
 
 function ChangeBadge({ kind = "changed" }: { kind?: "new" | "changed" }) {
   return <span className={`badge-pill ${kind === "new" ? "green" : "blue"} thin`}>{kind === "new" ? "New" : "Changed"}</span>;
+}
+
+function AiBadge({ label = "AI" }: { label?: string }) {
+  return <span className="ai-pill" title="AI-assisted"><span>✦</span>{label}</span>;
 }
 
 function buildInitialClientRecords(): ClientRecord[] {
@@ -563,6 +781,29 @@ export function WorkSection({
     priority: "normal",
     blockerReason: ""
   });
+  const [followupOpen, setFollowupOpen] = useState(false);
+  const [followupDraft, setFollowupDraft] = useState({
+    to: "",
+    subject: "",
+    body: ""
+  });
+  const [followupAiGenerated, setFollowupAiGenerated] = useState(false);
+  const [followupLog, setFollowupLog] = useState<
+    Record<string, { id: string; to: string; subject: string; sentAt: string; status: "queued" | "sent" }[]>
+  >({});
+  const [actionMenuOpen, setActionMenuOpen] = useState(false);
+  const actionMenuRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    function handlePointerDown(event: MouseEvent) {
+      if (!actionMenuRef.current) return;
+      if (!actionMenuRef.current.contains(event.target as Node)) {
+        setActionMenuOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handlePointerDown);
+    return () => document.removeEventListener("mousedown", handlePointerDown);
+  }, []);
 
   const visibleDeadlines = useMemo(
     () =>
@@ -610,6 +851,14 @@ export function WorkSection({
       priority: selectedDeadline.priority || "normal",
       blockerReason: selectedDeadline.blocker_reason || ""
     });
+    setFollowupDraft({
+      to: clientContactEmail(selectedDeadline),
+      subject: defaultClientEmailSubject(selectedDeadline),
+      body: defaultClientEmailBody(selectedDeadline)
+    });
+    setFollowupAiGenerated(false);
+    setFollowupOpen(false);
+    setActionMenuOpen(false);
     setEditingDeadlineId(null);
   }, [selectedDeadlineId, selectedDeadline]);
   const pendingRules = rules.filter((rule) => rule.status === "pending-review");
@@ -647,31 +896,82 @@ export function WorkSection({
             >
               {editingDeadlineId === selectedDeadline.id ? "Cancel edit" : "Edit task"}
             </button>
-            <button
-              type="button"
-              className="ddh-btn"
-              onClick={() => {
-                updateDeadline(selectedDeadline.id, (deadline) => ({ ...deadline, status: "completed" }));
-                setSelectedDeadlineId(null);
-                onNotify?.(`${selectedDeadline.client_name} archived from the work queue.`, "blue");
-              }}
-            >
-              Archive
-            </button>
-            <button
-              type="button"
-              className="ddh-btn ddh-btn-primary"
-              onClick={() => {
-                updateDeadline(selectedDeadline.id, (deadline) =>
-                  deadline.status === "blocked"
-                    ? { ...deadline, status: "pending", blocker_reason: null }
-                    : { ...deadline, status: "blocked", blocker_reason: "Waiting on client" }
-                );
-                setSelectedDeadlineId(null);
-              }}
-            >
-              {selectedDeadline.status === "blocked" ? "Resolve blocker" : "Mark blocked"}
-            </button>
+            <div className="filter-popover-wrap action-menu-wrap" ref={actionMenuRef}>
+              <button
+                type="button"
+                className={`filter-trigger ${actionMenuOpen ? "open" : ""}`}
+                onClick={() => setActionMenuOpen((current) => !current)}
+              >
+                Actions
+              </button>
+              {actionMenuOpen ? (
+                <div className="filter-popover export-menu action-menu" role="menu">
+                  <button
+                    type="button"
+                    className="export-menu-item"
+                    onClick={() => {
+                      if (!selectedDeadline.extension_status) {
+                        const extensionDate = deriveExtensionDueDate(selectedDeadline);
+                        updateDeadline(selectedDeadline.id, (deadline) => ({
+                          ...deadline,
+                          status: "extension-approved",
+                          extension_status: "approved",
+                          extended_due_date: extensionDate,
+                          blocker_reason: null
+                        }));
+                        onNotify?.(`Filed extension for ${selectedDeadline.client_name}; due date extended through ${dueLabelFromDate(extensionDate)}.`, "blue");
+                      } else {
+                        updateDeadline(selectedDeadline.id, (deadline) => ({
+                          ...deadline,
+                          status: "pending",
+                          extension_status: null,
+                          extended_due_date: null
+                        }));
+                        onNotify?.(`Revoked extension for ${selectedDeadline.client_name}; restored the original due date.`, "gold");
+                      }
+                      setActionMenuOpen(false);
+                    }}
+                  >
+                    <span>{!selectedDeadline.extension_status ? "File extension" : "Revoke extension"}</span>
+                    <small>{!selectedDeadline.extension_status ? "Record an extension and update this deadline." : "Undo the extension and restore the original due date."}</small>
+                  </button>
+                  <button
+                    type="button"
+                    className="export-menu-item"
+                    onClick={() => {
+                      updateDeadline(selectedDeadline.id, (deadline) =>
+                        deadline.status === "blocked"
+                          ? { ...deadline, status: "pending", blocker_reason: null }
+                          : { ...deadline, status: "blocked", blocker_reason: "Waiting on client" }
+                      );
+                      onNotify?.(
+                        selectedDeadline.status === "blocked"
+                          ? `${selectedDeadline.client_name} moved back to active work.`
+                          : `${selectedDeadline.client_name} is now waiting on client information.`,
+                        "blue"
+                      );
+                      setActionMenuOpen(false);
+                    }}
+                  >
+                    <span>{selectedDeadline.status === "blocked" ? "Resolve blocker" : "Mark blocked"}</span>
+                    <small>{selectedDeadline.status === "blocked" ? "Move this item back to active work." : "Move this item to the blocked queue."}</small>
+                  </button>
+                  <button
+                    type="button"
+                    className="export-menu-item danger"
+                    onClick={() => {
+                      updateDeadline(selectedDeadline.id, (deadline) => ({ ...deadline, status: "completed" }));
+                      setActionMenuOpen(false);
+                      setSelectedDeadlineId(null);
+                      onNotify?.(`${selectedDeadline.client_name} archived from the work queue.`, "blue");
+                    }}
+                  >
+                    <span>Archive</span>
+                    <small>Mark this item as handled and remove it from the active queue.</small>
+                  </button>
+                </div>
+              ) : null}
+            </div>
           </div>
         </div>
 
@@ -779,7 +1079,16 @@ export function WorkSection({
               <div className="df"><span>Assignee</span><strong>{selectedDeadline.assignee}</strong></div>
               <div className="df"><span>Priority</span><strong>{(selectedDeadline.priority || "normal").replace(/^./, (s) => s.toUpperCase())}</strong></div>
               <div className="df"><span>Source</span><strong>{selectedDeadline.source}</strong></div>
-              <div className="df"><span>Extension</span><strong>{selectedDeadline.extended_due_date || "No extension"}</strong></div>
+              <div className="df">
+                <span>Extension</span>
+                <strong>
+                  {selectedDeadline.extension_status === "approved" && selectedDeadline.extended_due_date
+                    ? selectedDeadline.extended_due_date
+                    : selectedDeadline.extension_status === "submitted" && selectedDeadline.extended_due_date
+                      ? `Requested -> ${selectedDeadline.extended_due_date}`
+                      : "No extension"}
+                </strong>
+              </div>
               <div className="df"><span>Task note</span><strong>{defaultTaskNote(selectedDeadline)}</strong></div>
             </div>
           </article>
@@ -798,6 +1107,117 @@ export function WorkSection({
                 <strong>{selectedDeadline.blocker_reason || "No blocker"}</strong>
                 <span>{selectedDeadline.blocker_reason ? "Waiting on client to provide supporting information." : "This deadline is not blocked right now."}</span>
               </div>
+            </article>
+            <article className="detail-card client-followup-card">
+              <div className="detail-card-lbl">Client follow-up</div>
+              <div className="followup-title">
+                <h3>Client follow-up</h3>
+              </div>
+              <p>This action is attached to this work item, not a standalone email thread.</p>
+              {followupOpen ? (
+                <div className="followup-composer">
+                  <div className="followup-ai-row">
+                    <span><AiBadge label={followupAiGenerated ? "AI draft" : "AI"} /> Use work item context to draft the client ask.</span>
+                    <button
+                      type="button"
+                      className="text-action"
+                      onClick={() => {
+                        const aiDraft = generateAiClientEmailDraft(selectedDeadline, followupDraft.body);
+                        setFollowupDraft((current) => ({
+                          ...current,
+                          subject: aiDraft.subject,
+                          body: aiDraft.body
+                        }));
+                        setFollowupAiGenerated(true);
+                        onNotify?.("AI generated a client follow-up draft from the work item context.", "blue");
+                      }}
+                    >
+                      {followupAiGenerated ? "Regenerate" : "Generate"}
+                    </button>
+                  </div>
+                  <label>
+                    <span>To</span>
+                    <input
+                      className="setting-input"
+                      value={followupDraft.to}
+                      onChange={(event) => setFollowupDraft((current) => ({ ...current, to: event.target.value }))}
+                    />
+                  </label>
+                  <label>
+                    <span>Subject</span>
+                    <input
+                      className="setting-input"
+                      value={followupDraft.subject}
+                      onChange={(event) => setFollowupDraft((current) => ({ ...current, subject: event.target.value }))}
+                    />
+                  </label>
+                  <label>
+                    <span>Message</span>
+                    <textarea
+                      className="setting-input followup-textarea"
+                      value={followupDraft.body}
+                      rows={7}
+                      onChange={(event) => setFollowupDraft((current) => ({ ...current, body: event.target.value }))}
+                    />
+                  </label>
+                  <div className="followup-actions">
+                    <button type="button" className="ddh-btn ddh-btn-sm" onClick={() => setFollowupOpen(false)}>
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      className="ddh-btn ddh-btn-primary"
+                      onClick={() => {
+                        const sentAt = new Date().toLocaleString("en-US", {
+                          month: "short",
+                          day: "numeric",
+                          hour: "numeric",
+                          minute: "2-digit"
+                        });
+                        setFollowupLog((current) => ({
+                          ...current,
+                          [selectedDeadline.id]: [
+                            {
+                              id: `email-${selectedDeadline.id}-${Date.now()}`,
+                              to: followupDraft.to,
+                              subject: followupDraft.subject,
+                              sentAt,
+                              status: "sent"
+                            },
+                            ...(current[selectedDeadline.id] || [])
+                          ]
+                        }));
+                        setFollowupAiGenerated(false);
+                        updateDeadline(selectedDeadline.id, (deadline) => ({
+                          ...deadline,
+                          status: "blocked",
+                          blocker_reason: deadline.blocker_reason || "Waiting on client response to email"
+                        }));
+                        setFollowupOpen(false);
+                        onNotify?.(`Client email sent for ${selectedDeadline.client_name}; work item is waiting on client response.`, "green");
+                      }}
+                    >
+                      Send and wait
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <button type="button" className="ddh-btn ddh-btn-sm" onClick={() => setFollowupOpen(true)}>
+                  Draft follow-up
+                </button>
+              )}
+              {(followupLog[selectedDeadline.id] || []).length ? (
+                <div className="followup-history">
+                  {(followupLog[selectedDeadline.id] || []).map((item) => (
+                    <div key={item.id} className="followup-history-row">
+                      <strong>{item.status === "sent" ? "Email sent" : "Email queued"}</strong>
+                      <span>{item.to}</span>
+                      <span>{item.subject}</span>
+                      <em>{item.sentAt}</em>
+                    </div>
+                  ))}
+                </div>
+              ) : null}
             </article>
           </aside>
         </div>
@@ -1819,7 +2239,7 @@ function ImportStepTwo({
       {missingRequired.length ? <p className="ddh-import-warning">Still needed before you can continue: {missingRequired.join(", ")}.</p> : null}
       <div className="ddh-import-ai">
         <div>
-          <strong>Mapping assistant (beta)</strong>
+          <strong className="ai-row-title">Mapping assistant (beta) <AiBadge /></strong>
           <small>Describe one mapping change in plain language and confirm the suggested update.</small>
         </div>
         <div className="ddh-import-ai-controls">
@@ -2197,7 +2617,7 @@ function ClientDetailSurface({
       </div>
 
       <div className="detail-grid client-detail-grid">
-        <article className="detail-card">
+        <article className="detail-card client-profile-card">
           <div className="detail-card-lbl">Client</div>
           <div className="detail-bigtext">{client.entity_type} · {client.states.join(", ")}</div>
           <div className="detail-date">{client.primary_contact_name} · {client.primary_contact_email}</div>
@@ -2207,7 +2627,7 @@ function ClientDetailSurface({
             <div className="df"><span>Open blockers</span><strong>{blockers.length}</strong></div>
             <div className="df"><span>Extensions</span><strong>{extensionDeadlines.length}</strong></div>
           </div>
-          <p className="client-tile-notes">{client.notes}</p>
+          {client.notes ? <p className="client-note-strip">{client.notes}</p> : null}
         </article>
 
         <aside className="detail-right">
@@ -2246,14 +2666,14 @@ function ClientDetailSurface({
             body="This client has no generated deadlines in the current demo dataset."
           />
         ) : (
-          <div className="deadlines-table client-deadlines-table" role="table">
+          <div className={`deadlines-table client-deadlines-table ${hasChangedDeadlines ? "with-change" : "no-change"}`} role="table">
             <div className="deadlines-table-head" role="row">
               <span role="columnheader">Tax type</span>
               <span role="columnheader">Jurisdiction</span>
               <span role="columnheader">Due</span>
               <span role="columnheader">Status</span>
               <span role="columnheader">Assignee</span>
-              <span role="columnheader">Change</span>
+              {hasChangedDeadlines ? <span role="columnheader">Change</span> : null}
             </div>
             {deadlines.map((deadline) => (
               <div key={deadline.id} className="deadlines-table-row" role="row">
@@ -2262,6 +2682,11 @@ function ClientDetailSurface({
                 <span className="deadlines-cell due" role="cell">
                   <strong>{deadline.due_label}</strong>
                   <span className="muted">{formatDaysRemaining(deadline)}</span>
+                  {deadline.extension_status === "approved" && deadline.extended_due_date ? (
+                    <span className="muted">Extended to {deadline.extended_due_date}</span>
+                  ) : deadline.extension_status === "submitted" && deadline.extended_due_date ? (
+                    <span className="muted">Extension requested for {deadline.extended_due_date}</span>
+                  ) : null}
                 </span>
                 <span role="cell">
                   <span className={`badge-pill ${statusClass(deadline) === "cb" ? "red" : statusClass(deadline) === "ci" ? "gold" : "blue"} thin`}>
@@ -2269,7 +2694,7 @@ function ClientDetailSurface({
                   </span>
                 </span>
                 <span role="cell">{deadline.assignee}</span>
-                <span role="cell">{changedDeadlineIds.includes(deadline.id) ? <ChangeBadge /> : null}</span>
+                {hasChangedDeadlines ? <span role="cell">{changedDeadlineIds.includes(deadline.id) ? <ChangeBadge /> : null}</span> : null}
               </div>
             ))}
           </div>
@@ -2341,7 +2766,20 @@ export function ReviewSection({
       <div className="ddh-page-head review-head">
         <div>
           <div className="ddh-eyebrow">Review</div>
-          <h1>Official changes that need a decision</h1>
+          <div className="review-title-row">
+            <h1>Official changes that need a decision</h1>
+            <span className="lane-help-shell review-info-help">
+              <button type="button" className="lane-help-trigger mini" aria-label="How review works">
+                i
+              </button>
+              <span className="lane-help-tooltip">
+                <strong>What this queue is</strong>
+                <p>DueDateHQ monitors official tax sources, extracts rule changes, and summarizes the impact with AI.</p>
+                <strong>Why CPA reviews it</strong>
+                <p>Only changes that may affect this client portfolio land here, so you can apply, dismiss, or inspect affected clients before deadlines change.</p>
+              </span>
+            </span>
+          </div>
           <p>Review only the tax-rule changes that affect the current client portfolio.</p>
         </div>
       </div>
@@ -2436,24 +2874,13 @@ function ReviewRule({
   onDismiss: (id: string) => void;
   onReopen: (id: string) => void;
 }) {
+  const [sourceOpen, setSourceOpen] = useState(false);
   const affected = rule.affected_count || deadlines.filter((deadline) => deadline.notice_rule_id === rule.id).length;
   const isApplied = variant === "applied";
   const isAuto = variant === "auto";
   const isDismissed = variant === "dismissed";
-  const impactRows = mockDeadlines
-    .filter((base) => base.notice_rule_id === rule.id)
-    .map((base) => {
-      const current = deadlines.find((deadline) => deadline.id === base.id) ?? base;
-      return {
-        id: base.id,
-        clientName: base.client_name,
-        taxType: base.tax_type,
-        before: base.due_label,
-        after: current.due_label,
-        summary: summarizeRuleImpact(base, current),
-        changed: base.due_date !== current.due_date || base.status !== current.status || base.source !== current.source
-      };
-    });
+  const sourceUrl = officialSourceUrl(rule);
+  const impactRows = buildRuleImpactRows(rule, deadlines, isApplied || isAuto);
   return (
     <article className={`ddh-rule ${isAuto ? "auto" : isApplied ? "applied" : isDismissed ? "dismissed" : ""}`}>
       <div className="ddh-rule-top">
@@ -2469,7 +2896,9 @@ function ReviewRule({
         <span><strong>Change</strong> {rule.diff_before} to {rule.diff_after}</span>
       </div>
       <div className="ddh-rule-foot">
-        <button type="button" onClick={() => window.open(rule.source.startsWith("http") ? rule.source : "https://www.google.com/search?q=" + encodeURIComponent(rule.source), "_blank", "noopener,noreferrer")}>Official source</button>
+        <button type="button" onClick={() => setSourceOpen((current) => !current)}>
+          {sourceOpen ? "Hide source" : "Official source"}
+        </button>
         <div>
           {isAuto || isApplied || isDismissed ? (
             <>
@@ -2489,6 +2918,29 @@ function ReviewRule({
           )}
         </div>
       </div>
+      {sourceOpen ? (
+        <div className="rule-impact-list">
+          <div className="rule-impact-row">
+            <div className="rule-impact-head">
+              <strong>{rule.source}</strong>
+              <span className="badge-pill blue thin">Official source</span>
+            </div>
+            <div className="rule-impact-copy">
+              <p>{officialSourceSummary(rule)}</p>
+              <p>
+                <a
+                  className="ddh-inline-link"
+                  href={sourceUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  {sourceUrl}
+                </a>
+              </p>
+            </div>
+          </div>
+        </div>
+      ) : null}
       {selected ? (
         <div className="rule-impact-list">
           {isDismissed ? (
@@ -2534,32 +2986,81 @@ function ReviewRule({
 }
 
 export function SettingsSection({ tenantId, onNotify }: SectionContext) {
+  const [displayName, setDisplayName] = useState("Johnson CPA PLLC");
+  const [timezone, setTimezone] = useState("America/Los_Angeles");
+  const [fiscalYear, setFiscalYear] = useState("Calendar (Jan - Dec)");
+  const [primaryChannel, setPrimaryChannel] = useState("Email");
+  const [connections, setConnections] = useState([
+    { id: "email", label: "Email", destination: "sarah@johnsoncpa.com", connected: true },
+    { id: "wechat", label: "WeChat", destination: "Johnson CPA service account", connected: false }
+  ]);
+  const [lastSavedAt, setLastSavedAt] = useState<string | null>(null);
+
+  function toggleConnection(connectionId: string) {
+    setConnections((current) =>
+      current.map((connection) =>
+        connection.id === connectionId
+          ? { ...connection, connected: !connection.connected }
+          : connection
+      )
+    );
+  }
+
+  function saveSettings() {
+    const stamp = new Date().toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
+    setLastSavedAt(stamp);
+    onNotify?.("Saved workspace settings for this demo workspace.", "green");
+  }
+
   return (
     <section>
       <div className="ddh-page-head"><div><div className="ddh-eyebrow">Settings</div><h1>Workspace settings</h1></div></div>
-      <SettingsCard label="Workspace" title="Tenant identity" subtitle="Display name, time zone, and fiscal year shown across the app.">
-        <SettingRow label="Display name" sub="Shown in the topbar and on exports." value="Johnson CPA PLLC" />
-        <SettingRow label="Time zone" sub="Used for reminder send times." value="America/Los_Angeles" />
-        <SettingRow label="Fiscal year" sub="Used to bucket extensions and YTD totals." value="Calendar (Jan - Dec)" />
+      <SettingsCard label="Workspace defaults" title="Keep the demo workspace predictable" subtitle="Only the defaults that affect reminders, exports, and displayed workspace identity.">
+        <EditableSettingRow label="Display name" sub="Shown in the topbar and on exports." value={displayName} onChange={setDisplayName} />
+        <EditableSettingRow label="Time zone" sub="Used for reminder send times." value={timezone} onChange={setTimezone} />
+        <SelectSettingRow
+          label="Fiscal year"
+          sub="Used to bucket extensions and YTD totals."
+          value={fiscalYear}
+          options={["Calendar (Jan - Dec)", "Fiscal year ending Jun 30", "Fiscal year ending Sep 30"]}
+          onChange={setFiscalYear}
+        />
+        <SelectSettingRow
+          label="Default client follow-up"
+          sub="Used when a work item needs client information."
+          value={primaryChannel}
+          options={mockChannels.map((channel) => channel.label)}
+          onChange={setPrimaryChannel}
+        />
         <SettingRow label="Tenant ID" sub="Sent on every backend request - read only." value={tenantId} mono />
         <div className="ddh-settings-foot">
-          <span>Anchored today: Apr 26, 2026</span>
+          <span>{lastSavedAt ? `Saved at ${lastSavedAt}` : "Anchored today: Apr 26, 2026"}</span>
           <button
             type="button"
             className="ddh-btn ddh-btn-primary"
-            onClick={() => onNotify?.("Settings saved for this demo workspace.", "green")}
+            onClick={saveSettings}
           >
             Save changes
           </button>
         </div>
       </SettingsCard>
-      <SettingsCard label="Notifications" title="Reminder channels" subtitle="Toggle which channels carry the 30/14/7/1 stepped reminders.">
-        {mockChannels.slice(0, 3).map((channel) => (
-          <div key={channel.id} className="ddh-setting-row">
-            <div><strong>{channel.label}</strong><span>{channel.description}</span></div>
-            <em className={channel.enabled ? "enabled" : ""}>{channel.enabled ? "Enabled" : "Not connected"}</em>
-          </div>
-        ))}
+      <SettingsCard label="Connections" title="CPA reminder connections" subtitle="Where DueDateHQ can notify the CPA when work needs attention.">
+        <div className="settings-connection-grid">
+          {connections.map((connection) => (
+            <div key={connection.id} className="settings-connection-row">
+              <div>
+                <strong>{connection.label}</strong>
+                <span>{connection.destination}</span>
+              </div>
+              <div className="settings-connection-actions">
+                <em className={connection.connected ? "enabled" : ""}>{connection.connected ? "Connected" : "Not connected"}</em>
+                <button type="button" className="ddh-btn ddh-btn-sm" onClick={() => toggleConnection(connection.id)}>
+                  {connection.connected ? "Disconnect" : "Connect"}
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
       </SettingsCard>
     </section>
   );
@@ -2581,6 +3082,50 @@ function SettingRow({ label, sub, value, mono }: { label: string; sub: string; v
     <div className="ddh-setting-row">
       <div><strong>{label}</strong><span>{sub}</span></div>
       <input className={mono ? "mono" : ""} value={value} readOnly />
+    </div>
+  );
+}
+
+function EditableSettingRow({
+  label,
+  sub,
+  value,
+  onChange
+}: {
+  label: string;
+  sub: string;
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <div className="ddh-setting-row">
+      <div><strong>{label}</strong><span>{sub}</span></div>
+      <input className="editable" value={value} onChange={(event) => onChange(event.target.value)} />
+    </div>
+  );
+}
+
+function SelectSettingRow({
+  label,
+  sub,
+  value,
+  options,
+  onChange
+}: {
+  label: string;
+  sub: string;
+  value: string;
+  options: string[];
+  onChange: (value: string) => void;
+}) {
+  return (
+    <div className="ddh-setting-row">
+      <div><strong>{label}</strong><span>{sub}</span></div>
+      <select className="setting-input compact" value={value} onChange={(event) => onChange(event.target.value)}>
+        {options.map((option) => (
+          <option key={option} value={option}>{option}</option>
+        ))}
+      </select>
     </div>
   );
 }
