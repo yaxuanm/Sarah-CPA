@@ -1,0 +1,1785 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>DueDateHQ 十分钟展示故事</title>
+  <style>
+    :root {
+      --ink: #121826;
+      --muted: #667085;
+      --paper: #f4f0e8;
+      --panel: #fffdf8;
+      --line: #ded7ca;
+      --navy: #141a2a;
+      --gold: #f2a40c;
+      --blue: #2563eb;
+      --green: #157347;
+      --red: #c8322b;
+      --soft-gold: #fff5dc;
+      --soft-blue: #eef5ff;
+      --soft-green: #ecf9f0;
+      --soft-red: #fff0ef;
+      font-family: "Avenir Next", "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      color: var(--ink);
+      background: var(--paper);
+    }
+
+    button {
+      font: inherit;
+    }
+
+    .deck-shell {
+      width: 100vw;
+      min-height: 100vh;
+      display: grid;
+      grid-template-rows: auto 1fr auto;
+      overflow: hidden;
+      background: var(--paper);
+    }
+
+    .topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 20px;
+      padding: 18px 26px;
+      color: #fff;
+      background: var(--navy);
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      font-weight: 850;
+      letter-spacing: -0.03em;
+    }
+
+    .brand-mark {
+      display: grid;
+      width: 34px;
+      height: 34px;
+      place-items: center;
+      border-radius: 11px;
+      color: var(--navy);
+      background: var(--gold);
+      font-weight: 900;
+    }
+
+    .top-meta {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      color: rgba(255, 255, 255, 0.78);
+      font-size: 13px;
+    }
+
+    .lang-toggle {
+      min-height: 30px;
+      padding: 4px 12px;
+      border: 1px solid rgba(255, 255, 255, 0.26);
+      border-radius: 999px;
+      color: #fff;
+      background: rgba(255, 255, 255, 0.08);
+      cursor: pointer;
+    }
+
+    .lang-toggle:hover {
+      border-color: rgba(255, 255, 255, 0.52);
+      background: rgba(255, 255, 255, 0.14);
+    }
+
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      min-height: 28px;
+      padding: 4px 10px;
+      border: 1px solid rgba(255, 255, 255, 0.18);
+      border-radius: 999px;
+      white-space: nowrap;
+    }
+
+    .slides {
+      position: relative;
+      min-height: 0;
+    }
+
+    .slide {
+      position: absolute;
+      inset: 0;
+      display: none;
+      padding: 58px 76px;
+      overflow: auto;
+    }
+
+    .slide.active {
+      display: grid;
+      align-content: center;
+      gap: 24px;
+      animation: slideIn 180ms ease-out;
+    }
+
+    @keyframes slideIn {
+      from {
+        opacity: 0;
+        transform: translateY(8px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    .eyebrow {
+      margin: 0;
+      color: #7a8798;
+      font-size: 13px;
+      font-weight: 850;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+    }
+
+    h1,
+    h2,
+    h3 {
+      margin: 0;
+      letter-spacing: -0.055em;
+      line-height: 0.98;
+    }
+
+    h1 {
+      max-width: 980px;
+      font-size: clamp(58px, 8vw, 108px);
+    }
+
+    h2 {
+      max-width: 1040px;
+      font-size: clamp(40px, 5vw, 72px);
+    }
+
+    h3 {
+      font-size: 26px;
+      line-height: 1.08;
+    }
+
+    .accent-text {
+      color: var(--gold);
+    }
+
+    .lead {
+      max-width: 850px;
+      margin: 0;
+      color: #3d4858;
+      font-size: 23px;
+      line-height: 1.42;
+      letter-spacing: -0.02em;
+    }
+
+    .compact {
+      max-width: 940px;
+      font-size: 18px;
+      line-height: 1.55;
+    }
+
+    .small {
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.5;
+    }
+
+    .split-title {
+      display: grid;
+      grid-template-columns: 1.15fr 0.85fr;
+      gap: 28px;
+      align-items: center;
+    }
+
+    .grid-2 {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 18px;
+    }
+
+    .grid-3 {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 18px;
+    }
+
+    .grid-4 {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 14px;
+    }
+
+    .card {
+      padding: 22px;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 22px;
+    }
+
+    .card.dark {
+      color: #fff;
+      background: var(--navy);
+      border-color: var(--navy);
+    }
+
+    .card.accent {
+      border-color: rgba(242, 164, 12, 0.75);
+      background: #fff8e9;
+    }
+
+    .card h3 {
+      margin-bottom: 10px;
+    }
+
+    .card p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 16px;
+      line-height: 1.45;
+    }
+
+    .card.dark p {
+      color: rgba(255, 255, 255, 0.72);
+    }
+
+    .metric {
+      display: grid;
+      min-height: 138px;
+      align-content: space-between;
+      padding: 20px;
+      background: #fff;
+      border: 1px solid var(--line);
+      border-radius: 20px;
+    }
+
+    .metric strong {
+      font-size: 42px;
+      line-height: 1;
+      letter-spacing: -0.05em;
+    }
+
+    .metric span {
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.38;
+    }
+
+    .metric.gold strong {
+      color: #9a6500;
+    }
+
+    .metric.red strong {
+      color: var(--red);
+    }
+
+    .number {
+      display: inline-grid;
+      width: 38px;
+      height: 38px;
+      margin-bottom: 14px;
+      place-items: center;
+      border-radius: 50%;
+      color: var(--navy);
+      background: var(--gold);
+      font-weight: 900;
+    }
+
+    .quote-card {
+      max-width: 920px;
+      padding: 26px 30px;
+      border-left: 8px solid var(--gold);
+      border-radius: 0 22px 22px 0;
+      background: #fff;
+      box-shadow: 0 18px 48px rgba(20, 26, 42, 0.08);
+    }
+
+    .quote-card p {
+      margin: 0;
+      font-size: 30px;
+      line-height: 1.35;
+      letter-spacing: -0.035em;
+    }
+
+    .stack {
+      display: grid;
+      gap: 12px;
+      max-width: 980px;
+    }
+
+    .row {
+      display: grid;
+      grid-template-columns: 150px 1fr;
+      gap: 18px;
+      align-items: start;
+      padding: 15px 18px;
+      background: #fff;
+      border: 1px solid var(--line);
+      border-radius: 16px;
+    }
+
+    .row strong {
+      color: var(--navy);
+    }
+
+    .row span {
+      color: var(--muted);
+      line-height: 1.45;
+    }
+
+    .story-timeline {
+      display: grid;
+      gap: 12px;
+      max-width: 1060px;
+    }
+
+    .time-row {
+      display: grid;
+      grid-template-columns: 120px 1fr 190px;
+      gap: 18px;
+      align-items: center;
+      padding: 14px 18px;
+      background: #fff;
+      border: 1px solid var(--line);
+      border-radius: 16px;
+    }
+
+    .time-row strong {
+      color: var(--gold);
+    }
+
+    .time-row span {
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    .object-flow {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+      gap: 10px;
+      align-items: stretch;
+    }
+
+    .object-flow div {
+      position: relative;
+      min-height: 128px;
+      padding: 18px;
+      background: #fff;
+      border: 1px solid var(--line);
+      border-radius: 18px;
+    }
+
+    .object-flow div:not(:last-child)::after {
+      content: "";
+      position: absolute;
+      top: 50%;
+      right: -11px;
+      width: 12px;
+      height: 2px;
+      background: var(--gold);
+    }
+
+    .object-flow strong {
+      display: block;
+      margin-bottom: 8px;
+      font-size: 18px;
+    }
+
+    .object-flow span {
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.38;
+    }
+
+    .comparison {
+      width: min(1000px, 100%);
+      border-collapse: separate;
+      border-spacing: 0;
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: 20px;
+      background: #fff;
+    }
+
+    .comparison th,
+    .comparison td {
+      padding: 18px 20px;
+      border-bottom: 1px solid var(--line);
+      text-align: left;
+      font-size: 17px;
+    }
+
+    .comparison tr:last-child td {
+      border-bottom: 0;
+    }
+
+    .comparison th {
+      color: var(--muted);
+      background: #faf7ef;
+      font-size: 13px;
+      font-weight: 850;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+    }
+
+    .comparison td:nth-child(3) {
+      color: #116239;
+      font-weight: 800;
+    }
+
+    .demo-cue {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      width: fit-content;
+      max-width: 920px;
+      padding: 12px 16px;
+      border: 1px solid #d8e4ff;
+      border-radius: 16px;
+      color: #174ea6;
+      background: var(--soft-blue);
+      font-weight: 750;
+    }
+
+    .demo-cue::before {
+      content: "Demo";
+      padding: 3px 8px;
+      border-radius: 999px;
+      color: #fff;
+      background: var(--blue);
+      font-size: 12px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .tag-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .tag {
+      display: inline-flex;
+      align-items: center;
+      min-height: 30px;
+      padding: 5px 10px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: #fff;
+      color: #334155;
+      font-size: 13px;
+      font-weight: 800;
+    }
+
+    .tag.gold {
+      border-color: #f2c261;
+      color: #8a5a00;
+      background: #fff5d9;
+    }
+
+    .tag.green {
+      border-color: #b8e3c8;
+      color: #116239;
+      background: #ecf9f0;
+    }
+
+    .tag.red {
+      border-color: #ffc8c4;
+      color: #b42318;
+      background: #fff0ef;
+    }
+
+    .flywheel {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 14px;
+      max-width: 1080px;
+    }
+
+    .flywheel div {
+      position: relative;
+      min-height: 158px;
+      padding: 18px;
+      border: 1px solid var(--line);
+      border-radius: 22px;
+      background: #fff;
+    }
+
+    .flywheel div::before {
+      content: attr(data-step);
+      display: inline-grid;
+      width: 34px;
+      height: 34px;
+      margin-bottom: 14px;
+      place-items: center;
+      border-radius: 50%;
+      color: var(--navy);
+      background: var(--gold);
+      font-weight: 900;
+    }
+
+    .flywheel strong {
+      display: block;
+      margin-bottom: 8px;
+      font-size: 19px;
+    }
+
+    .flywheel span {
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.42;
+    }
+
+    .cost-bars {
+      display: grid;
+      gap: 14px;
+      max-width: 880px;
+    }
+
+    .cost-row {
+      display: grid;
+      grid-template-columns: 170px 1fr 88px;
+      gap: 16px;
+      align-items: center;
+    }
+
+    .bar {
+      height: 18px;
+      overflow: hidden;
+      border-radius: 999px;
+      background: #e1dbd0;
+    }
+
+    .bar span {
+      display: block;
+      height: 100%;
+      border-radius: inherit;
+      background: var(--gold);
+    }
+
+    .cost-row strong {
+      color: var(--navy);
+    }
+
+    .cost-row em {
+      color: var(--muted);
+      font-style: normal;
+      font-size: 13px;
+      text-align: right;
+    }
+
+    .slope-chart {
+      width: min(1080px, 100%);
+      padding: 18px 20px 14px;
+      border: 1px solid var(--line);
+      border-radius: 24px;
+      background: #fff;
+    }
+
+    .slope-chart svg {
+      display: block;
+      width: 100%;
+      height: auto;
+    }
+
+    .chart-slide.active {
+      align-content: start;
+      gap: 12px;
+      padding-top: 34px;
+      padding-bottom: 28px;
+    }
+
+    .chart-slide h2 {
+      max-width: 1120px;
+      font-size: clamp(30px, 3.25vw, 52px);
+      line-height: 1.06;
+    }
+
+    .chart-slide .lead {
+      max-width: 1080px;
+      font-size: 15px;
+      line-height: 1.42;
+    }
+
+    .gtm-slide.active {
+      align-content: center;
+      gap: 18px;
+    }
+
+    .gtm-slide h2 {
+      max-width: 1220px;
+      font-size: clamp(38px, 4.3vw, 64px);
+      line-height: 1.04;
+      letter-spacing: 0;
+    }
+
+    .gtm-slide .quote-card {
+      max-width: 960px;
+      padding: 22px 28px;
+    }
+
+    .gtm-slide .quote-card p {
+      font-size: 26px;
+      line-height: 1.34;
+    }
+
+    .gtm-slide .grid-3 {
+      max-width: 1180px;
+      gap: 16px;
+    }
+
+    .metric-card {
+      display: grid;
+      gap: 8px;
+      min-height: 118px;
+      padding: 18px 20px;
+      align-content: start;
+      background: rgba(255, 255, 255, 0.78);
+      border: 1px solid var(--line);
+      border-radius: 18px;
+    }
+
+    .metric-card span {
+      color: #7a8798;
+      font-size: 12px;
+      font-weight: 850;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .metric-card strong {
+      display: block;
+      color: var(--navy);
+      font-size: 24px;
+      line-height: 1.05;
+      letter-spacing: 0;
+    }
+
+    .metric-card small {
+      display: block;
+      color: #3d4858;
+      font-size: 15px;
+      line-height: 1.42;
+      overflow-wrap: break-word;
+    }
+
+    .chart-slide .slope-chart {
+      width: min(1120px, 100%);
+      padding: 12px 16px 8px;
+    }
+
+    .chart-slide .slope-chart svg {
+      height: clamp(360px, 52vh, 500px);
+    }
+
+    .axis-label {
+      fill: #667085;
+      font-size: 13px;
+      font-weight: 700;
+    }
+
+    .chart-note {
+      fill: #121826;
+      font-size: 15px;
+      font-weight: 800;
+    }
+
+    .chart-small {
+      fill: #667085;
+      font-size: 12px;
+    }
+
+    .loss-zone {
+      fill: rgba(200, 50, 43, 0.08);
+    }
+
+    .margin-zone {
+      fill: rgba(21, 115, 71, 0.08);
+    }
+
+    .subscription-line {
+      stroke: #141a2a;
+      stroke-width: 2;
+      stroke-dasharray: 8 8;
+    }
+
+    .cost-curve {
+      fill: none;
+      stroke: #f2a40c;
+      stroke-width: 6;
+      stroke-linecap: round;
+    }
+
+    .tail-curve {
+      fill: none;
+      stroke: #c8322b;
+      stroke-width: 3;
+      stroke-dasharray: 5 7;
+      stroke-linecap: round;
+    }
+
+    code {
+      display: block;
+      margin-top: 8px;
+      padding: 11px 12px;
+      overflow: auto;
+      border: 1px solid #e6e0d4;
+      border-radius: 12px;
+      color: #172033;
+      background: #f7f4ed;
+      font-family: "SFMono-Regular", Consolas, monospace;
+      font-size: 12px;
+      line-height: 1.55;
+      white-space: pre-wrap;
+    }
+
+    .footer {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 18px;
+      padding: 16px 24px;
+      border-top: 1px solid rgba(222, 215, 202, 0.75);
+      background: var(--paper);
+    }
+
+    .progress {
+      position: relative;
+      flex: 1;
+      height: 8px;
+      overflow: hidden;
+      border-radius: 999px;
+      background: #e1dbd0;
+    }
+
+    .progress span {
+      position: absolute;
+      inset: 0 auto 0 0;
+      width: 0;
+      border-radius: inherit;
+      background: var(--gold);
+      transition: width 180ms ease;
+    }
+
+    .controls {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .controls button {
+      min-width: 42px;
+      height: 38px;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      color: var(--ink);
+      background: #fff;
+      cursor: pointer;
+    }
+
+    .controls button:hover {
+      border-color: var(--gold);
+    }
+
+    .controls button:disabled {
+      opacity: 0.45;
+      cursor: not-allowed;
+    }
+
+    .slide-count {
+      min-width: 72px;
+      color: var(--muted);
+      font-size: 13px;
+      text-align: center;
+    }
+
+    @media (max-width: 900px) {
+      .topbar {
+        align-items: flex-start;
+        flex-direction: column;
+      }
+
+      .slide {
+        padding: 34px 24px;
+      }
+
+      h1 {
+        font-size: clamp(44px, 12vw, 68px);
+      }
+
+      h2 {
+        font-size: clamp(34px, 10vw, 52px);
+      }
+
+      .grid-2,
+      .grid-3,
+      .grid-4,
+      .split-title,
+      .object-flow,
+      .flywheel {
+        grid-template-columns: 1fr;
+      }
+
+      .time-row,
+      .row,
+      .cost-row {
+        grid-template-columns: 1fr;
+      }
+
+      .object-flow div:not(:last-child)::after {
+        display: none;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="deck-shell">
+    <header class="topbar">
+      <div class="brand">
+        <span class="brand-mark">HQ</span>
+        <span>DueDateHQ 十分钟展示故事</span>
+      </div>
+      <div class="top-meta">
+        <span class="pill">10 minutes</span>
+        <span class="pill">Sarah CPA narrative</span>
+        <span class="pill">Two flywheels</span>
+        <button class="lang-toggle" id="lang-toggle" type="button" aria-label="Switch language">EN</button>
+      </div>
+    </header>
+
+    <section class="slides" aria-live="polite">
+      <article class="slide active">
+        <p class="eyebrow">Opening</p>
+        <div class="split-title">
+          <div>
+            <h1>把 CPA 从截止日期里解放出来。</h1>
+            <p class="lead">DueDateHQ 不是更漂亮的日历。它把规则、客户画像、截止日、沟通和下一步动作放进同一个闭环。</p>
+          </div>
+          <div class="card accent">
+            <h3>主线</h3>
+            <p>Sarah 本来就是好 CPA。产品保护的是她的判断力，把不需要她判断的合规追踪工作交给系统。</p>
+          </div>
+        </div>
+        <div class="tag-row">
+          <span class="tag gold">规则库</span>
+          <span class="tag gold">优先级</span>
+          <span class="tag gold">操作闭环</span>
+          <span class="tag green">AI operator</span>
+        </div>
+      </article>
+
+      <article class="slide">
+        <p class="eyebrow">Chapter 1</p>
+        <h2>Sarah 不是在做税务工作。她在维护“什么时候该做什么”。</h2>
+        <div class="grid-4">
+          <div class="metric"><strong>60</strong><span>个客户，Sarah 和一个兼职助理管理全部事项。</span></div>
+          <div class="metric"><strong>23</strong><span>个跨州经营客户，规则和截止日组合快速膨胀。</span></div>
+          <div class="metric"><strong>400+</strong><span>个联邦和州层面的截止日期需要持续追踪。</span></div>
+          <div class="metric red"><strong>12h</strong><span>每周花在合规追踪和日历维护上。</span></div>
+        </div>
+        <p class="lead compact">这 12 小时不是客户建议、税务判断或收入工作，而是维护工作本身。</p>
+      </article>
+
+      <article class="slide">
+        <p class="eyebrow">Current tools</p>
+        <h2>她的工作流被拆在四个地方。</h2>
+        <div class="grid-4">
+          <div class="card">
+            <h3>Excel</h3>
+            <p>手工录入、手工更新，状态和规则变化都靠人记。</p>
+          </div>
+          <div class="card">
+            <h3>Calendar</h3>
+            <p>能提醒日期，但看不到这件事是否已完成、被阻塞或不适用。</p>
+          </div>
+          <div class="card">
+            <h3>Email</h3>
+            <p>客户沟通散落在线程里，催过没有、等什么文件，都不进入工作面。</p>
+          </div>
+          <div class="card">
+            <h3>微信群</h3>
+            <p>偶尔从同行那里知道 IRS 或州税局发了新公告。</p>
+          </div>
+        </div>
+      </article>
+
+      <article class="slide">
+        <p class="eyebrow">Real cost</p>
+        <h2>48 小时的信息差，差点变成客户罚款和职业风险。</h2>
+        <div class="quote-card">
+          <p>去年三月，IRS 发布加州灾难延期公告。Sarah 从同行微信群里看到时，公告已经发布 48 小时。</p>
+        </div>
+        <div class="grid-3">
+          <div class="metric red"><strong>7</strong><span>个加州客户需要重新核查。</span></div>
+          <div class="metric red"><strong>2</strong><span>个客户差点按旧截止日提交。</span></div>
+          <div class="metric red"><strong>1</strong><span>整个周末被用来重新查状态。</span></div>
+        </div>
+      </article>
+
+      <article class="slide">
+        <p class="eyebrow">Monday before DueDateHQ</p>
+        <h2>每天早上，她先做 25 分钟分诊，然后才开始工作。</h2>
+        <div class="story-timeline">
+          <div class="time-row"><strong>7:30</strong><div>打开 Excel，看今天有什么截止日期。</div><span>手动开始</span></div>
+          <div class="time-row"><strong>7:35</strong><div>判断 8 条里面哪个最紧急，哪个被客户 blocked，哪个可以推。</div><span>认知负担</span></div>
+          <div class="time-row"><strong>7:55</strong><div>才清楚今天应该先做什么。</div><span>开始执行</span></div>
+          <div class="time-row"><strong>下午</strong><div>回头更新表格状态，偶尔发现漏了一条。</div><span>二次维护</span></div>
+        </div>
+      </article>
+
+      <article class="slide">
+        <p class="eyebrow">Chapter 2</p>
+        <h2>有了 DueDateHQ，Sarah 打开产品时已经有结论。</h2>
+        <div class="quote-card">
+          <p>早上好。Aurora 的 federal income 5 月 15 日截止，最紧急。Riverbend 有两条已逾期需要确认。Greenway 的 CA PTE 选举本周必须决定。先处理哪个？</p>
+        </div>
+        <p class="lead compact"><strong>用时：0 分钟。</strong> 系统已经替她排好优先级，她不用先维护工作面再开始工作。</p>
+      </article>
+
+      <article class="slide">
+        <p class="eyebrow">Closed loop demo</p>
+        <h2>第一件事处理完，下一步已经在等她。</h2>
+        <div class="object-flow">
+          <div><strong>Sarah</strong><span>“先看 Aurora。”</span></div>
+          <div><strong>Workspace</strong><span>左侧切到 Aurora，显示 federal income、截止日、缺 Q1 文件。</span></div>
+          <div><strong>Ask</strong><span>“帮我起草催文件邮件。”</span></div>
+          <div><strong>Record</strong><span>Sarah 发出邮件后说“发了”，系统记录“催文件已发·今天”。</span></div>
+          <div><strong>Next step</strong><span>“Aurora 处理完了。Riverbend 有两条逾期，要顺带看吗？”</span></div>
+        </div>
+        <div class="demo-cue">现场产品：打开 Aurora -> 生成草稿 -> 记录操作 -> 观察左侧状态和右侧下一步。</div>
+      </article>
+
+      <article class="slide">
+        <p class="eyebrow">Rule-change moment</p>
+        <h2>10:47，Sarah 没有打开产品，系统已经替她盯着规则。</h2>
+        <div class="grid-3">
+          <div class="card dark">
+            <span class="number">1</span>
+            <h3>监控</h3>
+            <p>IRS 发布加州灾难延期公告。</p>
+          </div>
+          <div class="card dark">
+            <span class="number">2</span>
+            <h3>解析</h3>
+            <p>发布后 14 分钟，系统完成公告解析。</p>
+          </div>
+          <div class="card dark">
+            <span class="number">3</span>
+            <h3>匹配</h3>
+            <p>匹配到 Sarah 的 5 个加州客户，并更新截止日期。</p>
+          </div>
+        </div>
+        <div class="quote-card">
+          <p>IRS 发布加州延期公告，你的 5 个客户截止日已自动更新至 10 月 15 日。</p>
+        </div>
+      </article>
+
+      <article class="slide">
+        <p class="eyebrow">End of day</p>
+        <h2>收工前，她问一句：今天还有什么没处理完？</h2>
+        <div class="quote-card">
+          <p>Greenway 的 CA PTE 还没有操作记录，本周必须决定。其他都处理完了或进入等待状态。</p>
+        </div>
+        <p class="lead compact">Sarah 点开 Greenway，处理 PTE 选举，标记完成。系统说：今天的事全部处理完了。明天最紧急的是 Acme 的 TX Sales Tax。</p>
+      </article>
+
+      <article class="slide">
+        <p class="eyebrow">Before / after</p>
+        <h2>结果不是多一个工具，而是少一层认知负担。</h2>
+        <table class="comparison">
+          <thead>
+            <tr><th>指标</th><th>之前</th><th>之后</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>每天合规追踪时间</td><td>2-3 小时</td><td>25 分钟</td></tr>
+            <tr><td>规则变更响应时间</td><td>48 小时以上</td><td>14 分钟</td></tr>
+            <tr><td>漏掉 deadline 风险</td><td>偶发</td><td>接近零</td></tr>
+            <tr><td>每周节省时间</td><td>没有系统性节省</td><td>8-10 小时</td></tr>
+          </tbody>
+        </table>
+        <p class="lead compact">这 8-10 小时，Sarah 可以多服务 15-20 个客户，或者就是回家早一点。</p>
+      </article>
+
+      <article class="slide">
+        <p class="eyebrow">Chapter 3</p>
+        <h2>DueDateHQ 把认知负担从 Sarah 身上拿走，放进系统里。</h2>
+        <div class="grid-3">
+          <div class="card accent">
+            <span class="number">1</span>
+            <h3>规则库自动同步</h3>
+            <p>联邦和州规则变更被监控、解析、匹配到客户，不再靠 Sarah 盯新闻。</p>
+          </div>
+          <div class="card accent">
+            <span class="number">2</span>
+            <h3>优先级自动计算</h3>
+            <p>不是按日期排序，而是综合紧急程度、blocked 状态和不可逆风险。</p>
+          </div>
+          <div class="card accent">
+            <span class="number">3</span>
+            <h3>操作闭环</h3>
+            <p>每次操作完成后，系统同步状态、规划下一步、给出入口。</p>
+          </div>
+        </div>
+      </article>
+
+      <article class="slide">
+        <p class="eyebrow">Why AI</p>
+        <h2>传统软件能存数据和发提醒，但不能接管判断链路。</h2>
+        <div class="stack">
+          <div class="row"><strong>理解短句</strong><span>“我已经发给对方了，记一下”不是闲聊，是记录一次客户催文件动作。</span></div>
+          <div class="row"><strong>解析公告</strong><span>IRS 公告发布后，系统理解它影响哪个州、哪类客户、哪个截止日。</span></div>
+          <div class="row"><strong>主动推进</strong><span>一件事完成后，系统判断同客户还有没有未处理事项，今天还有没有更紧急事项。</span></div>
+        </div>
+      </article>
+
+      <article class="slide">
+        <p class="eyebrow">Chapter 4</p>
+        <h2>这里不是一个飞轮，是三个独立系统共享同一个 CPA 用户基础。</h2>
+        <div class="grid-3">
+          <div class="card dark">
+            <span class="number">1</span>
+            <h3>规则库引擎</h3>
+            <p>LLM 批量处理 IRS 和州税局公告。一次调用，影响所有用户的所有相关 deadline。</p>
+          </div>
+          <div class="card dark">
+            <span class="number">2</span>
+            <h3>对话引擎</h3>
+            <p>LLM 单次理解用户意图。飞轮不是扩大杠杆，而是让 Intent Cache 吃掉高频请求。</p>
+          </div>
+          <div class="card dark">
+            <span class="number">3</span>
+            <h3>传统 SaaS</h3>
+            <p>确定性管理客户、deadline、状态机、提醒和审计日志。这是数据底座和留存飞轮。</p>
+          </div>
+        </div>
+        <p class="lead compact">三个系统的飞轮逻辑完全不同，但都依赖同一个规模化 CPA 用户基础。</p>
+      </article>
+
+      <article class="slide">
+        <p class="eyebrow">System 1</p>
+        <h2>规则库引擎：LLM 一次调用，价值是 1:N。</h2>
+        <div class="object-flow">
+          <div><strong>公告</strong><span>IRS 或州税局发布非结构化公告。</span></div>
+          <div><strong>解析</strong><span>LLM 一次调用，把公告变成结构化规则变更。</span></div>
+          <div><strong>匹配</strong><span>系统匹配所有用户的所有受影响客户。</span></div>
+          <div><strong>更新</strong><span>批量更新 deadline 和提醒。</span></div>
+          <div><strong>验证</strong><span>用户纠正和确认行为反哺规则准确率。</span></div>
+        </div>
+        <div class="grid-2">
+          <div class="metric"><strong>100</strong><span>用户时，一次解析可能影响 500 个 deadline。</span></div>
+          <div class="metric gold"><strong>10000</strong><span>用户时，同样一次解析可能影响 50000 个 deadline。</span></div>
+        </div>
+      </article>
+
+      <article class="slide">
+        <p class="eyebrow">System 1 flywheel</p>
+        <h2>规则库引擎的护城河是被真实用户行为验证过的规则质量。</h2>
+        <div class="flywheel">
+          <div data-step="1"><strong>用户越多</strong><span>同一条规则变更影响的 deadline 越多。</span></div>
+          <div data-step="2"><strong>验证越多</strong><span>有没有用户纠正、确认、忽略这条规则，都会成为信号。</span></div>
+          <div data-step="3"><strong>准确率越高</strong><span>规则库质量不是纯人工审核，而是实际行为验证。</span></div>
+          <div data-step="4"><strong>信任越强</strong><span>用户更愿意续费，更多用户进入规则库网络。</span></div>
+        </div>
+        <p class="lead compact">竞品可以抓公告，但拿不到“这条规则在真实 CPA 客户组合里是否被纠正过”的行为数据。</p>
+      </article>
+
+      <article class="slide">
+        <p class="eyebrow">System 2</p>
+        <h2>对话引擎：LLM 是 1:1 成本，所以飞轮是缓存收敛。</h2>
+        <div class="object-flow">
+          <div><strong>用户输入</strong><span>“发了”“标记完成”“下一个看谁”。</span></div>
+          <div><strong>Intent Cache</strong><span>先查高频意图，命中就直接执行。</span></div>
+          <div><strong>LLM</strong><span>未命中的长尾请求才调用模型理解。</span></div>
+          <div><strong>执行</strong><span>打开工作面、记录操作、生成草稿、更新状态。</span></div>
+          <div><strong>Library</strong><span>结果写回意图库，下次同类输入直接命中。</span></div>
+        </div>
+        <p class="lead compact">这里的目标不是让一次 LLM 调用影响更多用户，而是让越来越多请求不再需要 LLM。</p>
+      </article>
+
+      <article class="slide">
+        <p class="eyebrow">System 2 flywheel</p>
+        <h2>对话引擎能转起来，因为 CPA 的需求天然趋同。</h2>
+        <div class="flywheel">
+          <div data-step="1"><strong>输入越多</strong><span>更多 CPA 触发更多表达方式和任务模式。</span></div>
+          <div data-step="2"><strong>覆盖越全</strong><span>Intent Library 覆盖高频、中频和部分低频需求。</span></div>
+          <div data-step="3"><strong>命中率越高</strong><span>LLM 调用比例从 70-90% 降到 5-15%。</span></div>
+          <div data-step="4"><strong>成本越低</strong><span>响应更快、毛利更高，也能用更低价格获客。</span></div>
+        </div>
+        <div class="grid-3">
+          <div class="metric"><strong>285</strong><span>条测试输入。</span></div>
+          <div class="metric"><strong>11</strong><span>个意图簇。</span></div>
+          <div class="metric gold"><strong>94%</strong><span>第二轮命中率，零错误匹配。</span></div>
+        </div>
+      </article>
+
+      <article class="slide">
+        <p class="eyebrow">Long tail</p>
+        <h2>“罕见需求”会被吞噬成“已知需求”。</h2>
+        <div class="grid-2">
+          <div class="card">
+            <h3>早期：长尾很长</h3>
+            <code>高频  ████████
+中频  ████
+低频  ██
+长尾  ░░░░░░░░░░░░░░░  走 LLM</code>
+          </div>
+          <div class="card accent">
+            <h3>成熟期：长尾变短</h3>
+            <code>高频  ████████
+中频  ████████
+低频  ██████
+长尾  ░░  极少边界案例</code>
+          </div>
+        </div>
+        <p class="lead compact">不是 CPA 改变了，而是足够多用户触发过这些需求，系统已经学会。</p>
+      </article>
+
+      <article class="slide">
+        <p class="eyebrow">Runtime staging</p>
+        <h2>长尾需求第一次出现时，系统先当场满足，再决定是否沉淀。</h2>
+        <div class="object-flow">
+          <div><strong>新需求</strong><span>Sarah 提出一个没有命中缓存的复杂问题。</span></div>
+          <div><strong>识别</strong><span>系统判断它不是已有 intent，也不是已有页面骨架。</span></div>
+          <div><strong>临时工作面</strong><span>LLM 作为总设计师，用现有组件或临时组件搭出页面。</span></div>
+          <div><strong>当场使用</strong><span>左侧立刻呈现，Sarah 可以查看分析、补字段、发起确认动作。</span></div>
+          <div><strong>后台评估</strong><span>系统再判断这个场景是否值得保存为可复用资产。</span></div>
+        </div>
+        <p class="lead compact">Staging 不是让用户等待审核。它是当前会话立即可用、但尚未进入全局组件库的临时工作面。</p>
+      </article>
+
+      <article class="slide">
+        <p class="eyebrow">Long-tail asset strategy</p>
+        <h2>长尾不是都缓存。先存下来，再判断哪些值得资产化。</h2>
+        <div class="grid-3">
+          <div class="card accent">
+            <span class="number">1</span>
+            <h3>基础存储</h3>
+            <p>所有长尾需求都记录：原始提问、上下文、数据来源、生成页面、用户操作和纠错信号。</p>
+          </div>
+          <div class="card accent">
+            <span class="number">2</span>
+            <h3>缓存标准</h3>
+            <p>只有高价值、可复用、低歧义、跨用户重复出现的场景，才进入 Intent Cache 或骨架库。</p>
+          </div>
+          <div class="card accent">
+            <span class="number">3</span>
+            <h3>综合判断</h3>
+            <p>系统判断它应该变成 intent、workflow skeleton、surface skeleton、draft pattern，还是继续保持长尾。</p>
+          </div>
+        </div>
+        <p class="lead compact">DueDateHQ 的数据资产不是“用户问过什么”，而是“我们知道一个 CPA 提问背后对应什么业务场景，以及这个场景是否值得产品化”。</p>
+      </article>
+
+      <article class="slide">
+        <p class="eyebrow">System 3</p>
+        <h2>传统 SaaS：没有 LLM，确定性管理业务数据。</h2>
+        <div class="object-flow">
+          <div><strong>客户录入</strong><span>客户、实体类型、州、联系人和税种进入系统。</span></div>
+          <div><strong>Deadline</strong><span>根据规则和客户画像自动生成截止日。</span></div>
+          <div><strong>状态机</strong><span>complete、snooze、waive、override 都有审计记录。</span></div>
+          <div><strong>提醒</strong><span>截止日前触发提醒，完成或 waive 后取消。</span></div>
+          <div><strong>留存</strong><span>数据越完整，迁移成本越高，续费越稳定。</span></div>
+        </div>
+        <p class="lead compact">这是传统 SaaS 的标准留存飞轮，也是系统一和系统二能规模化的用户底座。</p>
+      </article>
+
+      <article class="slide">
+        <p class="eyebrow">Relationship</p>
+        <h2>系统三是底座，系统一和系统二在底座上各自转动，再反哺底座。</h2>
+        <div class="grid-3">
+          <div class="card dark">
+            <h3>系统三</h3>
+            <p>提供稳定用户基础和业务数据。客户、deadline、状态和审计日志都在这里。</p>
+          </div>
+          <div class="card accent">
+            <h3>系统一</h3>
+            <p>用同一个用户基础扩大 LLM 规则解析杠杆，规则越准，系统三的数据越准。</p>
+          </div>
+          <div class="card accent">
+            <h3>系统二</h3>
+            <p>用同一个用户基础收敛 Intent Library，对话越准，系统三里的操作越高效。</p>
+          </div>
+        </div>
+        <code>传统 SaaS 提供数据和留存
+  -> 规则库引擎提升 deadline 准确率
+  -> 对话引擎提升操作效率
+  -> 两者都增加系统三的依赖度</code>
+      </article>
+
+      <article class="slide">
+        <p class="eyebrow">Chapter 5</p>
+        <h2>现在的产品：三个系统已经在同一个原型里合流。</h2>
+        <div class="grid-3">
+          <div class="card">
+            <h3>传统 SaaS</h3>
+            <p>规则录入、客户管理、deadline 调度、提醒推送、状态机和审计日志已经跑通。</p>
+          </div>
+          <div class="card">
+            <h3>规则库引擎</h3>
+            <p>官方规则和客户组合可以生成受影响 deadline，支持人工验证和后续自动化。</p>
+          </div>
+          <div class="card">
+            <h3>对话引擎</h3>
+            <p>285 条样本、11 个意图类型、Intent Cache 验证完成，Ask 已接入 live backend。</p>
+          </div>
+        </div>
+        <div class="demo-cue">现场产品：Work 是全局掌控，Ask 是深度执行，两边共享状态。</div>
+      </article>
+
+      <article class="slide">
+        <p class="eyebrow">Chapter 6</p>
+        <h2>三个系统的成本下降速度不同。</h2>
+        <table class="comparison">
+          <thead>
+            <tr><th>系统</th><th>成本机制</th><th>下降逻辑</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>传统 SaaS</td><td>基础设施和数据管理。</td><td>随规模缓慢下降，幅度有限。</td></tr>
+            <tr><td>规则库引擎</td><td>LLM 解析固定成本 + 人工审核。</td><td>一次解析分摊到更多用户，单用户成本线性下降。</td></tr>
+            <tr><td>对话引擎</td><td>每次输入原本是 1:1 LLM 成本。</td><td>Intent Cache 命中率提升，调用比例快速下降。</td></tr>
+          </tbody>
+        </table>
+      </article>
+
+      <article class="slide">
+        <p class="eyebrow">Cost curve</p>
+        <h2>系统二早期不便宜，但下降曲线最陡。</h2>
+        <div class="cost-bars">
+          <div class="cost-row"><strong>传统 SaaS</strong><div class="bar"><span style="width: 70%"></span></div><em>缓慢下降</em></div>
+          <div class="cost-row"><strong>规则库引擎</strong><div class="bar"><span style="width: 28%"></span></div><em>线性分摊</em></div>
+          <div class="cost-row"><strong>对话引擎</strong><div class="bar"><span style="width: 18%"></span></div><em>下降 80-95%</em></div>
+        </div>
+        <p class="lead compact">早期如果每个 Ask 都带完整上下文调高质量模型，单用户月成本可能是几美元到十几美元。商业逻辑成立的关键，是 CPA 需求趋同让缓存命中率持续上升，而不是一开始就假设调用成本很低。</p>
+      </article>
+
+      <article class="slide chart-slide">
+        <p class="eyebrow">Conversation cost slope</p>
+        <h2>对话成本一开始可能高于订阅价，之后随长尾被覆盖持续滑坡。</h2>
+        <div class="slope-chart" aria-label="Conversation cost declines as intent cache coverage improves">
+          <svg viewBox="0 0 1080 520" role="img">
+            <defs>
+              <marker id="arrow" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto">
+                <path d="M 0 0 L 9 4.5 L 0 9 z" fill="#667085"></path>
+              </marker>
+            </defs>
+
+            <rect class="loss-zone" x="116" y="64" width="828" height="166" rx="18"></rect>
+            <rect class="margin-zone" x="116" y="230" width="828" height="214" rx="18"></rect>
+
+            <line x1="116" y1="444" x2="962" y2="444" stroke="#667085" stroke-width="2.5" marker-end="url(#arrow)"></line>
+            <line x1="116" y1="444" x2="116" y2="52" stroke="#667085" stroke-width="2.5" marker-end="url(#arrow)"></line>
+
+            <g stroke="#e6e0d4" stroke-width="1">
+              <line x1="116" y1="116" x2="944" y2="116"></line>
+              <line x1="116" y1="230" x2="944" y2="230"></line>
+              <line x1="116" y1="330" x2="944" y2="330"></line>
+              <line x1="116" y1="398" x2="944" y2="398"></line>
+              <line x1="292" y1="444" x2="292" y2="64"></line>
+              <line x1="508" y1="444" x2="508" y2="64"></line>
+              <line x1="724" y1="444" x2="724" y2="64"></line>
+              <line x1="916" y1="444" x2="916" y2="64"></line>
+            </g>
+
+            <text x="106" y="120" text-anchor="end" class="chart-small">$100</text>
+            <text x="106" y="234" text-anchor="end" class="chart-small">$49</text>
+            <text x="106" y="334" text-anchor="end" class="chart-small">$15</text>
+            <text x="106" y="402" text-anchor="end" class="chart-small">$5</text>
+            <text x="292" y="474" text-anchor="middle" class="chart-small">Month 6</text>
+            <text x="508" y="474" text-anchor="middle" class="chart-small">Month 12</text>
+            <text x="724" y="474" text-anchor="middle" class="chart-small">Month 24</text>
+            <text x="916" y="474" text-anchor="middle" class="chart-small">Long run</text>
+
+            <text x="72" y="66" text-anchor="middle" class="axis-label" transform="rotate(-90 72 66)">每用户每月对话成本</text>
+            <text x="962" y="504" text-anchor="end" class="axis-label">时间 / 用户规模 / 缓存覆盖率</text>
+
+            <line x1="116" y1="230" x2="944" y2="230" class="subscription-line"></line>
+            <text x="126" y="218" class="chart-note">$49 订阅价</text>
+
+            <path class="cost-curve" d="M 132 94 C 194 100, 226 165, 268 230 C 326 316, 404 342, 508 354 C 640 370, 758 388, 916 400"></path>
+            <path class="tail-curve" d="M 724 388 C 790 394, 850 398, 916 400"></path>
+
+            <circle cx="132" cy="94" r="8" fill="#f2a40c"></circle>
+            <circle cx="268" cy="230" r="8" fill="#f2a40c"></circle>
+            <circle cx="508" cy="354" r="8" fill="#f2a40c"></circle>
+            <circle cx="916" cy="400" r="8" fill="#c8322b"></circle>
+
+            <text x="150" y="80" class="chart-note">冷启动</text>
+            <text x="150" y="102" class="chart-small">$60-120</text>
+            <text x="286" y="216" class="chart-note">接近盈亏线</text>
+            <text x="286" y="238" class="chart-small">缓存开始覆盖中频需求</text>
+            <text x="528" y="340" class="chart-note">已知长尾资产化</text>
+            <text x="528" y="362" class="chart-small">$6-15</text>
+            <text x="760" y="382" class="chart-note">长期尾巴</text>
+            <text x="760" y="404" class="chart-small">$2-6，不能归零</text>
+
+            <text x="774" y="102" class="chart-small">红区：AI 探索成本高</text>
+            <text x="774" y="320" class="chart-small">绿区：复用资产开始贡献毛利</text>
+          </svg>
+        </div>
+        <p class="lead compact">这不是“AI 便宜”的故事，而是“标准化职业的长尾需求会被逐步产品化”的故事。最终仍然有边界案例需要 LLM，所以成本曲线有尾巴，不会到零。</p>
+      </article>
+
+      <article class="slide">
+        <p class="eyebrow">Scaling economics</p>
+        <h2>规模越大，三个系统同时更有效率。</h2>
+        <table class="comparison">
+          <thead>
+            <tr><th>系统</th><th>100 用户</th><th>10000 用户</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>传统 SaaS</td><td>基础设施约 $0.5-1 / 用户 / 月。</td><td>约 $0.1-0.2 / 用户 / 月。</td></tr>
+            <tr><td>规则库引擎</td><td>规则维护约 $2 / 用户 / 月。</td><td>约 $0.02 / 用户 / 月。</td></tr>
+            <tr><td>对话引擎</td><td>早期重度用户可能 $60-120 / 用户 / 月，轻中度用户约 $6-18。</td><td>成熟后高频命中缓存，约 $2-6 / 用户 / 月，仍保留长尾。</td></tr>
+          </tbody>
+        </table>
+        <p class="lead compact">系统一用 LLM 处理市场信息，杠杆是 1:N；系统二用 LLM 理解用户意图，早期成本高，飞轮是缓存收敛；系统三用确定性逻辑管理业务数据，飞轮是数据留存。</p>
+      </article>
+
+      <article class="slide gtm-slide">
+        <p class="eyebrow">Chapter 7</p>
+        <h2>GTM 不是先投广告，而是先手动把 Sarah 服务到离不开。</h2>
+        <div class="quote-card">
+          <p>早期卖的不是“AI 税务软件”，而是一个具体结果：把客户 deadline 整理好，每天告诉 Sarah 最该处理哪几件。</p>
+        </div>
+        <div class="grid-3">
+          <div class="metric-card"><span>目标人群</span><strong>40-150 客户</strong><small>独立 CPA / 小型事务所 owner，跨州客户比例高。</small></div>
+          <div class="metric-card"><span>交付方式</span><strong>Concierge onboarding</strong><small>手动导入客户表，人工核对第一版 deadline calendar。</small></div>
+          <div class="metric-card"><span>验证标准</span><strong>30 天不想回 Excel</strong><small>她主动问“这个什么时候正式上线”。</small></div>
+        </div>
+        <p class="lead compact">早期手动做没有问题。因为这不是规模化交付阶段，而是用服务换真实工作流、真实问题和真实意图数据。</p>
+      </article>
+
+      <article class="slide gtm-slide">
+        <p class="eyebrow">GTM motion</p>
+        <h2>先高接触拿下 100 个独立 CPA，再通过信任网络扩散。</h2>
+        <div class="story-timeline">
+          <div class="time-row"><strong>1. 白手套启动</strong><div>48 小时内帮用户导入客户、生成截止日指挥台、跑通第一周工作流。</div><span>服务切入</span></div>
+          <div class="time-row"><strong>2. 申报季验证</strong><div>看她每周是否打开 3 次以上、Ask 是否每周 10 次以上、是否持续记录操作。</div><span>留存信号</span></div>
+          <div class="time-row"><strong>3. CPA 社群扩散</strong><div>用真实案例传播：一个独立 CPA 如何把每周 12 小时 deadline tracking 降到 2 小时。</div><span>信任渠道</span></div>
+          <div class="time-row"><strong>4. 产品化 onboarding</strong><div>把手动导入、规则核对和第一周工作流固化成标准启动流程。</div><span>规模交付</span></div>
+        </div>
+      </article>
+
+      <article class="slide">
+        <p class="eyebrow">Chapter 8</p>
+        <h2>未来三年先把独立 CPA 产品做深。</h2>
+        <div class="story-timeline">
+          <div class="time-row"><strong>0-6 个月</strong><div>找到 100 个愿意付费的独立 CPA，跑完一个完整申报季。</div><span>付费验证</span></div>
+          <div class="time-row"><strong>6-18 个月</strong><div>规则库扩展到 50 州，Intent Library 积累到 1000+ 条真实输入。</div><span>产品扩张</span></div>
+          <div class="time-row"><strong>18-36 个月</strong><div>把 onboarding、规则验证、Ask 闭环和团队协作继续产品化，服务更多小型事务所。</div><span>核心产品深化</span></div>
+        </div>
+      </article>
+
+      <article class="slide">
+        <p class="eyebrow">Close</p>
+        <h2>DueDateHQ 保护的，是 CPA 的判断力。</h2>
+        <p class="lead">一个 CPA 最有价值的东西，从来不是她记住了多少截止日期。是她对客户情况的理解，和她给出建议时的判断力。</p>
+        <div class="quote-card">
+          <p>规则库更新，不需要她盯着 IRS 官网。优先级排序，不需要她每天早上想 25 分钟。操作记录，不需要她手动更新 Excel。</p>
+        </div>
+        <p class="lead compact">这些事情系统做了，Sarah 的时间和注意力就留给真正需要她的事：判断、沟通、建议。</p>
+      </article>
+    </section>
+
+    <footer class="footer">
+      <div class="progress" aria-hidden="true"><span id="progress-bar"></span></div>
+      <div class="controls">
+        <button id="prev" aria-label="上一页">←</button>
+        <div class="slide-count" id="slide-count">1 / 31</div>
+        <button id="next" aria-label="下一页">→</button>
+      </div>
+    </footer>
+  </main>
+
+  <script>
+    const slides = Array.from(document.querySelectorAll(".slide"));
+    const progressBar = document.getElementById("progress-bar");
+    const slideCount = document.getElementById("slide-count");
+    const prevButton = document.getElementById("prev");
+    const nextButton = document.getElementById("next");
+    const langToggle = document.getElementById("lang-toggle");
+    let current = 0;
+    let currentLang = localStorage.getItem("duedatehq-story-lang") || "zh";
+
+    const translations = {
+      "DueDateHQ 十分钟展示故事": "DueDateHQ 10-Minute Story",
+      "Opening": "Opening",
+      "把 CPA 从截止日期里解放出来。": "Free CPAs from deadline tracking.",
+      "DueDateHQ 不是更漂亮的日历。它把规则、客户画像、截止日、沟通和下一步动作放进同一个闭环。": "DueDateHQ is not a prettier calendar. It connects rules, client profiles, deadlines, communication, and next actions into one closed loop.",
+      "主线": "Main thread",
+      "Sarah 本来就是好 CPA。产品保护的是她的判断力，把不需要她判断的合规追踪工作交给系统。": "Sarah is already a good CPA. The product protects her judgment by moving compliance tracking work that does not require her judgment into the system.",
+      "规则库": "Rule library",
+      "优先级": "Prioritization",
+      "操作闭环": "Action loop",
+      "Chapter 1": "Chapter 1",
+      "Sarah 不是在做税务工作。她在维护“什么时候该做什么”。": "Sarah is not doing tax work. She is maintaining the knowledge of what needs to happen when.",
+      "个客户，Sarah 和一个兼职助理管理全部事项。": "clients managed by Sarah and one part-time assistant.",
+      "个跨州经营客户，规则和截止日组合快速膨胀。": "multi-state clients, where rules and deadlines multiply quickly.",
+      "个联邦和州层面的截止日期需要持续追踪。": "federal and state deadlines that need continuous tracking.",
+      "每周花在合规追踪和日历维护上。": "per week spent on compliance tracking and calendar maintenance.",
+      "这 12 小时不是客户建议、税务判断或收入工作，而是维护工作本身。": "Those 12 hours are not client advice, tax judgment, or revenue work. They are maintenance of the work itself.",
+      "Current tools": "Current tools",
+      "她的工作流被拆在四个地方。": "Her workflow is split across four places.",
+      "手工录入、手工更新，状态和规则变化都靠人记。": "Manual entry and manual updates. Status and rule changes depend on memory.",
+      "能提醒日期，但看不到这件事是否已完成、被阻塞或不适用。": "It can remind her of dates, but it cannot show whether work is complete, blocked, or not applicable.",
+      "客户沟通散落在线程里，催过没有、等什么文件，都不进入工作面。": "Client communication is scattered across threads. Requests sent, missing files, and blockers do not enter the work surface.",
+      "微信群": "WeChat groups",
+      "偶尔从同行那里知道 IRS 或州税局发了新公告。": "Sometimes she hears from peers that the IRS or a state agency has issued a new notice.",
+      "Real cost": "Real cost",
+      "48 小时的信息差，差点变成客户罚款和职业风险。": "A 48-hour information gap almost became client penalties and professional risk.",
+      "去年三月，IRS 发布加州灾难延期公告。Sarah 从同行微信群里看到时，公告已经发布 48 小时。": "Last March, the IRS issued a California disaster extension notice. By the time Sarah saw it in a peer WeChat group, it had been out for 48 hours.",
+      "个加州客户需要重新核查。": "California clients had to be rechecked.",
+      "个客户差点按旧截止日提交。": "clients almost filed under the old deadline.",
+      "整个周末被用来重新查状态。": "entire weekend spent rechecking status.",
+      "Monday before DueDateHQ": "Monday before DueDateHQ",
+      "每天早上，她先做 25 分钟分诊，然后才开始工作。": "Every morning, she spends 25 minutes triaging before work can begin.",
+      "打开 Excel，看今天有什么截止日期。": "Open Excel and check today's deadlines.",
+      "手动开始": "Manual start",
+      "判断 8 条里面哪个最紧急，哪个被客户 blocked，哪个可以推。": "Decide which of the 8 items is urgent, which is blocked by the client, and which can wait.",
+      "认知负担": "Cognitive load",
+      "才清楚今天应该先做什么。": "Only then does she know what to do first.",
+      "开始执行": "Execution begins",
+      "下午": "Afternoon",
+      "回头更新表格状态，偶尔发现漏了一条。": "Return to update the spreadsheet, and sometimes find that something was missed.",
+      "二次维护": "Second maintenance pass",
+      "Chapter 2": "Chapter 2",
+      "有了 DueDateHQ，Sarah 打开产品时已经有结论。": "With DueDateHQ, Sarah opens the product and the conclusion is already there.",
+      "早上好。Aurora 的 federal income 5 月 15 日截止，最紧急。Riverbend 有两条已逾期需要确认。Greenway 的 CA PTE 选举本周必须决定。先处理哪个？": "Good morning. Aurora's federal income deadline is May 15 and is the most urgent. Riverbend has two overdue items to confirm. Greenway's CA PTE election must be decided this week. Which one first?",
+      "用时：0 分钟。": "Time spent: 0 minutes.",
+      "系统已经替她排好优先级，她不用先维护工作面再开始工作。": "The system has already prioritized the work. She does not have to maintain the work surface before starting.",
+      "Closed loop demo": "Closed-loop demo",
+      "第一件事处理完，下一步已经在等她。": "Once the first item is handled, the next step is already waiting.",
+      "“先看 Aurora。”": "\"Let's look at Aurora first.\"",
+      "左侧切到 Aurora，显示 federal income、截止日、缺 Q1 文件。": "The left side switches to Aurora and shows federal income, the due date, and missing Q1 files.",
+      "“帮我起草催文件邮件。”": "\"Draft a document request email for me.\"",
+      "Sarah 发出邮件后说“发了”，系统记录“催文件已发·今天”。": "After Sarah sends it and says \"sent,\" the system records \"document request sent · today.\"",
+      "“Aurora 处理完了。Riverbend 有两条逾期，要顺带看吗？”": "\"Aurora is handled. Riverbend has two overdue items. Want to look at those next?\"",
+      "现场产品：打开 Aurora -> 生成草稿 -> 记录操作 -> 观察左侧状态和右侧下一步。": "Live product: open Aurora -> generate draft -> record operation -> watch the left state and right next step update.",
+      "Rule-change moment": "Rule-change moment",
+      "10:47，Sarah 没有打开产品，系统已经替她盯着规则。": "At 10:47, Sarah is not in the product, but the system is watching rules for her.",
+      "监控": "Monitor",
+      "IRS 发布加州灾难延期公告。": "The IRS publishes a California disaster extension notice.",
+      "解析": "Parse",
+      "发布后 14 分钟，系统完成公告解析。": "Fourteen minutes after publication, the system finishes parsing the notice.",
+      "匹配": "Match",
+      "匹配到 Sarah 的 5 个加州客户，并更新截止日期。": "It matches Sarah's 5 California clients and updates their deadlines.",
+      "IRS 发布加州延期公告，你的 5 个客户截止日已自动更新至 10 月 15 日。": "The IRS issued a California extension notice. Deadlines for your 5 clients have been updated to October 15.",
+      "End of day": "End of day",
+      "收工前，她问一句：今天还有什么没处理完？": "Before signing off, she asks: what is still unfinished today?",
+      "Greenway 的 CA PTE 还没有操作记录，本周必须决定。其他都处理完了或进入等待状态。": "Greenway's CA PTE still has no operation record and must be decided this week. Everything else is handled or waiting.",
+      "Sarah 点开 Greenway，处理 PTE 选举，标记完成。系统说：今天的事全部处理完了。明天最紧急的是 Acme 的 TX Sales Tax。": "Sarah opens Greenway, handles the PTE election, and marks it complete. The system says: today's work is done. Tomorrow's most urgent item is Acme's TX Sales Tax.",
+      "Before / after": "Before / after",
+      "结果不是多一个工具，而是少一层认知负担。": "The result is not another tool. It is one less layer of cognitive load.",
+      "指标": "Metric",
+      "之前": "Before",
+      "之后": "After",
+      "每天合规追踪时间": "Daily compliance tracking time",
+      "2-3 小时": "2-3 hours",
+      "25 分钟": "25 minutes",
+      "规则变更响应时间": "Rule-change response time",
+      "48 小时以上": "48+ hours",
+      "14 分钟": "14 minutes",
+      "漏掉 deadline 风险": "Risk of missing a deadline",
+      "偶发": "Occasional",
+      "接近零": "Near zero",
+      "每周节省时间": "Time saved per week",
+      "没有系统性节省": "No systematic savings",
+      "8-10 小时": "8-10 hours",
+      "这 8-10 小时，Sarah 可以多服务 15-20 个客户，或者就是回家早一点。": "Those 8-10 hours let Sarah serve 15-20 more clients, or simply go home earlier.",
+      "Chapter 3": "Chapter 3",
+      "DueDateHQ 把认知负担从 Sarah 身上拿走，放进系统里。": "DueDateHQ moves the cognitive load from Sarah into the system.",
+      "规则库自动同步": "Automatic rule-library sync",
+      "联邦和州规则变更被监控、解析、匹配到客户，不再靠 Sarah 盯新闻。": "Federal and state rule changes are monitored, parsed, and matched to clients, so Sarah does not have to watch the news.",
+      "优先级自动计算": "Automatic prioritization",
+      "不是按日期排序，而是综合紧急程度、blocked 状态和不可逆风险。": "Not date sorting; it combines urgency, blocked status, and irreversible risk.",
+      "每次操作完成后，系统同步状态、规划下一步、给出入口。": "After each operation, the system syncs state, plans the next step, and gives Sarah an entry point.",
+      "Why AI": "Why AI",
+      "传统软件能存数据和发提醒，但不能接管判断链路。": "Traditional software can store data and send reminders, but it cannot take over the judgment chain.",
+      "理解短句": "Understand short replies",
+      "“我已经发给对方了，记一下”不是闲聊，是记录一次客户催文件动作。": "\"I already sent it, note that\" is not chat. It is a client document-request operation.",
+      "解析公告": "Parse notices",
+      "IRS 公告发布后，系统理解它影响哪个州、哪类客户、哪个截止日。": "After an IRS notice is published, the system understands which state, client type, and deadline are affected.",
+      "主动推进": "Proactive next step",
+      "一件事完成后，系统判断同客户还有没有未处理事项，今天还有没有更紧急事项。": "After one item is done, the system checks whether the same client has more work and whether something else is more urgent today.",
+      "Chapter 4": "Chapter 4",
+      "这里不是一个飞轮，是三个独立系统共享同一个 CPA 用户基础。": "This is not one flywheel. It is three independent systems sharing the same CPA user base.",
+      "规则库引擎": "Rule-library engine",
+      "LLM 批量处理 IRS 和州税局公告。一次调用，影响所有用户的所有相关 deadline。": "The LLM batch-processes IRS and state-agency notices. One call affects all relevant deadlines for all users.",
+      "对话引擎": "Conversation engine",
+      "LLM 单次理解用户意图。飞轮不是扩大杠杆，而是让 Intent Cache 吃掉高频请求。": "The LLM understands user intent one conversation at a time. The flywheel is not leverage per call; it is Intent Cache absorbing frequent requests.",
+      "传统 SaaS": "Traditional SaaS",
+      "确定性管理客户、deadline、状态机、提醒和审计日志。这是数据底座和留存飞轮。": "Deterministic management of clients, deadlines, state machines, reminders, and audit logs. This is the data foundation and retention flywheel.",
+      "三个系统的飞轮逻辑完全不同，但都依赖同一个规模化 CPA 用户基础。": "The three systems have different flywheel logic, but all depend on the same scaled CPA user base.",
+      "System 1": "System 1",
+      "规则库引擎：LLM 一次调用，价值是 1:N。": "Rule-library engine: one LLM call creates 1:N value.",
+      "公告": "Notice",
+      "IRS 或州税局发布非结构化公告。": "The IRS or a state agency publishes an unstructured notice.",
+      "LLM 一次调用，把公告变成结构化规则变更。": "One LLM call turns the notice into a structured rule change.",
+      "系统匹配所有用户的所有受影响客户。": "The system matches all affected clients across all users.",
+      "更新": "Update",
+      "批量更新 deadline 和提醒。": "Batch-update deadlines and reminders.",
+      "验证": "Validate",
+      "用户纠正和确认行为反哺规则准确率。": "User corrections and confirmations feed back into rule accuracy.",
+      "用户时，一次解析可能影响 500 个 deadline。": "users: one parse may update 500 deadlines.",
+      "用户时，同样一次解析可能影响 50000 个 deadline。": "users: the same parse may update 50,000 deadlines.",
+      "System 1 flywheel": "System 1 flywheel",
+      "规则库引擎的护城河是被真实用户行为验证过的规则质量。": "The rule engine's moat is rule quality verified by real user behavior.",
+      "用户越多": "More users",
+      "同一条规则变更影响的 deadline 越多。": "The same rule change affects more deadlines.",
+      "验证越多": "More validation",
+      "有没有用户纠正、确认、忽略这条规则，都会成为信号。": "Whether users correct, confirm, or ignore the rule becomes a signal.",
+      "准确率越高": "Higher accuracy",
+      "规则库质量不是纯人工审核，而是实际行为验证。": "Rule quality is not just manual review; it is validated by real behavior.",
+      "信任越强": "More trust",
+      "用户更愿意续费，更多用户进入规则库网络。": "Users are more willing to renew, and more users join the rule network.",
+      "竞品可以抓公告，但拿不到“这条规则在真实 CPA 客户组合里是否被纠正过”的行为数据。": "Competitors can scrape notices, but they cannot copy behavior data about whether a rule was corrected across real CPA client portfolios.",
+      "System 2": "System 2",
+      "对话引擎：LLM 是 1:1 成本，所以飞轮是缓存收敛。": "Conversation engine: LLM cost is 1:1, so the flywheel is cache convergence.",
+      "用户输入": "User input",
+      "“发了”“标记完成”“下一个看谁”。": "\"Sent,\" \"mark complete,\" \"who next?\"",
+      "先查高频意图，命中就直接执行。": "Check frequent intents first. If matched, execute directly.",
+      "未命中的长尾请求才调用模型理解。": "Only unmatched long-tail requests call the model.",
+      "执行": "Execute",
+      "打开工作面、记录操作、生成草稿、更新状态。": "Open workspaces, record operations, draft messages, update state.",
+      "结果写回意图库，下次同类输入直接命中。": "Write results back into the intent library so similar inputs hit next time.",
+      "这里的目标不是让一次 LLM 调用影响更多用户，而是让越来越多请求不再需要 LLM。": "The goal is not for one LLM call to affect more users; it is for more requests to stop needing LLM calls.",
+      "System 2 flywheel": "System 2 flywheel",
+      "对话引擎能转起来，因为 CPA 的需求天然趋同。": "The conversation flywheel works because CPA needs converge operationally.",
+      "输入越多": "More input",
+      "更多 CPA 触发更多表达方式和任务模式。": "More CPAs trigger more expressions and task patterns.",
+      "覆盖越全": "More coverage",
+      "Intent Library 覆盖高频、中频和部分低频需求。": "The Intent Library covers high-frequency, mid-frequency, and some low-frequency needs.",
+      "命中率越高": "Higher hit rate",
+      "LLM 调用比例从 70-90% 降到 5-15%。": "The LLM call ratio falls from 70-90% to 5-15%.",
+      "成本越低": "Lower cost",
+      "响应更快、毛利更高，也能用更低价格获客。": "Responses get faster, gross margin improves, and acquisition can be priced more aggressively.",
+      "条测试输入。": "test inputs.",
+      "个意图簇。": "intent clusters.",
+      "第二轮命中率，零错误匹配。": "second-round hit rate, with zero wrong matches.",
+      "Long tail": "Long tail",
+      "“罕见需求”会被吞噬成“已知需求”。": "\"Rare needs\" are absorbed into \"known needs.\"",
+      "早期：长尾很长": "Early: the long tail is long",
+      "高频  ████████\n中频  ████\n低频  ██\n长尾  ░░░░░░░░░░░░░░░  走 LLM": "High freq  ████████\nMid freq   ████\nLow freq   ██\nLong tail  ░░░░░░░░░░░░░░░  uses LLM",
+      "成熟期：长尾变短": "Mature: the long tail shrinks",
+      "高频  ████████\n中频  ████████\n低频  ██████\n长尾  ░░  极少边界案例": "High freq  ████████\nMid freq   ████████\nLow freq   ██████\nLong tail  ░░  rare edge cases",
+      "不是 CPA 改变了，而是足够多用户触发过这些需求，系统已经学会。": "The CPA did not change. Enough users triggered these needs that the system learned them.",
+      "Runtime staging": "Runtime staging",
+      "长尾需求第一次出现时，系统先当场满足，再决定是否沉淀。": "When a long-tail need appears for the first time, the system satisfies it now, then decides whether to retain it.",
+      "新需求": "New need",
+      "Sarah 提出一个没有命中缓存的复杂问题。": "Sarah asks a complex question that does not hit the cache.",
+      "识别": "Recognize",
+      "系统判断它不是已有 intent，也不是已有页面骨架。": "The system sees that it is neither a known intent nor an existing surface skeleton.",
+      "临时工作面": "Temporary workspace",
+      "LLM 作为总设计师，用现有组件或临时组件搭出页面。": "The LLM acts as the lead designer and builds a page from existing or temporary components.",
+      "当场使用": "Use immediately",
+      "左侧立刻呈现，Sarah 可以查看分析、补字段、发起确认动作。": "The left side renders immediately. Sarah can review analysis, add fields, and trigger confirmed actions.",
+      "后台评估": "Background evaluation",
+      "系统再判断这个场景是否值得保存为可复用资产。": "The system later decides whether this scenario should become a reusable asset.",
+      "Staging 不是让用户等待审核。它是当前会话立即可用、但尚未进入全局组件库的临时工作面。": "Staging does not make the user wait for review. It is immediately usable in the current session, but not yet part of the global component library.",
+      "Long-tail asset strategy": "Long-tail asset strategy",
+      "长尾不是都缓存。先存下来，再判断哪些值得资产化。": "Not every long-tail need is cached. First store it, then decide what is worth turning into an asset.",
+      "基础存储": "Base storage",
+      "所有长尾需求都记录：原始提问、上下文、数据来源、生成页面、用户操作和纠错信号。": "Record every long-tail need: original question, context, data sources, generated surface, user actions, and correction signals.",
+      "缓存标准": "Cache criteria",
+      "只有高价值、可复用、低歧义、跨用户重复出现的场景，才进入 Intent Cache 或骨架库。": "Only high-value, reusable, low-ambiguity, cross-user repeated scenarios enter Intent Cache or the skeleton library.",
+      "综合判断": "Integrated judgment",
+      "系统判断它应该变成 intent、workflow skeleton、surface skeleton、draft pattern，还是继续保持长尾。": "The system decides whether it should become an intent, workflow skeleton, surface skeleton, draft pattern, or remain long-tail.",
+      "DueDateHQ 的数据资产不是“用户问过什么”，而是“我们知道一个 CPA 提问背后对应什么业务场景，以及这个场景是否值得产品化”。": "DueDateHQ's data asset is not \"what users asked.\" It is knowing which business scenario sits behind a CPA's question, and whether that scenario is worth productizing.",
+      "System 3": "System 3",
+      "传统 SaaS：没有 LLM，确定性管理业务数据。": "Traditional SaaS: no LLM, deterministic business-data management.",
+      "客户录入": "Client entry",
+      "客户、实体类型、州、联系人和税种进入系统。": "Clients, entity types, states, contacts, and tax types enter the system.",
+      "根据规则和客户画像自动生成截止日。": "Generate deadlines from rules and client profiles.",
+      "状态机": "State machine",
+      "complete、snooze、waive、override 都有审计记录。": "complete, snooze, waive, and override all have audit records.",
+      "提醒": "Reminders",
+      "截止日前触发提醒，完成或 waive 后取消。": "Trigger reminders before due dates; cancel them after completion or waive.",
+      "留存": "Retention",
+      "数据越完整，迁移成本越高，续费越稳定。": "The more complete the data, the higher the migration cost and the more stable renewal becomes.",
+      "这是传统 SaaS 的标准留存飞轮，也是系统一和系统二能规模化的用户底座。": "This is the standard SaaS retention flywheel, and the user base that lets systems 1 and 2 scale.",
+      "Relationship": "Relationship",
+      "系统三是底座，系统一和系统二在底座上各自转动，再反哺底座。": "System 3 is the foundation. Systems 1 and 2 spin on top of it and feed it back.",
+      "系统三": "System 3",
+      "提供稳定用户基础和业务数据。客户、deadline、状态和审计日志都在这里。": "Provides the stable user base and business data: clients, deadlines, states, and audit logs.",
+      "系统一": "System 1",
+      "用同一个用户基础扩大 LLM 规则解析杠杆，规则越准，系统三的数据越准。": "Uses the same user base to expand LLM leverage for rule parsing. More accurate rules make System 3's data more accurate.",
+      "系统二": "System 2",
+      "用同一个用户基础收敛 Intent Library，对话越准，系统三里的操作越高效。": "Uses the same user base to converge the Intent Library. Better conversations make operations in System 3 more efficient.",
+      "传统 SaaS 提供数据和留存\n  -> 规则库引擎提升 deadline 准确率\n  -> 对话引擎提升操作效率\n  -> 两者都增加系统三的依赖度": "Traditional SaaS provides data and retention\n  -> Rule engine improves deadline accuracy\n  -> Conversation engine improves execution efficiency\n  -> Both increase dependency on System 3",
+      "Chapter 5": "Chapter 5",
+      "现在的产品：三个系统已经在同一个原型里合流。": "Current product: the three systems already meet in one prototype.",
+      "规则录入、客户管理、deadline 调度、提醒推送、状态机和审计日志已经跑通。": "Rule entry, client management, deadline scheduling, reminder delivery, state machines, and audit logs are running.",
+      "官方规则和客户组合可以生成受影响 deadline，支持人工验证和后续自动化。": "Official rules and client portfolios can generate affected deadlines, with manual validation and future automation.",
+      "285 条样本、11 个意图类型、Intent Cache 验证完成，Ask 已接入 live backend。": "285 samples, 11 intent types, Intent Cache validation complete, and Ask connected to the live backend.",
+      "现场产品：Work 是全局掌控，Ask 是深度执行，两边共享状态。": "Live product: Work is global control; Ask is deep execution. Both share state.",
+      "Chapter 6": "Chapter 6",
+      "三个系统的成本下降速度不同。": "The three systems reduce cost at different speeds.",
+      "系统": "System",
+      "成本机制": "Cost mechanism",
+      "下降逻辑": "Reduction logic",
+      "基础设施和数据管理。": "Infrastructure and data management.",
+      "随规模缓慢下降，幅度有限。": "Declines slowly with scale, with limited room.",
+      "LLM 解析固定成本 + 人工审核。": "Fixed LLM parsing cost plus human review.",
+      "一次解析分摊到更多用户，单用户成本线性下降。": "One parse spreads across more users, so per-user cost falls linearly.",
+      "每次输入原本是 1:1 LLM 成本。": "Each input starts as a 1:1 LLM cost.",
+      "Intent Cache 命中率提升，调用比例快速下降。": "As Intent Cache hit rate rises, call ratio drops quickly.",
+      "Cost curve": "Cost curve",
+      "系统二早期不便宜，但下降曲线最陡。": "System 2 is not cheap early, but its cost curve falls fastest.",
+      "缓慢下降": "Slow decline",
+      "线性分摊": "Linear allocation",
+      "下降 80-95%": "80-95% decline",
+      "早期如果每个 Ask 都带完整上下文调高质量模型，单用户月成本可能是几美元到十几美元。商业逻辑成立的关键，是 CPA 需求趋同让缓存命中率持续上升，而不是一开始就假设调用成本很低。": "Early on, if every Ask call sends full context to a high-quality model, per-user monthly cost can be several to tens of dollars. The business logic depends on cache hit rate rising as CPA needs converge, not on assuming AI is cheap from day one.",
+      "Conversation cost slope": "Conversation cost slope",
+      "对话成本一开始可能高于订阅价，之后随长尾被覆盖持续滑坡。": "Conversation cost may start above subscription price, then decline as the long tail is covered.",
+      "这不是“AI 便宜”的故事，而是“标准化职业的长尾需求会被逐步产品化”的故事。最终仍然有边界案例需要 LLM，所以成本曲线有尾巴，不会到零。": "This is not an \"AI is cheap\" story. It is a story about productizing the long tail of a standardized profession. Edge cases still need LLMs, so the cost curve has a tail and never reaches zero.",
+      "Scaling economics": "Scaling economics",
+      "规模越大，三个系统同时更有效率。": "As scale grows, all three systems become more efficient.",
+      "100 用户": "100 users",
+      "10000 用户": "10,000 users",
+      "基础设施约 $0.5-1 / 用户 / 月。": "Infrastructure: about $0.5-1 per user per month.",
+      "约 $0.1-0.2 / 用户 / 月。": "About $0.1-0.2 per user per month.",
+      "规则维护约 $2 / 用户 / 月。": "Rule maintenance: about $2 per user per month.",
+      "约 $0.02 / 用户 / 月。": "About $0.02 per user per month.",
+      "早期重度用户可能 $60-120 / 用户 / 月，轻中度用户约 $6-18。": "Early heavy users may cost $60-120 per user per month; light to mid users about $6-18.",
+      "成熟后高频命中缓存，约 $2-6 / 用户 / 月，仍保留长尾。": "After maturity, frequent intents hit cache; about $2-6 per user per month, with a remaining tail.",
+      "系统一用 LLM 处理市场信息，杠杆是 1:N；系统二用 LLM 理解用户意图，早期成本高，飞轮是缓存收敛；系统三用确定性逻辑管理业务数据，飞轮是数据留存。": "System 1 uses LLMs to process market information with 1:N leverage. System 2 uses LLMs to understand intent, has high early cost, and its flywheel is cache convergence. System 3 manages business data deterministically, and its flywheel is data retention.",
+      "Chapter 7": "Chapter 7",
+      "GTM 不是先投广告，而是先手动把 Sarah 服务到离不开。": "GTM does not start with ads. It starts by manually serving Sarah until she will not go back.",
+      "早期卖的不是“AI 税务软件”，而是一个具体结果：把客户 deadline 整理好，每天告诉 Sarah 最该处理哪几件。": "Early on, the product is not sold as \"AI tax software.\" It is sold as a concrete outcome: organize client deadlines and tell Sarah what to handle first each day.",
+      "目标人群": "Target user",
+      "40-150 客户": "40-150 clients",
+      "独立 CPA / 小型事务所 owner，跨州客户比例高。": "Independent CPAs or small-firm owners with a high share of multi-state clients.",
+      "交付方式": "Delivery",
+      "Concierge onboarding": "Concierge onboarding",
+      "手动导入客户表，人工核对第一版 deadline calendar。": "Manually import the client list and manually verify the first deadline calendar.",
+      "验证标准": "Validation",
+      "30 天不想回 Excel": "No desire to return to Excel after 30 days",
+      "她主动问“这个什么时候正式上线”。": "She asks, \"When does this officially launch?\"",
+      "早期手动做没有问题。因为这不是规模化交付阶段，而是用服务换真实工作流、真实问题和真实意图数据。": "Manual work is acceptable early. This is not the scaled delivery phase; it is a trade of service for real workflows, real problems, and real intent data.",
+      "GTM motion": "GTM motion",
+      "先高接触拿下 100 个独立 CPA，再通过信任网络扩散。": "Win the first 100 independent CPAs with high-touch onboarding, then expand through trust networks.",
+      "1. 白手套启动": "1. White-glove start",
+      "48 小时内帮用户导入客户、生成截止日指挥台、跑通第一周工作流。": "Within 48 hours, import clients, generate the deadline command center, and run the first-week workflow.",
+      "服务切入": "Service wedge",
+      "2. 申报季验证": "2. Filing-season validation",
+      "看她每周是否打开 3 次以上、Ask 是否每周 10 次以上、是否持续记录操作。": "Measure whether she opens it 3+ times per week, uses Ask 10+ times per week, and keeps recording operations.",
+      "留存信号": "Retention signal",
+      "3. CPA 社群扩散": "3. CPA community expansion",
+      "用真实案例传播：一个独立 CPA 如何把每周 12 小时 deadline tracking 降到 2 小时。": "Spread through a concrete case: how one independent CPA reduced weekly deadline tracking from 12 hours to 2.",
+      "信任渠道": "Trust channel",
+      "4. 产品化 onboarding": "4. Productized onboarding",
+      "把手动导入、规则核对和第一周工作流固化成标准启动流程。": "Turn manual import, rule verification, and the first-week workflow into a standardized launch process.",
+      "规模交付": "Scaled delivery",
+      "Chapter 8": "Chapter 8",
+      "未来三年先把独立 CPA 产品做深。": "For the next three years, go deep on the independent CPA product.",
+      "0-6 个月": "0-6 months",
+      "找到 100 个愿意付费的独立 CPA，跑完一个完整申报季。": "Find 100 independent CPAs willing to pay and run through a full filing season.",
+      "付费验证": "Paid validation",
+      "6-18 个月": "6-18 months",
+      "规则库扩展到 50 州，Intent Library 积累到 1000+ 条真实输入。": "Expand the rule library to all 50 states and grow the Intent Library to 1,000+ real inputs.",
+      "产品扩张": "Product expansion",
+      "18-36 个月": "18-36 months",
+      "把 onboarding、规则验证、Ask 闭环和团队协作继续产品化，服务更多小型事务所。": "Keep productizing onboarding, rule validation, the Ask loop, and team workflows to serve more small firms.",
+      "核心产品深化": "Core product depth",
+      "Close": "Close",
+      "DueDateHQ 保护的，是 CPA 的判断力。": "DueDateHQ protects the CPA's judgment.",
+      "一个 CPA 最有价值的东西，从来不是她记住了多少截止日期。是她对客户情况的理解，和她给出建议时的判断力。": "The most valuable thing a CPA has is not how many deadlines she remembers. It is her understanding of client situations and the judgment behind her advice.",
+      "规则库更新，不需要她盯着 IRS 官网。优先级排序，不需要她每天早上想 25 分钟。操作记录，不需要她手动更新 Excel。": "Rule updates should not require watching the IRS site. Prioritization should not require 25 minutes every morning. Operation records should not require manual Excel updates.",
+      "这些事情系统做了，Sarah 的时间和注意力就留给真正需要她的事：判断、沟通、建议。": "When the system handles those things, Sarah's time and attention stay with what truly needs her: judgment, communication, and advice.",
+      "←": "←",
+      "→": "→"
+    };
+
+    const titleTranslations = {
+      zh: "DueDateHQ 十分钟展示故事",
+      en: "DueDateHQ 10-Minute Story"
+    };
+
+    function normalizeText(value) {
+      return String(value || "").replace(/\s+/g, " ").trim();
+    }
+
+    const normalizedTranslations = Object.fromEntries(
+      Object.entries(translations).map(([key, value]) => [normalizeText(key), value])
+    );
+
+    function collectTextNodes(root) {
+      const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+        acceptNode(node) {
+          const parent = node.parentElement;
+          if (!parent || ["SCRIPT", "STYLE"].includes(parent.tagName)) return NodeFilter.FILTER_REJECT;
+          if (!normalizeText(node.nodeValue)) return NodeFilter.FILTER_REJECT;
+          return NodeFilter.FILTER_ACCEPT;
+        }
+      });
+      const nodes = [];
+      while (walker.nextNode()) nodes.push(walker.currentNode);
+      return nodes;
+    }
+
+    function applyLanguage(lang) {
+      currentLang = lang;
+      localStorage.setItem("duedatehq-story-lang", lang);
+      document.documentElement.lang = lang === "en" ? "en" : "zh-CN";
+      document.title = titleTranslations[lang];
+      collectTextNodes(document.body).forEach((node) => {
+        if (!node.__cnText) node.__cnText = node.nodeValue;
+        const key = normalizeText(node.__cnText);
+        const translated = normalizedTranslations[key];
+        if (lang === "en" && translated) {
+          node.nodeValue = node.__cnText.replace(node.__cnText.trim(), translated);
+        } else {
+          node.nodeValue = node.__cnText;
+        }
+      });
+      if (langToggle) langToggle.textContent = lang === "en" ? "中文" : "EN";
+      showSlide(current);
+    }
+
+    function showSlide(index) {
+      current = Math.max(0, Math.min(slides.length - 1, index));
+      slides.forEach((slide, slideIndex) => {
+        slide.classList.toggle("active", slideIndex === current);
+      });
+      const progress = ((current + 1) / slides.length) * 100;
+      progressBar.style.width = `${progress}%`;
+      slideCount.textContent = `${current + 1} / ${slides.length}`;
+      prevButton.disabled = current === 0;
+      nextButton.disabled = current === slides.length - 1;
+    }
+
+    prevButton.addEventListener("click", () => showSlide(current - 1));
+    nextButton.addEventListener("click", () => showSlide(current + 1));
+    langToggle?.addEventListener("click", () => {
+      applyLanguage(currentLang === "en" ? "zh" : "en");
+    });
+
+    window.addEventListener("keydown", (event) => {
+      if (event.key === "ArrowRight" || event.key === "PageDown" || event.key === " ") {
+        event.preventDefault();
+        showSlide(current + 1);
+      }
+      if (event.key === "ArrowLeft" || event.key === "PageUp") {
+        event.preventDefault();
+        showSlide(current - 1);
+      }
+      if (event.key === "Home") showSlide(0);
+      if (event.key === "End") showSlide(slides.length - 1);
+    });
+
+    applyLanguage(currentLang === "en" ? "en" : "zh");
+  </script>
+</body>
+</html>
