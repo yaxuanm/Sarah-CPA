@@ -42,12 +42,15 @@ export type MockDeadline = {
   id: string;
   client_id: string;
   client_name: string;
+  task_title?: string;
+  task_note?: string;
   tax_type: TaxType;
   jurisdiction: string;
   due_date: string;
   due_label: string;
   days_remaining: number;
   status: DeadlineStatus;
+  priority?: "high" | "normal" | "low";
   extension_status: "submitted" | "approved" | "denied" | null;
   extended_due_date: string | null;
   source: string;
@@ -82,7 +85,7 @@ export type MockRule = {
   source: string;
   detected_at: string;
   affected_count: number;
-  status: "pending-review" | "auto-applied" | "dismissed";
+  status: "pending-review" | "applied" | "auto-applied" | "dismissed";
   summary: string;
   diff_before: string;
   diff_after: string;
@@ -441,13 +444,13 @@ export const mockDeadlines: MockDeadline[] = [
     client_name: "Riverbend Manufacturing",
     tax_type: "Property",
     jurisdiction: "TX",
-    due_date: "2026-04-30",
-    due_label: "Apr 30",
-    days_remaining: 4,
+    due_date: "2026-04-20",
+    due_label: "Apr 20",
+    days_remaining: -6,
     status: "pending",
     extension_status: null,
     extended_due_date: null,
-    source: "Harris County Appraisal District",
+    source: "Harris County Appraisal District - commercial property rendition",
     blocker_reason: null,
     assignee: "Sarah Johnson"
   },
@@ -618,9 +621,9 @@ export const mockDeadlines: MockDeadline[] = [
     client_name: "Riverbend Manufacturing",
     tax_type: "Excise",
     jurisdiction: "OK",
-    due_date: "2026-04-21",
-    due_label: "Apr 21",
-    days_remaining: -5,
+    due_date: "2026-04-18",
+    due_label: "Apr 18",
+    days_remaining: -8,
     status: "pending",
     extension_status: null,
     extended_due_date: null,

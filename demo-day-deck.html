@@ -1,0 +1,847 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>DueDateHQ Demo Day Deck</title>
+  <style>
+    :root {
+      --ink: #121826;
+      --muted: #667085;
+      --paper: #f4f0e8;
+      --panel: #fffdf8;
+      --line: #ded7ca;
+      --navy: #141a2a;
+      --gold: #f2a40c;
+      --blue: #2563eb;
+      --green: #157347;
+      --red: #c8322b;
+      font-family: "Avenir Next", "Segoe UI", sans-serif;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      color: var(--ink);
+      background: var(--paper);
+    }
+
+    button {
+      font: inherit;
+    }
+
+    .deck-shell {
+      width: 100vw;
+      min-height: 100vh;
+      margin: 0;
+      display: grid;
+      grid-template-rows: auto 1fr auto;
+      overflow: hidden;
+      background: var(--paper);
+    }
+
+    .topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 20px;
+      padding: 18px 26px;
+      color: #fff;
+      background: var(--navy);
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      font-weight: 800;
+      letter-spacing: -0.03em;
+    }
+
+    .brand-mark {
+      display: grid;
+      width: 34px;
+      height: 34px;
+      place-items: center;
+      border-radius: 11px;
+      color: var(--navy);
+      background: var(--gold);
+      font-weight: 900;
+    }
+
+    .top-meta {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      color: rgba(255, 255, 255, 0.78);
+      font-size: 13px;
+    }
+
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      min-height: 28px;
+      padding: 4px 10px;
+      border: 1px solid rgba(255, 255, 255, 0.18);
+      border-radius: 999px;
+      white-space: nowrap;
+    }
+
+    .slides {
+      position: relative;
+      min-height: 0;
+    }
+
+    .slide {
+      position: absolute;
+      inset: 0;
+      display: none;
+      padding: 64px 80px;
+      overflow: auto;
+    }
+
+    .slide.active {
+      display: grid;
+      align-content: center;
+      gap: 26px;
+      animation: slideIn 180ms ease-out;
+    }
+
+    @keyframes slideIn {
+      from {
+        opacity: 0;
+        transform: translateY(8px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    .eyebrow {
+      margin: 0;
+      color: #7a8798;
+      font-size: 13px;
+      font-weight: 800;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+    }
+
+    h1,
+    h2,
+    h3 {
+      margin: 0;
+      letter-spacing: -0.055em;
+      line-height: 0.96;
+    }
+
+    h1 {
+      max-width: 930px;
+      font-size: clamp(58px, 8vw, 108px);
+    }
+
+    h2 {
+      max-width: 940px;
+      font-size: clamp(42px, 5.4vw, 72px);
+    }
+
+    h3 {
+      font-size: 30px;
+    }
+
+    .accent-text {
+      color: var(--gold);
+    }
+
+    .lead {
+      max-width: 760px;
+      margin: 0;
+      color: #3d4858;
+      font-size: 24px;
+      line-height: 1.36;
+      letter-spacing: -0.02em;
+    }
+
+    .compact {
+      max-width: 880px;
+      font-size: 18px;
+      line-height: 1.5;
+    }
+
+    .grid-2 {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 18px;
+    }
+
+    .grid-3 {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 18px;
+    }
+
+    .grid-4 {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 14px;
+    }
+
+    .card {
+      padding: 22px;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 22px;
+    }
+
+    .card.dark {
+      color: #fff;
+      background: var(--navy);
+      border-color: var(--navy);
+    }
+
+    .card.accent {
+      border-color: rgba(242, 164, 12, 0.75);
+      background: #fff8e9;
+    }
+
+    .card h3 {
+      margin-bottom: 10px;
+      font-size: 24px;
+      line-height: 1.08;
+    }
+
+    .card p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 16px;
+      line-height: 1.42;
+    }
+
+    .card.dark p {
+      color: rgba(255, 255, 255, 0.72);
+    }
+
+    .number {
+      display: inline-grid;
+      width: 38px;
+      height: 38px;
+      margin-bottom: 14px;
+      place-items: center;
+      border-radius: 50%;
+      color: var(--navy);
+      background: var(--gold);
+      font-weight: 900;
+    }
+
+    .timeline {
+      display: grid;
+      gap: 12px;
+      max-width: 980px;
+    }
+
+    .time-row {
+      display: grid;
+      grid-template-columns: 110px 1fr 180px;
+      gap: 18px;
+      align-items: center;
+      padding: 14px 18px;
+      background: #fff;
+      border: 1px solid var(--line);
+      border-radius: 16px;
+    }
+
+    .time-row strong {
+      color: var(--gold);
+    }
+
+    .time-row span {
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    .demo-cue {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      width: fit-content;
+      padding: 12px 16px;
+      border: 1px solid #d8e4ff;
+      border-radius: 16px;
+      color: #174ea6;
+      background: #eef5ff;
+      font-weight: 700;
+    }
+
+    .demo-cue::before {
+      content: "Cue";
+      padding: 3px 8px;
+      border-radius: 999px;
+      color: #fff;
+      background: var(--blue);
+      font-size: 12px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .talk-track {
+      display: grid;
+      gap: 10px;
+      max-width: 960px;
+    }
+
+    .talk-track p {
+      margin: 0;
+      padding: 14px 16px;
+      border-left: 4px solid var(--gold);
+      background: #fff;
+      border-radius: 0 14px 14px 0;
+      color: #303947;
+      font-size: 17px;
+      line-height: 1.45;
+    }
+
+    .object-flow {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+      gap: 10px;
+      align-items: stretch;
+    }
+
+    .object-flow div {
+      position: relative;
+      min-height: 118px;
+      padding: 18px;
+      background: #fff;
+      border: 1px solid var(--line);
+      border-radius: 18px;
+    }
+
+    .object-flow div:not(:last-child)::after {
+      content: "";
+      position: absolute;
+      top: 50%;
+      right: -11px;
+      width: 12px;
+      height: 2px;
+      background: var(--gold);
+    }
+
+    .object-flow strong {
+      display: block;
+      margin-bottom: 8px;
+      font-size: 18px;
+    }
+
+    .object-flow span {
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.35;
+    }
+
+    .split-title {
+      display: grid;
+      grid-template-columns: 1.15fr 0.85fr;
+      gap: 28px;
+      align-items: center;
+    }
+
+    .metric {
+      display: grid;
+      min-height: 138px;
+      align-content: space-between;
+      padding: 20px;
+      background: #fff;
+      border: 1px solid var(--line);
+      border-radius: 20px;
+    }
+
+    .metric strong {
+      font-size: 42px;
+      line-height: 1;
+      letter-spacing: -0.05em;
+    }
+
+    .metric span {
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    .status-list {
+      display: grid;
+      gap: 10px;
+      max-width: 900px;
+    }
+
+    .status-list li {
+      display: grid;
+      grid-template-columns: 160px 1fr;
+      gap: 16px;
+      padding: 14px 16px;
+      background: #fff;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      list-style: none;
+    }
+
+    .status-list strong {
+      color: var(--navy);
+    }
+
+    .status-list span {
+      color: var(--muted);
+    }
+
+    .footer {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 18px;
+      padding: 16px 24px;
+      border-top: 1px solid rgba(222, 215, 202, 0.75);
+      background: var(--paper);
+    }
+
+    .progress {
+      position: relative;
+      flex: 1;
+      height: 8px;
+      overflow: hidden;
+      border-radius: 999px;
+      background: #e1dbd0;
+    }
+
+    .progress span {
+      position: absolute;
+      inset: 0 auto 0 0;
+      width: 0;
+      border-radius: inherit;
+      background: var(--gold);
+      transition: width 180ms ease;
+    }
+
+    .controls {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .controls button {
+      min-width: 42px;
+      height: 38px;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      color: var(--ink);
+      background: #fff;
+      cursor: pointer;
+    }
+
+    .controls button:hover {
+      border-color: var(--gold);
+    }
+
+    .slide-count {
+      min-width: 72px;
+      color: var(--muted);
+      font-size: 13px;
+      text-align: center;
+    }
+
+    code {
+      display: block;
+      margin-top: 8px;
+      padding: 10px 12px;
+      overflow: auto;
+      border: 1px solid #e6e0d4;
+      border-radius: 12px;
+      color: #172033;
+      background: #f7f4ed;
+      font-family: "SFMono-Regular", Consolas, monospace;
+      font-size: 12px;
+      line-height: 1.5;
+    }
+
+    .tag-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .tag {
+      display: inline-flex;
+      align-items: center;
+      min-height: 30px;
+      padding: 5px 10px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: #fff;
+      color: #334155;
+      font-size: 13px;
+      font-weight: 700;
+    }
+
+    .tag.gold {
+      border-color: #f2c261;
+      color: #8a5a00;
+      background: #fff5d9;
+    }
+
+    .tag.green {
+      border-color: #b8e3c8;
+      color: #116239;
+      background: #ecf9f0;
+    }
+
+    .tag.red {
+      border-color: #ffc8c4;
+      color: #b42318;
+      background: #fff0ef;
+    }
+
+    .appendix {
+      border-top: 8px solid var(--navy);
+    }
+
+    @media (max-width: 900px) {
+      .deck-shell {
+        width: 100vw;
+        min-height: 100vh;
+        margin: 0;
+      }
+
+      .slide {
+        padding: 34px 24px;
+      }
+
+      .grid-2,
+      .grid-3,
+      .grid-4,
+      .split-title,
+      .object-flow {
+        grid-template-columns: 1fr;
+      }
+
+      .time-row {
+        grid-template-columns: 1fr;
+      }
+
+      .object-flow div:not(:last-child)::after {
+        display: none;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="deck-shell">
+    <header class="topbar">
+      <div class="brand">
+        <span class="brand-mark">HQ</span>
+        <span>DueDateHQ Demo Day</span>
+      </div>
+      <div class="top-meta">
+        <span class="pill">10 minutes</span>
+        <span class="pill">CEO / GM / technical audience</span>
+      </div>
+    </header>
+
+    <section class="slides" aria-live="polite">
+      <article class="slide active">
+        <p class="eyebrow">Demo day narrative</p>
+        <div class="split-title">
+          <div>
+            <h1>Deadline intelligence for CPA firms.</h1>
+            <p class="lead">DueDateHQ turns messy client profiles, official tax updates, and weekly deadline pressure into a clear work queue.</p>
+          </div>
+          <div class="card accent">
+            <h3>One sentence</h3>
+            <p>We are not replacing tax prep. We are making sure every filing deadline, blocker, extension, and rule change is visible before it becomes a fire drill.</p>
+          </div>
+        </div>
+        <div class="tag-row">
+          <span class="tag gold">Import clients</span>
+          <span class="tag gold">Weekly triage</span>
+          <span class="tag gold">Rule-change review</span>
+          <span class="tag green">AI where structure is messy</span>
+        </div>
+      </article>
+
+      <article class="slide">
+        <p class="eyebrow">Target customer + pain</p>
+        <h2>Small CPA firms lose time on <span class="accent-text">coordination</span>, not just tax work.</h2>
+        <div class="grid-3">
+          <div class="card">
+            <span class="number">1</span>
+            <h3>Target user</h3>
+            <p>Independent and small CPA firms managing many clients across federal and state filing obligations.</p>
+          </div>
+          <div class="card">
+            <span class="number">2</span>
+            <h3>Core pain</h3>
+            <p>A due date does not tell the team whether work is actionable, blocked, extended, or waiting for CPA judgment.</p>
+          </div>
+          <div class="card">
+            <span class="number">3</span>
+            <h3>Why now</h3>
+            <p>State updates, disaster relief, and filing-rule changes have to be checked against the actual client portfolio.</p>
+          </div>
+        </div>
+      </article>
+
+      <article class="slide">
+        <p class="eyebrow">Market context</p>
+        <h2>Portals, workflow, due dates. <span class="accent-text">The gap is intelligence.</span></h2>
+        <div class="grid-3">
+          <div class="card accent">
+            <h3>Due-date tools</h3>
+            <p>Products like File In Time prove firms will buy deadline tracking, but they are closer to a rules database plus task list.</p>
+          </div>
+          <div class="card">
+            <h3>Practice suites</h3>
+            <p>Karbon, TaxDome, and Canopy are strong workflow or portal systems, but they are broader operating suites rather than tax-deadline intelligence layers.</p>
+          </div>
+          <div class="card">
+            <h3>Our wedge</h3>
+            <p>Use AI where CPA workflows are messy: import mapping, official-source interpretation, affected-client matching, and follow-up drafting.</p>
+          </div>
+        </div>
+        <div class="demo-cue">Investor line: "We are not trying to replace the whole firm OS on day one. We enter through the deadline workflow firms already understand."</div>
+      </article>
+
+      <article class="slide">
+        <p class="eyebrow">AI differentiation</p>
+        <h2><span class="accent-text">AI</span> that keeps deadline work current.</h2>
+        <div class="grid-4">
+          <div class="metric"><strong>Parse</strong><span>Messy CSV exports become structured client profiles.</span></div>
+          <div class="metric"><strong>Watch</strong><span>Official rule changes are extracted from trusted sources.</span></div>
+          <div class="metric"><strong>Match</strong><span>Changes are matched against the firm's actual client portfolio.</span></div>
+          <div class="metric"><strong>Draft</strong><span>Client follow-ups are generated from the selected work item context.</span></div>
+        </div>
+        <p class="lead compact"><strong>Not a chatbot layer.</strong> AI reduces the manual maintenance and interpretation burden before the CPA makes the final decision.</p>
+      </article>
+
+      <article class="slide">
+        <p class="eyebrow">Aha moment</p>
+        <h2>A spreadsheet becomes the firm's <span class="accent-text">operating view</span>.</h2>
+        <div class="grid-3">
+          <div class="card dark">
+            <span class="number">1</span>
+            <h3>Import</h3>
+            <p>A messy client export turns into structured clients and derived deadlines.</p>
+          </div>
+          <div class="card dark">
+            <span class="number">2</span>
+            <h3>Triage</h3>
+            <p>The CPA immediately sees what is actionable, blocked, overdue, or waiting for review.</p>
+          </div>
+          <div class="card dark">
+            <span class="number">3</span>
+            <h3>React</h3>
+            <p>A state rule change becomes an affected-client decision, not another article someone has to manually interpret.</p>
+          </div>
+        </div>
+        <p class="lead compact">Do not linger here. Say this, then switch into the product. The product demo is the proof.</p>
+      </article>
+
+      <article class="slide">
+        <p class="eyebrow">Live demo flow</p>
+        <h2>Stop presenting. <span class="accent-text">Enter the product.</span></h2>
+        <div class="timeline">
+          <div class="time-row">
+            <strong>0:00-0:45</strong>
+            <div>Who we serve, what hurts, and why deadlines are the right wedge.</div>
+            <span>Intro</span>
+          </div>
+          <div class="time-row">
+            <strong>0:45-1:30</strong>
+            <div>Competitive context and AI differentiation.</div>
+            <span>Market</span>
+          </div>
+          <div class="time-row">
+            <strong>1:30-6:45</strong>
+            <div>Live DueDateHQ demo through three user stories.</div>
+            <span>Product proof</span>
+          </div>
+          <div class="time-row">
+            <strong>6:45-8:45</strong>
+            <div>Show on-demand rendering: chat asks, backend reasons, right work surface adapts.</div>
+            <span>Teammate segment</span>
+          </div>
+          <div class="time-row">
+            <strong>8:45-10:00</strong>
+            <div>Close with GTM wedge and technical credibility.</div>
+            <span>Investor close</span>
+          </div>
+        </div>
+      </article>
+
+      <article class="slide">
+        <p class="eyebrow">User story 1</p>
+        <h2>From competitor export to usable client portfolio.</h2>
+        <p class="lead">The CPA uploads a CSV. DueDateHQ maps columns, flags ambiguous fields, separates new clients from updates, and derives deadline work from profile data.</p>
+        <div class="grid-4">
+          <div class="metric"><strong>CSV</strong><span>Real uploaded file, not hand-entered client cards.</span></div>
+          <div class="metric"><strong>AI</strong><span>Used for messy column mapping and row interpretation.</span></div>
+          <div class="metric"><strong>New</strong><span>New clients become directory cards.</span></div>
+          <div class="metric"><strong>Update</strong><span>Existing clients are updated in place.</span></div>
+        </div>
+        <div class="demo-cue">Open Clients -> Import -> upload CSV -> show mapping -> apply -> return to Client directory.</div>
+      </article>
+
+      <article class="slide">
+        <p class="eyebrow">User story 2</p>
+        <h2>Monday morning triage: what should the CPA do now?</h2>
+        <div class="object-flow">
+          <div><strong>Work now</strong><span>Actionable items where the CPA can move work today.</span></div>
+          <div><strong>Blocked</strong><span>Missing documents, confirmation, or profile data.</span></div>
+          <div><strong>Needs review</strong><span>External changes that require a CPA decision.</span></div>
+          <div><strong>Overdue</strong><span>Due date has passed and the item is not archived.</span></div>
+          <div><strong>Archive</strong><span>Handled work kept out of active triage.</span></div>
+        </div>
+        <div class="demo-cue">Open Work -> filter if needed -> open one item -> edit task, file/revoke extension, draft client follow-up.</div>
+      </article>
+
+      <article class="slide">
+        <p class="eyebrow">User story 3</p>
+        <h2>A state tax change becomes a portfolio decision.</h2>
+        <p class="lead">DueDateHQ watches official sources, interprets the update, shows before/after impact, and keeps the CPA as the final approver.</p>
+        <div class="grid-3">
+          <div class="card">
+            <h3>Source</h3>
+            <p>Official source link and extracted rule change remain visible for review.</p>
+          </div>
+          <div class="card">
+            <h3>Impact</h3>
+            <p>The product shows which clients are affected and exactly what changes.</p>
+          </div>
+          <div class="card">
+            <h3>Decision</h3>
+            <p>The CPA can apply, dismiss, inspect affected-client changes, and see the result downstream.</p>
+          </div>
+        </div>
+        <div class="demo-cue">Open Review -> source -> details -> Apply -> jump to changed client/work item evidence.</div>
+      </article>
+
+      <article class="slide">
+        <p class="eyebrow">AI stance</p>
+        <h2>AI is not decoration. It appears when messy input needs structure.</h2>
+        <div class="grid-2">
+          <div class="card accent">
+            <h3>Where AI helps</h3>
+            <p>Import mapping, row interpretation, official-source interpretation, affected-client summaries, and follow-up email drafts.</p>
+          </div>
+          <div class="card">
+            <h3>Where AI stops</h3>
+            <p>It does not silently change tax records or submit professional work. Material changes stay behind CPA review and visible source evidence.</p>
+          </div>
+        </div>
+        <div class="demo-cue">If asked: provider-backed AI runs when keys are configured; deterministic fallback keeps the demo stable.</div>
+      </article>
+
+      <article class="slide">
+        <p class="eyebrow">On-demand rendering handoff</p>
+        <h2>Adaptive interface, <span class="accent-text">bounded by workflow.</span></h2>
+        <div class="talk-track">
+          <p>User asks in natural language. The agent infers the decision need, not just keywords.</p>
+          <p>Backend gathers trusted data and emits a constrained render spec or known work surface.</p>
+          <p>Frontend renders the smallest useful surface instead of dumping another static page.</p>
+        </div>
+        <code>user intent -> inferred need -> data plan -> validated render spec -> actionable surface</code>
+      </article>
+
+      <article class="slide">
+        <p class="eyebrow">Close</p>
+        <h2>Start with deadlines. Earn the workflow.</h2>
+        <p class="lead">The wedge is deadline intelligence because the pain is concrete, recurring, and easy to import into. The expansion is workflow orchestration because every deadline creates blockers, reminders, client follow-up, extensions, and review decisions.</p>
+        <div class="grid-3">
+          <div class="card"><h3>For firms</h3><p>Less manual deadline tracking, fewer surprise blockers, and a clearer Monday morning queue.</p></div>
+          <div class="card"><h3>For buyers</h3><p>A product that can be adopted from existing exports before asking firms to change their whole workflow.</p></div>
+          <div class="card"><h3>For investors</h3><p>A focused entry point into a high-frequency professional workflow with obvious expansion surfaces.</p></div>
+        </div>
+      </article>
+
+      <article class="slide appendix">
+        <p class="eyebrow">Appendix</p>
+        <h2>Live demo checklist</h2>
+        <ul class="status-list">
+          <li><strong>Before demo</strong><span>Start backend, seed demo data, start frontend, keep CSV file ready.</span></li>
+          <li><strong>Import</strong><span>Upload CSV, show mapping correction, review rows, create/update clients.</span></li>
+          <li><strong>Work</strong><span>Open one active item, show overdue, file/revoke extension, draft follow-up.</span></li>
+          <li><strong>Review</strong><span>Open source, inspect affected clients, apply change, show downstream evidence.</span></li>
+        </ul>
+      </article>
+
+      <article class="slide appendix">
+        <p class="eyebrow">Appendix</p>
+        <h2>Local commands</h2>
+        <div class="grid-2">
+          <div class="card">
+            <h3>Backend</h3>
+            <code>uv run --with fastapi --with uvicorn uvicorn duedatehq.http_api:create_fastapi_app --factory --reload --port 8000</code>
+            <code>uv run python scripts/seed_small_demo.py</code>
+          </div>
+          <div class="card">
+            <h3>Frontend</h3>
+            <code>cd frontend</code>
+            <code>VITE_DUEDATEHQ_API_BASE=http://127.0.0.1:8000 npm run dev</code>
+          </div>
+        </div>
+      </article>
+    </section>
+
+    <footer class="footer">
+      <div class="progress" aria-hidden="true"><span id="progress-bar"></span></div>
+      <div class="controls">
+        <button id="prev" aria-label="Previous slide">←</button>
+        <div class="slide-count" id="slide-count">1 / 13</div>
+        <button id="next" aria-label="Next slide">→</button>
+      </div>
+    </footer>
+  </main>
+
+  <script>
+    const slides = Array.from(document.querySelectorAll(".slide"));
+    const progressBar = document.getElementById("progress-bar");
+    const slideCount = document.getElementById("slide-count");
+    const prevButton = document.getElementById("prev");
+    const nextButton = document.getElementById("next");
+    let current = 0;
+
+    function showSlide(index) {
+      current = Math.max(0, Math.min(slides.length - 1, index));
+      slides.forEach((slide, slideIndex) => {
+        slide.classList.toggle("active", slideIndex === current);
+      });
+      const progress = ((current + 1) / slides.length) * 100;
+      progressBar.style.width = `${progress}%`;
+      slideCount.textContent = `${current + 1} / ${slides.length}`;
+      prevButton.disabled = current === 0;
+      nextButton.disabled = current === slides.length - 1;
+    }
+
+    prevButton.addEventListener("click", () => showSlide(current - 1));
+    nextButton.addEventListener("click", () => showSlide(current + 1));
+
+    window.addEventListener("keydown", (event) => {
+      if (event.key === "ArrowRight" || event.key === "PageDown" || event.key === " ") {
+        event.preventDefault();
+        showSlide(current + 1);
+      }
+      if (event.key === "ArrowLeft" || event.key === "PageUp") {
+        event.preventDefault();
+        showSlide(current - 1);
+      }
+      if (event.key === "Home") {
+        showSlide(0);
+      }
+      if (event.key === "End") {
+        showSlide(slides.length - 1);
+      }
+    });
+
+    showSlide(0);
+  </script>
+</body>
+</html>
