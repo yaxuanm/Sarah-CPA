@@ -4980,7 +4980,7 @@ body {
 .followup-ai-row {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-start;
   gap: 10px;
   padding-bottom: 2px;
   color: #5d6a7a;
@@ -4991,7 +4991,6 @@ body {
 .followup-ai-row > span {
   display: inline-flex;
   align-items: center;
-  gap: 7px;
   min-width: 0;
 }
 
@@ -5009,6 +5008,19 @@ body {
 .text-action:hover {
   text-decoration: underline;
   text-underline-offset: 2px;
+}
+
+.ai-draft-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0;
+  color: #0f4fbf;
+}
+
+.ai-draft-action span {
+  color: #f5a400;
+  font-size: 11px;
 }
 
 .followup-composer {

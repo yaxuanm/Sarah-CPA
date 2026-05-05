@@ -853,8 +853,8 @@ export function WorkSection({
     });
     setFollowupDraft({
       to: clientContactEmail(selectedDeadline),
-      subject: defaultClientEmailSubject(selectedDeadline),
-      body: defaultClientEmailBody(selectedDeadline)
+      subject: "",
+      body: ""
     });
     setFollowupAiGenerated(false);
     setFollowupOpen(false);
@@ -1117,10 +1117,9 @@ export function WorkSection({
               {followupOpen ? (
                 <div className="followup-composer">
                   <div className="followup-ai-row">
-                    <span><AiBadge label={followupAiGenerated ? "AI draft" : "AI"} /> Use work item context to draft the client ask.</span>
                     <button
                       type="button"
-                      className="text-action"
+                      className="text-action ai-draft-action"
                       onClick={() => {
                         const aiDraft = generateAiClientEmailDraft(selectedDeadline, followupDraft.body);
                         setFollowupDraft((current) => ({
@@ -1132,8 +1131,10 @@ export function WorkSection({
                         onNotify?.("AI generated a client follow-up draft from the work item context.", "blue");
                       }}
                     >
-                      {followupAiGenerated ? "Regenerate" : "Generate"}
+                      <span aria-hidden="true">✦</span>
+                      {followupAiGenerated ? "Regenerate draft" : "AI draft"}
                     </button>
+                    <span>Uses this work item, blocker, due date, and contact to draft the client ask.</span>
                   </div>
                   <label>
                     <span>To</span>
