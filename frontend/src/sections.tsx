@@ -1,4 +1,4 @@
-import { Dispatch, ReactElement, SetStateAction, useEffect, useMemo, useState } from "react";
+import { ChangeEvent, Dispatch, DragEvent, ReactElement, SetStateAction, useEffect, useMemo, useRef, useState } from "react";
 import type { ViewEnvelope } from "./types";
 import {
   BlockedIcon,
@@ -132,16 +132,43 @@ function formatDaysRemaining(deadline: MockDeadline) {
 }
 
 function statusClass(deadline: MockDeadline) {
+  if (deadline.days_remaining < 0 && deadline.status !== "completed" && !deadline.extension_status) return "cb";
   if (deadline.status === "blocked") return "cb";
   if (deadline.status === "extension-filed" || deadline.status === "extension-approved") return "ci";
   return "ca";
 }
 
 function statusLabel(deadline: MockDeadline) {
+  if (deadline.days_remaining < 0 && deadline.status === "blocked") {
+    return deadline.blocker_reason ? `Overdue - ${deadline.blocker_reason}` : "Blocked - overdue";
+  }
+  if (deadline.days_remaining < 0 && deadline.status !== "completed" && !deadline.extension_status) return "Overdue";
   if (deadline.status === "blocked") return deadline.blocker_reason ? `Blocked - ${deadline.blocker_reason}` : "Blocked";
   if (deadline.status === "extension-approved") return "Extension approved";
   if (deadline.status === "extension-filed") return "Extension filed";
   return "Active";
+}
+
+function workTitle(deadline: MockDeadline) {
+  return deadline.task_title || `${deadline.tax_type} - ${deadline.jurisdiction}`;
+}
+
+function defaultTaskNote(deadline: MockDeadline) {
+  if (deadline.task_note) return deadline.task_note;
+  if (deadline.blocker_reason) return `${deadline.blocker_reason}.`;
+  if (deadline.notice_rule_id) return "A recent rule change affected this filing and should be reviewed before work proceeds.";
+  return "Review the source, reminders, blockers, and extension state for this item.";
+}
+
+function daysRemainingFromDueDate(dueDate: string) {
+  const anchor = new Date("2026-04-26T00:00:00");
+  const target = new Date(`${dueDate}T00:00:00`);
+  return Math.round((target.getTime() - anchor.getTime()) / 86_400_000);
+}
+
+function dueLabelFromDate(dueDate: string) {
+  const target = new Date(`${dueDate}T00:00:00`);
+  return target.toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
 
 function summarizeRuleImpact(before: MockDeadline, after: MockDeadline) {
@@ -356,6 +383,65 @@ function buildImportedRecordFromRow(row: string[], rowIndex: number): ClientReco
   };
 }
 
+function recommendedWindowForDeadline(deadline: MockDeadline, note: string) {
+  const lowered = note.toLowerCase();
+  if (lowered.includes("missing") || lowered.includes("pending") || lowered.includes("blocking")) {
+    return {
+      taskTitle: `Collect required info for ${deadline.tax_type}`,
+      recommendedWindow: deadline.days_remaining <= 7 ? "Do now" : "This week",
+      urgency: deadline.days_remaining <= 7 ? ("urgent" as const) : ("medium" as const),
+      reason: "This imported row suggests missing or pending information before filing can move."
+    };
+  }
+  if (deadline.days_remaining <= 3) {
+    return {
+      taskTitle: `Complete ${deadline.tax_type}`,
+      recommendedWindow: "Do now",
+      urgency: "urgent" as const,
+      reason: "The final deadline is close enough that this should be completed immediately."
+    };
+  }
+  if (deadline.days_remaining <= 14) {
+    return {
+      taskTitle: `Prepare ${deadline.tax_type}`,
+      recommendedWindow: "This week",
+      urgency: "medium" as const,
+      reason: "This filing is approaching and should move into preparation this week."
+    };
+  }
+  return {
+    taskTitle: `Confirm filing scope for ${deadline.tax_type}`,
+    recommendedWindow: "Next week",
+    urgency: "low" as const,
+    reason: "This is early enough to confirm scope and keep the plan on schedule."
+  };
+}
+
+function buildProposedPlan(rows: string[][], decisions: ImportDecision[]): ProposedPlanItem[] {
+  const items: ProposedPlanItem[] = [];
+  rows.forEach((row, rowIndex) => {
+    if (decisions[rowIndex] === "skip") return;
+    const imported = buildImportedRecordFromRow(row, rowIndex);
+    imported.deadlines.slice(0, 2).forEach((deadline, deadlineIndex) => {
+      const recommendation = recommendedWindowForDeadline(deadline, row[6] || "");
+      items.push({
+        id: `${imported.client.id}-plan-${deadlineIndex + 1}`,
+        clientName: imported.client.name,
+        taskTitle: recommendation.taskTitle,
+        taxType: deadline.tax_type,
+        dueLabel: `${deadline.due_label} · ${formatDaysRemaining(deadline)}`,
+        recommendedWindow: recommendation.recommendedWindow,
+        reason:
+          decisions[rowIndex] === "merge"
+            ? `${recommendation.reason} This row updates an existing client card.`
+            : recommendation.reason,
+        urgency: recommendation.urgency
+      });
+    });
+  });
+  return items;
+}
+
 function applyImportedRowsToRecords(
   current: ClientRecord[],
   rows: string[][],
@@ -458,28 +544,47 @@ export function WorkSection({
   onNotify,
   openSection,
   setResolvedRuleIds,
-  setDeadlines: setDeadlineStore
+  setDeadlines: setDeadlineStore,
+  changedDeadlineIds = []
 }: SectionContext) {
   const deadlines = deadlineStore ?? mockDeadlines;
   const rules = ruleStore ?? mockRules;
   const [filterOpen, setFilterOpen] = useState(false);
   const [stateFilter, setStateFilter] = useState("All");
   const [taxFilter, setTaxFilter] = useState("All");
-  const [archiveOpen, setArchiveOpen] = useState(false);
+  const [triageMode, setTriageMode] = useState<"work_now" | "blocked" | "needs_review" | "archive">("work_now");
   const [selectedDeadlineId, setSelectedDeadlineId] = useState<string | null>(null);
+  const [editingDeadlineId, setEditingDeadlineId] = useState<string | null>(null);
+  const [editDraft, setEditDraft] = useState({
+    taskTitle: "",
+    taskNote: "",
+    assignee: "",
+    dueDate: "",
+    priority: "normal",
+    blockerReason: ""
+  });
 
   const visibleDeadlines = useMemo(
     () =>
       deadlines
         .filter((deadline) => {
-          if (deadline.status === "completed") return archiveOpen;
-          if (!archiveOpen && !isThisWeek(deadline)) return false;
+          if (triageMode === "archive") {
+            if (deadline.status !== "completed") return false;
+          } else if (triageMode === "blocked") {
+            if (deadline.status !== "blocked") return false;
+          } else if (triageMode === "needs_review") {
+            if (!deadline.notice_rule_id) return false;
+            if (deadline.status === "completed") return false;
+          } else {
+            if (deadline.status === "completed" || deadline.status === "blocked" || deadline.notice_rule_id) return false;
+            if (!(isThisWeek(deadline) || deadline.days_remaining < 0)) return false;
+          }
           if (stateFilter !== "All" && deadline.jurisdiction !== stateFilter) return false;
           if (taxFilter !== "All" && deadline.tax_type !== taxFilter) return false;
           return true;
         })
         .sort((a, b) => a.days_remaining - b.days_remaining),
-    [deadlines, stateFilter, taxFilter, archiveOpen]
+    [deadlines, stateFilter, taxFilter, triageMode]
   );
 
   const grouped = useMemo(() => {
@@ -492,10 +597,26 @@ export function WorkSection({
   }, [visibleDeadlines]);
 
   const selectedDeadline = selectedDeadlineId ? deadlines.find((deadline) => deadline.id === selectedDeadlineId) : null;
+  useEffect(() => {
+    if (!selectedDeadline) {
+      setEditingDeadlineId(null);
+      return;
+    }
+    setEditDraft({
+      taskTitle: workTitle(selectedDeadline),
+      taskNote: defaultTaskNote(selectedDeadline),
+      assignee: selectedDeadline.assignee,
+      dueDate: selectedDeadline.due_date,
+      priority: selectedDeadline.priority || "normal",
+      blockerReason: selectedDeadline.blocker_reason || ""
+    });
+    setEditingDeadlineId(null);
+  }, [selectedDeadlineId, selectedDeadline]);
   const pendingRules = rules.filter((rule) => rule.status === "pending-review");
-  const thisWeekCount = deadlines.filter(isThisWeek).length;
+  const workNowCount = deadlines.filter((deadline) => deadline.status !== "completed" && deadline.status !== "blocked" && !deadline.notice_rule_id && (isThisWeek(deadline) || deadline.days_remaining < 0)).length;
   const blockedCount = deadlines.filter((deadline) => deadline.status === "blocked").length;
-  const nextThirty = deadlines.filter((deadline) => deadline.status !== "completed" && deadline.days_remaining >= 0 && deadline.days_remaining <= 30);
+  const needsReviewCount = deadlines.filter((deadline) => deadline.status !== "completed" && !!deadline.notice_rule_id).length;
+  const archivedCount = deadlines.filter((deadline) => deadline.status === "completed").length;
 
   function updateDeadline(deadlineId: string, updater: (deadline: MockDeadline) => MockDeadline) {
     setDeadlineStore?.((current) => current.map((deadline) => (deadline.id === deadlineId ? updater(deadline) : deadline)));
@@ -510,9 +631,22 @@ export function WorkSection({
         <div className="detail-head">
           <div>
             <h2>{selectedDeadline.client_name} - {selectedDeadline.tax_type}</h2>
-            <p>Inspect the source, reminders, blockers, and extension state for this item.</p>
+            <p>{defaultTaskNote(selectedDeadline)}</p>
           </div>
           <div className="detail-actions">
+            <button
+              type="button"
+              className="ddh-btn"
+              onClick={() => {
+                if (editingDeadlineId === selectedDeadline.id) {
+                  setEditingDeadlineId(null);
+                  return;
+                }
+                setEditingDeadlineId(selectedDeadline.id);
+              }}
+            >
+              {editingDeadlineId === selectedDeadline.id ? "Cancel edit" : "Edit task"}
+            </button>
             <button
               type="button"
               className="ddh-btn"
@@ -544,13 +678,109 @@ export function WorkSection({
         <div className="detail-grid">
           <article className="detail-card">
             <div className="detail-card-lbl">Deadline</div>
-            <div className="detail-bigtext">{selectedDeadline.tax_type} - {selectedDeadline.jurisdiction}</div>
+            <div className="detail-bigtext">{workTitle(selectedDeadline)}</div>
             <div className="detail-date">{selectedDeadline.due_label} - {formatDaysRemaining(selectedDeadline)}</div>
+            {editingDeadlineId === selectedDeadline.id ? (
+              <div className="detail-editor">
+                <div className="detail-editor-grid">
+                  <label>
+                    <span>Task title</span>
+                    <input
+                      className="setting-input"
+                      value={editDraft.taskTitle}
+                      onChange={(event) => setEditDraft((current) => ({ ...current, taskTitle: event.target.value }))}
+                    />
+                  </label>
+                  <label>
+                    <span>Assignee</span>
+                    <input
+                      className="setting-input"
+                      value={editDraft.assignee}
+                      onChange={(event) => setEditDraft((current) => ({ ...current, assignee: event.target.value }))}
+                    />
+                  </label>
+                  <label>
+                    <span>Due date</span>
+                    <input
+                      className="setting-input"
+                      type="date"
+                      value={editDraft.dueDate}
+                      onChange={(event) => setEditDraft((current) => ({ ...current, dueDate: event.target.value }))}
+                    />
+                  </label>
+                  <label>
+                    <span>Priority</span>
+                    <select
+                      className="setting-input"
+                      value={editDraft.priority}
+                      onChange={(event) =>
+                        setEditDraft((current) => ({ ...current, priority: event.target.value as "high" | "normal" | "low" }))
+                      }
+                    >
+                      <option value="high">High</option>
+                      <option value="normal">Normal</option>
+                      <option value="low">Low</option>
+                    </select>
+                  </label>
+                </div>
+                <label className="detail-editor-block">
+                  <span>Task note</span>
+                  <textarea
+                    className="setting-input detail-editor-textarea"
+                    value={editDraft.taskNote}
+                    onChange={(event) => setEditDraft((current) => ({ ...current, taskNote: event.target.value }))}
+                    rows={3}
+                  />
+                </label>
+                {selectedDeadline.status === "blocked" ? (
+                  <label className="detail-editor-block">
+                    <span>Blocker reason</span>
+                    <input
+                      className="setting-input"
+                      value={editDraft.blockerReason}
+                      onChange={(event) => setEditDraft((current) => ({ ...current, blockerReason: event.target.value }))}
+                    />
+                  </label>
+                ) : null}
+                <div className="detail-editor-actions">
+                  <button type="button" className="ddh-btn" onClick={() => setEditingDeadlineId(null)}>
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    className="ddh-btn ddh-btn-primary"
+                    onClick={() => {
+                      updateDeadline(selectedDeadline.id, (deadline) => {
+                        const nextDueDate = editDraft.dueDate || deadline.due_date;
+                        return {
+                          ...deadline,
+                          task_title: editDraft.taskTitle.trim() || `${deadline.tax_type} - ${deadline.jurisdiction}`,
+                          task_note: editDraft.taskNote.trim() || undefined,
+                          assignee: editDraft.assignee.trim() || deadline.assignee,
+                          due_date: nextDueDate,
+                          due_label: dueLabelFromDate(nextDueDate),
+                          days_remaining: daysRemainingFromDueDate(nextDueDate),
+                          priority: editDraft.priority as "high" | "normal" | "low",
+                          blocker_reason:
+                            deadline.status === "blocked" ? (editDraft.blockerReason.trim() || "Waiting on client") : deadline.blocker_reason
+                        };
+                      });
+                      setEditingDeadlineId(null);
+                      onNotify?.(`Updated ${selectedDeadline.client_name} work item.`, "blue");
+                    }}
+                  >
+                    Save changes
+                  </button>
+                </div>
+              </div>
+            ) : null}
             <div className="detail-fields">
               <div className="df"><span>Status</span><strong>{statusLabel(selectedDeadline)}</strong></div>
               <div className="df"><span>Assignee</span><strong>{selectedDeadline.assignee}</strong></div>
+              <div className="df"><span>Priority</span><strong>{(selectedDeadline.priority || "normal").replace(/^./, (s) => s.toUpperCase())}</strong></div>
               <div className="df"><span>Source</span><strong>{selectedDeadline.source}</strong></div>
               <div className="df"><span>Extension</span><strong>{selectedDeadline.extended_due_date || "No extension"}</strong></div>
+              <div className="df"><span>Task note</span><strong>{defaultTaskNote(selectedDeadline)}</strong></div>
             </div>
           </article>
           <aside className="detail-right">
@@ -576,12 +806,12 @@ export function WorkSection({
   }
 
   return (
-    <section className="ddh-work">
-      <div className="ddh-summary">
-        <SummaryCard label="This week" value={String(thisWeekCount)} sub="Actionable now" />
-        <SummaryCard label="Blocked" value={String(blockedCount)} sub="Waiting on client" warn />
-        <SummaryCard label="Rule changes" value={String(pendingRules.length)} sub="Need CPA decision" />
-        <SummaryCard label="Next 30 days" value={String(nextThirty.length)} sub={`Across ${new Set(nextThirty.map((deadline) => deadline.client_id)).size} clients`} />
+      <section className="ddh-work">
+        <div className="ddh-summary">
+        <SummaryCard label="Work now" value={String(workNowCount)} sub="Actionable now" active={triageMode === "work_now"} onClick={() => setTriageMode("work_now")} />
+        <SummaryCard label="Blocked" value={String(blockedCount)} sub="Waiting on client" warn active={triageMode === "blocked"} onClick={() => setTriageMode("blocked")} />
+        <SummaryCard label="Needs review" value={String(needsReviewCount || pendingRules.length)} sub="CPA decision needed" active={triageMode === "needs_review"} onClick={() => setTriageMode("needs_review")} />
+        <SummaryCard label="Archive" value={String(archivedCount)} sub="Completed work" active={triageMode === "archive"} onClick={() => setTriageMode("archive")} />
       </div>
 
       <div className="ddh-toolbar">
@@ -590,9 +820,6 @@ export function WorkSection({
         </button>
         <button type="button" className="ddh-btn" onClick={() => onExport?.("Work queue", "csv")}>
           <DownloadIcon /> Export
-        </button>
-        <button type="button" className="ddh-btn ddh-btn-sm ddh-archive-btn" onClick={() => setArchiveOpen((current) => !current)}>
-          {archiveOpen ? "Back to active" : "View archive (1)"}
         </button>
         {filterOpen ? (
           <FilterPanel
@@ -613,9 +840,9 @@ export function WorkSection({
         <div key={label} className="ddh-table">
           <div className="ddh-group">
             <span>{label}</span>
-            <span>{index === 0 ? "This week - " : ""}{items.length} deadline{items.length === 1 ? "" : "s"}</span>
+            <span>{items.length} item{items.length === 1 ? "" : "s"}</span>
           </div>
-          {index === 0 && pendingRules[0] ? (
+          {triageMode === "needs_review" && index === 0 && pendingRules[0] ? (
             <div className="ddh-alert">
               <span className="ddh-alert-dot" />
               {pendingRules[0].source} - {pendingRules[0].title}. Affects {pendingRules[0].affected_count} clients.
@@ -645,7 +872,7 @@ export function WorkSection({
               <span><span className="ddh-chip jurisdiction">{deadline.jurisdiction}</span></span>
               <span><span className={`ddh-chip ${statusClass(deadline)}`}>{statusLabel(deadline)}</span></span>
               <span className="ddh-assignee">{deadline.assignee}</span>
-              <span className="ddh-link">Details</span>
+              <span className="ddh-link">{changedDeadlineIds.includes(deadline.id) ? "Changed · details" : "Details"}</span>
             </button>
           ))}
         </div>
@@ -654,13 +881,27 @@ export function WorkSection({
   );
 }
 
-function SummaryCard({ label, value, sub, warn }: { label: string; value: string; sub: string; warn?: boolean }) {
+function SummaryCard({
+  label,
+  value,
+  sub,
+  warn,
+  active,
+  onClick
+}: {
+  label: string;
+  value: string;
+  sub: string;
+  warn?: boolean;
+  active?: boolean;
+  onClick?: () => void;
+}) {
   return (
-    <article className={`ddh-summary-card ${warn ? "warn" : ""}`}>
+    <button type="button" className={`ddh-summary-card ${warn ? "warn" : ""} ${active ? "active" : ""}`} onClick={onClick}>
       <span>{label}</span>
       <strong>{value}</strong>
       <small>{sub}</small>
-    </article>
+    </button>
   );
 }
 
@@ -712,7 +953,54 @@ function FilterPills({ label, value, options, onSelect }: { label: string; value
   );
 }
 
-type ImportStep = 1 | 2 | 3 | 4;
+type ImportStep = 1 | 2 | 3 | 4 | 5;
+type ImportFieldKey =
+  | "client_name"
+  | "entity_type"
+  | "operating_states"
+  | "primary_contact_name"
+  | "primary_contact_email"
+  | "applicable_taxes"
+  | "notes";
+type ImportMappingValue = ImportFieldKey | "skip" | `custom:${string}`;
+type ImportMapping = Record<string, ImportMappingValue>;
+type CustomImportFieldType = "text" | "date" | "single_select";
+type CustomImportField = {
+  id: string;
+  label: string;
+  type: CustomImportFieldType;
+};
+type ProposedPlanAction = "now" | "later" | "skip";
+type ProposedLaterWindow = "tomorrow" | "this_week" | "next_week" | "two_weeks";
+type ProposedPlanItem = {
+  id: string;
+  clientName: string;
+  taskTitle: string;
+  taxType: string;
+  dueLabel: string;
+  recommendedWindow: string;
+  reason: string;
+  urgency: "urgent" | "medium" | "low";
+};
+type ImportAiProposal = {
+  summary: string;
+  changes: {
+    header: string;
+    nextValue: ImportMappingValue;
+    note: string;
+    customField?: CustomImportField;
+  }[];
+};
+
+const IMPORT_TARGET_FIELDS: { key: ImportFieldKey; label: string; required?: boolean; aliases: string[] }[] = [
+  { key: "client_name", label: "Client name", required: true, aliases: ["client_name", "client", "name", "business name"] },
+  { key: "entity_type", label: "Entity type", required: true, aliases: ["entity_type", "entity", "type"] },
+  { key: "operating_states", label: "Operating states", required: true, aliases: ["operating_states", "states", "state footprint", "registered states", "state"] },
+  { key: "primary_contact_name", label: "Primary contact", aliases: ["primary_contact_name", "contact", "contact name", "owner", "assignee"] },
+  { key: "primary_contact_email", label: "Primary contact email", aliases: ["primary_contact_email", "email", "contact email", "primary email"] },
+  { key: "applicable_taxes", label: "Tax types", aliases: ["applicable_taxes", "tax_types_csv", "tax types", "tax scope", "services", "forms"] },
+  { key: "notes", label: "Notes", aliases: ["notes", "misc_notes", "memo", "remarks", "comment"] }
+];
 
 const IMPORT_SAMPLE_ROWS = [
   [
@@ -762,6 +1050,180 @@ const IMPORT_SAMPLE_ROWS = [
   ]
 ] as const;
 
+function normalizeHeader(value: string) {
+  return value.trim().toLowerCase().replace(/[^a-z0-9]+/g, " ");
+}
+
+function slugifyField(value: string) {
+  return normalizeHeader(value).replace(/\s+/g, "_").replace(/^_+|_+$/g, "");
+}
+
+function sleep(ms: number) {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
+
+function guessImportField(header: string): ImportFieldKey | "skip" {
+  const normalized = normalizeHeader(header);
+  for (const field of IMPORT_TARGET_FIELDS) {
+    if (field.aliases.some((alias) => normalized === normalizeHeader(alias) || normalized.includes(normalizeHeader(alias)))) {
+      return field.key;
+    }
+  }
+  return "skip";
+}
+
+function parseCsv(text: string): string[][] {
+  const rows: string[][] = [];
+  let current = "";
+  let row: string[] = [];
+  let inQuotes = false;
+
+  for (let i = 0; i < text.length; i += 1) {
+    const char = text[i];
+    const next = text[i + 1];
+
+    if (char === "\"") {
+      if (inQuotes && next === "\"") {
+        current += "\"";
+        i += 1;
+      } else {
+        inQuotes = !inQuotes;
+      }
+      continue;
+    }
+
+    if (char === "," && !inQuotes) {
+      row.push(current.trim());
+      current = "";
+      continue;
+    }
+
+    if ((char === "\n" || char === "\r") && !inQuotes) {
+      if (char === "\r" && next === "\n") i += 1;
+      row.push(current.trim());
+      current = "";
+      if (row.some((cell) => cell.length > 0)) rows.push(row);
+      row = [];
+      continue;
+    }
+
+    current += char;
+  }
+
+  if (current.length || row.length) {
+    row.push(current.trim());
+    if (row.some((cell) => cell.length > 0)) rows.push(row);
+  }
+
+  return rows;
+}
+
+function buildInitialMapping(headers: string[]): ImportMapping {
+  return Object.fromEntries(headers.map((header) => [header, guessImportField(header)]));
+}
+
+function isStandardImportField(value: ImportMappingValue): value is ImportFieldKey {
+  return value !== "skip" && !value.startsWith("custom:");
+}
+
+function mappingLabelForValue(
+  value: ImportMappingValue,
+  customFields: CustomImportField[]
+) {
+  if (value === "skip") return "Skip column";
+  if (value.startsWith("custom:")) {
+    const customField = customFields.find((field) => field.id === value.replace("custom:", ""));
+    return customField ? `Custom field: ${customField.label}` : "Custom field";
+  }
+  return IMPORT_TARGET_FIELDS.find((field) => field.key === value)?.label ?? value;
+}
+
+function buildImportAiProposal(
+  prompt: string,
+  headers: string[],
+  customFields: CustomImportField[]
+): ImportAiProposal | null {
+  const normalizedPrompt = normalizeHeader(prompt);
+  if (!normalizedPrompt) return null;
+
+  const matchedHeader = headers.find((header) => normalizedPrompt.includes(normalizeHeader(header)));
+  if (!matchedHeader) {
+    return {
+      summary: "I could not tell which CSV column you want to change.",
+      changes: []
+    };
+  }
+
+  if (normalizedPrompt.includes("skip")) {
+    return {
+      summary: `Skip ${matchedHeader}`,
+      changes: [{ header: matchedHeader, nextValue: "skip", note: "This column will be ignored during import." }]
+    };
+  }
+
+  if (normalizedPrompt.includes("custom field") || normalizedPrompt.includes("create field")) {
+    const namedMatch =
+      prompt.match(/(?:called|named)\s+["“]?([^"”]+)["”]?/i) ||
+      prompt.match(/custom field\s+["“]?([^"”]+)["”]?/i);
+    const label = namedMatch?.[1]?.trim() || matchedHeader;
+    const id = slugifyField(label);
+    const existing = customFields.find((field) => field.id === id);
+    return {
+      summary: `Create custom field for ${matchedHeader}`,
+      changes: [
+        {
+          header: matchedHeader,
+          nextValue: `custom:${id}`,
+          note: `This column will map to the custom field “${label}”.`,
+          customField: existing ?? { id, label, type: "text" }
+        }
+      ]
+    };
+  }
+
+  const matchedTarget = IMPORT_TARGET_FIELDS.find((field) => {
+    const tokens = [field.label, field.key, ...field.aliases];
+    return tokens.some((token) => normalizedPrompt.includes(normalizeHeader(token)));
+  });
+
+  if (!matchedTarget) {
+    return {
+      summary: `I found ${matchedHeader}, but I could not tell which field to map it to.`,
+      changes: []
+    };
+  }
+
+  return {
+    summary: `Remap ${matchedHeader}`,
+    changes: [
+      {
+        header: matchedHeader,
+        nextValue: matchedTarget.key,
+        note: `${matchedHeader} will map to ${matchedTarget.label}.`
+      }
+    ]
+  };
+}
+
+function buildImportRowsFromUpload(headers: string[], rows: string[][], mapping: ImportMapping): string[][] {
+  const valueFor = (row: string[], fieldKey: ImportFieldKey) => {
+    const matchedHeader = headers.find((header) => mapping[header] === fieldKey);
+    if (!matchedHeader) return "";
+    const index = headers.indexOf(matchedHeader);
+    return index >= 0 ? row[index] ?? "" : "";
+  };
+
+  return rows.map((row) => [
+    valueFor(row, "client_name"),
+    valueFor(row, "entity_type"),
+    valueFor(row, "operating_states"),
+    valueFor(row, "primary_contact_name"),
+    valueFor(row, "primary_contact_email"),
+    valueFor(row, "applicable_taxes"),
+    valueFor(row, "notes")
+  ]);
+}
+
 export function ClientsSection({ onExport, onNotify, importLaunchToken = 0, deadlines: deadlineStore, changedDeadlineIds = [] }: SectionContext) {
   const [importOpen, setImportOpen] = useState(false);
   const [importStep, setImportStep] = useState<ImportStep>(1);
@@ -770,6 +1232,7 @@ export function ClientsSection({ onExport, onNotify, importLaunchToken = 0, dead
   const [taxFilter, setTaxFilter] = useState("All");
   const [records, setRecords] = useState<ClientRecord[]>(() => buildInitialClientRecords());
   const [recentImportResult, setRecentImportResult] = useState<ImportApplyResult | null>(null);
+  const [importFocus, setImportFocus] = useState<"all" | "new" | "updated">("all");
   const [selectedClientId, setSelectedClientId] = useState<string | null>(null);
   const deadlines = deadlineStore ?? mockDeadlines;
 
@@ -818,9 +1281,11 @@ export function ClientsSection({ onExport, onNotify, importLaunchToken = 0, dead
       recordsWithLiveDeadlines.filter((record) => {
         if (stateFilter !== "All" && !record.client.states.includes(stateFilter)) return false;
         if (taxFilter !== "All" && !record.client.applicable_taxes.includes(taxFilter as TaxType)) return false;
+        if (recentImportResult && importFocus === "new" && !recentImportResult.createdClientIds.includes(record.client.id)) return false;
+        if (recentImportResult && importFocus === "updated" && !recentImportResult.mergedClientIds.includes(record.client.id)) return false;
         return true;
       }),
-    [recordsWithLiveDeadlines, stateFilter, taxFilter]
+    [recordsWithLiveDeadlines, stateFilter, taxFilter, recentImportResult, importFocus]
   );
 
   if (importOpen) {
@@ -829,10 +1294,12 @@ export function ClientsSection({ onExport, onNotify, importLaunchToken = 0, dead
         step={importStep}
         onStep={setImportStep}
         onClose={closeImport}
+        existingClientNames={records.map((record) => record.client.name)}
         onApply={(rows, decisions) => {
           const result = applyImportedRowsToRecords(records, rows, decisions);
           setRecords(result.records);
           setRecentImportResult(result);
+          setImportFocus("all");
           onNotify?.(`Import complete: ${result.created} new, ${result.merged} updated, ${result.skipped} skipped.`, "green");
           return result;
         }}
@@ -895,6 +1362,21 @@ export function ClientsSection({ onExport, onNotify, importLaunchToken = 0, dead
             <span className="eyebrow">Latest import</span>
             <strong>{recentImportResult.created} new · {recentImportResult.merged} updated</strong>
             <p>{recentImportResult.skipped} skipped. Client cards below now reflect the imported portfolio changes.</p>
+            <div className="ddh-inline-actions">
+              <button type="button" className={`ddh-btn ${importFocus === "all" ? "ddh-btn-primary" : ""}`} onClick={() => setImportFocus("all")}>
+                Show all
+              </button>
+              {recentImportResult.created > 0 ? (
+                <button type="button" className={`ddh-btn ${importFocus === "new" ? "ddh-btn-primary" : ""}`} onClick={() => setImportFocus("new")}>
+                  View new clients
+                </button>
+              ) : null}
+              {recentImportResult.merged > 0 ? (
+                <button type="button" className={`ddh-btn ${importFocus === "updated" ? "ddh-btn-primary" : ""}`} onClick={() => setImportFocus("updated")}>
+                  View updated clients
+                </button>
+              ) : null}
+            </div>
           </div>
           <div className="import-result-groups">
             {recentImportResult.createdClientNames.length ? (
@@ -1018,36 +1500,98 @@ function ImportWizard({
   step,
   onStep,
   onClose,
+  existingClientNames,
   onApply,
   onDone
 }: {
   step: ImportStep;
   onStep: (step: ImportStep) => void;
   onClose: () => void;
+  existingClientNames: string[];
   onApply: (rows: string[][], decisions: ImportDecision[]) => ImportApplyResult;
   onDone: () => void;
 }) {
   const [result, setResult] = useState<ImportApplyResult | null>(null);
+  const [fileName, setFileName] = useState("");
+  const [csvHeaders, setCsvHeaders] = useState<string[]>([]);
+  const [csvRows, setCsvRows] = useState<string[][]>([]);
+  const [mapping, setMapping] = useState<ImportMapping>({});
+  const [customFields, setCustomFields] = useState<CustomImportField[]>([]);
+  const [decisions, setDecisions] = useState<ImportDecision[]>([]);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const [processingState, setProcessingState] = useState<null | "uploading" | "analyzing" | "matching" | "ready" | "applying">(null);
+  const [proposedPlan, setProposedPlan] = useState<ProposedPlanItem[]>([]);
+  const [planActions, setPlanActions] = useState<ProposedPlanAction[]>([]);
+  const [planWindows, setPlanWindows] = useState<ProposedLaterWindow[]>([]);
+  const [approvedPlanSummary, setApprovedPlanSummary] = useState<{ now: number; later: number; skipped: number } | null>(null);
+
+  const normalizedRows = useMemo(
+    () => buildImportRowsFromUpload(csvHeaders, csvRows, mapping),
+    [csvHeaders, csvRows, mapping]
+  );
+  const missingRequired = useMemo(
+    () => IMPORT_TARGET_FIELDS.filter((field) => field.required && !Object.values(mapping).includes(field.key)).map((field) => field.label),
+    [mapping]
+  );
+
+  useEffect(() => {
+    setDecisions(
+      normalizedRows.map((row) =>
+        existingClientNames.some((name) => name.trim().toLowerCase() === row[0].trim().toLowerCase()) ? "merge" : "keep"
+      )
+    );
+  }, [normalizedRows, existingClientNames]);
 
   function next() {
-    if (step < 4) onStep((step + 1) as ImportStep);
+    if (step < 5) onStep((step + 1) as ImportStep);
   }
   function back() {
     if (step > 1) onStep((step - 1) as ImportStep);
   }
 
+  async function handleCsvFile(file: File) {
+    try {
+      setUploadError(null);
+      setProcessingState("uploading");
+      const text = await file.text();
+      await sleep(300);
+      setProcessingState("analyzing");
+      const parsed = parseCsv(text);
+      if (parsed.length < 2) throw new Error("The file needs a header row and at least one client row.");
+      const [headers, ...rows] = parsed;
+      await sleep(350);
+      setProcessingState("matching");
+      const initialMapping = buildInitialMapping(headers);
+      await sleep(350);
+      setFileName(file.name);
+      setCsvHeaders(headers);
+      setCsvRows(rows);
+      setMapping(initialMapping);
+      setCustomFields([]);
+      setProcessingState("ready");
+      await sleep(180);
+      onStep(2);
+      setProcessingState(null);
+    } catch (error) {
+      setProcessingState(null);
+      setUploadError(error instanceof Error ? error.message : "Could not read this CSV file.");
+    }
+  }
+
   return (
     <section className="ddh-import">
+      <button type="button" className="ddh-back-link" onClick={onClose}>
+        Back to clients
+      </button>
       <div className="ddh-import-head">
         <div>
           <div className="ddh-eyebrow">Clients - Import</div>
           <h1>Bring a portfolio of clients into DueDateHQ</h1>
           <p>Upload a CSV, confirm how its columns map to our client fields, and review duplicate detection before anything is written.</p>
         </div>
-        <button type="button" className="ddh-btn" onClick={onClose}>Cancel & back to clients</button>
       </div>
       <div className="ddh-stepper">
-        {["Choose file", "Map columns", "Review rows", "Done"].map((label, index) => {
+        {["Choose file", "Map columns", "Review rows", "Review plan", "Done"].map((label, index) => {
           const itemStep = (index + 1) as ImportStep;
           return (
             <div key={label} className="ddh-step">
@@ -1058,127 +1602,508 @@ function ImportWizard({
         })}
       </div>
       <div className="ddh-import-body">
-        {step === 1 ? <ImportStepOne onNext={next} /> : null}
-        {step === 2 ? <ImportStepTwo onBack={back} onNext={next} /> : null}
+        {step === 1 ? <ImportStepOne onFileSelected={handleCsvFile} error={uploadError} processingState={processingState} /> : null}
+        {step === 2 ? (
+          <ImportStepTwo
+            fileName={fileName}
+            headers={csvHeaders}
+            rows={csvRows}
+            mapping={mapping}
+            customFields={customFields}
+            missingRequired={missingRequired}
+            onBack={back}
+            onChangeMapping={(header, value) => setMapping((current) => ({ ...current, [header]: value }))}
+            onCreateCustomField={(field) =>
+              setCustomFields((current) => (current.some((item) => item.id === field.id) ? current : [...current, field]))
+            }
+            onNext={next}
+          />
+        ) : null}
         {step === 3 ? (
           <ImportStepThree
+            fileName={fileName}
+            rows={normalizedRows}
+            existingClientNames={existingClientNames}
+            decisions={decisions}
+            missingRequired={missingRequired}
+            onChangeDecision={(rowIndex, decision) =>
+              setDecisions((current) => current.map((item, index) => (index === rowIndex ? decision : item)))
+            }
             onBack={back}
-            onApply={() => {
-              const decisions: ImportDecision[] = IMPORT_SAMPLE_ROWS.map((row) =>
-                row[0].trim().toLowerCase() === "northwind services llc" ? "merge" : "keep"
-              );
-              const applied = onApply(IMPORT_SAMPLE_ROWS.map((row) => [...row]), decisions);
+            onApply={async () => {
+              setProcessingState("applying");
+              await sleep(450);
+              const applied = onApply(normalizedRows.map((row) => [...row]), decisions);
               setResult(applied);
+              const nextPlan = buildProposedPlan(normalizedRows, decisions);
+              setProposedPlan(nextPlan);
+              setPlanActions(nextPlan.map((item) => (item.urgency === "urgent" ? "now" : "later")));
+              setPlanWindows(nextPlan.map((item) => (item.urgency === "urgent" ? "this_week" : "next_week")));
+              setProcessingState(null);
               onStep(4);
             }}
           />
         ) : null}
-        {step === 4 ? <ImportStepDone result={result} onDone={onDone} /> : null}
+        {step === 4 ? (
+          <ImportStepPlanReview
+            items={proposedPlan}
+            actions={planActions}
+            windows={planWindows}
+            onBack={back}
+            onChangeAction={(index, action) =>
+              setPlanActions((current) => current.map((item, itemIndex) => (itemIndex === index ? action : item)))
+            }
+            onChangeWindow={(index, window) =>
+              setPlanWindows((current) => current.map((item, itemIndex) => (itemIndex === index ? window : item)))
+            }
+            onApprove={() => {
+              setApprovedPlanSummary({
+                now: planActions.filter((action) => action === "now").length,
+                later: planActions.filter((action) => action === "later").length,
+                skipped: planActions.filter((action) => action === "skip").length
+              });
+              onStep(5);
+            }}
+          />
+        ) : null}
+        {step === 5 ? <ImportStepDone result={result} planSummary={approvedPlanSummary} onDone={onDone} /> : null}
       </div>
     </section>
   );
 }
 
-function ImportStepOne({ onNext }: { onNext: () => void }) {
+function ImportStepOne({
+  onFileSelected,
+  error,
+  processingState
+}: {
+  onFileSelected: (file: File) => void;
+  error: string | null;
+  processingState: null | "uploading" | "analyzing" | "matching" | "ready" | "applying";
+}) {
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const [dragging, setDragging] = useState(false);
+  const processingText =
+    processingState === "uploading"
+      ? "Uploading file…"
+      : processingState === "analyzing"
+        ? "Analyzing columns…"
+        : processingState === "matching"
+          ? "Checking existing clients…"
+          : processingState === "applying"
+            ? "Applying import…"
+          : processingState === "ready"
+            ? "Preview ready"
+            : null;
+
+  function openPicker() {
+    fileInputRef.current?.click();
+  }
+
+  function handleInputChange(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    if (file) onFileSelected(file);
+    event.target.value = "";
+  }
+
+  function handleDrop(event: DragEvent<HTMLButtonElement>) {
+    event.preventDefault();
+    if (processingState !== null) return;
+    setDragging(false);
+    const file = event.dataTransfer.files?.[0];
+    if (file) onFileSelected(file);
+  }
+
   return (
     <>
-      <button type="button" className="ddh-upload-area" onClick={onNext}>
+      <input ref={fileInputRef} type="file" accept=".csv,text/csv" hidden onChange={handleInputChange} />
+      <button
+        type="button"
+        className={`ddh-upload-area ${dragging ? "dragging" : ""}`}
+        onClick={openPicker}
+        disabled={processingState !== null}
+        onDragOver={(event) => {
+          event.preventDefault();
+          if (processingState !== null) return;
+          setDragging(true);
+        }}
+        onDragLeave={() => setDragging(false)}
+        onDrop={handleDrop}
+      >
         <span className="ddh-upload-icon"><UploadIcon /></span>
-        <strong>Drop your CSV here, or click to browse</strong>
-        <small>clients_taxdome_export.csv · 5 rows detected · 1 existing client match</small>
-        <span className="ddh-source-tags">
-          {["TaxDome", "Drake", "Karbon", "QuickBooks", "Custom CSV"].map((source) => <em key={source}>{source}</em>)}
-        </span>
+        <strong>Drop a CSV here, or click to browse</strong>
+        <small>{processingText ?? "We will preview matches and updates before anything changes."}</small>
       </button>
-      <div className="ddh-step-foot"><button type="button" className="ddh-btn ddh-btn-primary" onClick={onNext}>Continue</button></div>
+      {error ? <p className="ddh-import-error">{error}</p> : null}
     </>
   );
 }
 
-function ImportStepTwo({ onBack, onNext }: { onBack: () => void; onNext: () => void }) {
-  const rows = [
-    ["client_name", "Northwind Services LLC", "Client name", "Auto-matched"],
-    ["ein", "47-2938471", "EIN / Tax ID", "Auto-matched"],
-    ["entity_type", "LLC", "Entity type", "Auto-matched"],
-    ["primary_state", "CA", "Primary state", "Auto-matched"],
-    ["additional_states", "TX, NV", "Additional states", "Auto-matched"],
-    ["tax_types_csv", "Federal income, 941", "Tax types", "Auto-matched"],
-    ["assigned_preparer", "Maya Chen", "Assignee", "Auto-matched"],
-    ["misc_notes", "Payroll heavy, 3 states", "Skip column", "Review needed"]
-  ];
+function ImportStepTwo({
+  fileName,
+  headers,
+  rows,
+  mapping,
+  customFields,
+  missingRequired,
+  onBack,
+  onChangeMapping,
+  onCreateCustomField,
+  onNext
+}: {
+  fileName: string;
+  headers: string[];
+  rows: string[][];
+  mapping: ImportMapping;
+  customFields: CustomImportField[];
+  missingRequired: string[];
+  onBack: () => void;
+  onChangeMapping: (header: string, value: ImportMappingValue) => void;
+  onCreateCustomField: (field: CustomImportField) => void;
+  onNext: () => void;
+}) {
+  const [draftHeader, setDraftHeader] = useState<string | null>(null);
+  const [draftLabel, setDraftLabel] = useState("");
+  const [draftType, setDraftType] = useState<CustomImportFieldType>("text");
+  const [aiPrompt, setAiPrompt] = useState("");
+  const [aiProposal, setAiProposal] = useState<ImportAiProposal | null>(null);
+  const [aiError, setAiError] = useState<string | null>(null);
+
+  function startCustomField(header: string) {
+    setDraftHeader(header);
+    setDraftLabel(header);
+    setDraftType("text");
+  }
+
+  function saveCustomField() {
+    if (!draftHeader) return;
+    const trimmed = draftLabel.trim();
+    if (!trimmed) return;
+    const field: CustomImportField = {
+      id: slugifyField(trimmed),
+      label: trimmed,
+      type: draftType
+    };
+    onCreateCustomField(field);
+    onChangeMapping(draftHeader, `custom:${field.id}`);
+    setDraftHeader(null);
+    setDraftLabel("");
+    setDraftType("text");
+  }
+
+  function createAiProposal() {
+    const proposal = buildImportAiProposal(aiPrompt, headers, customFields);
+    if (!proposal || proposal.changes.length === 0) {
+      setAiProposal(null);
+      setAiError(proposal?.summary ?? "Try something like: “Map primary_state to Operating states” or “Create custom field onboarding note for misc_notes”.");
+      return;
+    }
+    setAiProposal(proposal);
+    setAiError(null);
+  }
+
+  function applyAiProposal() {
+    if (!aiProposal) return;
+    aiProposal.changes.forEach((change) => {
+      if (change.customField) onCreateCustomField(change.customField);
+      onChangeMapping(change.header, change.nextValue);
+    });
+    setAiProposal(null);
+    setAiPrompt("");
+    setAiError(null);
+  }
+
   return (
     <>
-      <p className="ddh-import-note">AI detected 7 of 8 fields automatically. Review the mapping before continuing.</p>
+      <p className="ddh-import-note">{fileName} · {rows.length} rows detected. Review only the columns that need attention, or use the mapping assistant for a quick suggestion.</p>
+      {missingRequired.length ? <p className="ddh-import-warning">Still needed before you can continue: {missingRequired.join(", ")}.</p> : null}
+      <div className="ddh-import-ai">
+        <div>
+          <strong>Mapping assistant (beta)</strong>
+          <small>Describe one mapping change in plain language and confirm the suggested update.</small>
+        </div>
+        <div className="ddh-import-ai-controls">
+          <input
+            type="text"
+            value={aiPrompt}
+            onChange={(event) => setAiPrompt(event.target.value)}
+            placeholder='Example: "Map primary_state to Operating states"'
+          />
+          <button type="button" className="ddh-btn" onClick={createAiProposal} disabled={!aiPrompt.trim()}>
+            Suggest change
+          </button>
+        </div>
+        {aiError ? <p className="ddh-import-error">{aiError}</p> : null}
+        {aiProposal ? (
+          <div className="ddh-import-ai-proposal">
+            <div>
+              <strong>{aiProposal.summary}</strong>
+              {aiProposal.changes.map((change) => (
+                <p key={change.header}>{change.note}</p>
+              ))}
+            </div>
+            <div className="ddh-inline-actions">
+              <button type="button" className="ddh-btn" onClick={() => setAiProposal(null)}>Discard</button>
+              <button type="button" className="ddh-btn ddh-btn-primary" onClick={applyAiProposal}>Apply suggestion</button>
+            </div>
+          </div>
+        ) : null}
+      </div>
       <table className="ddh-map-table">
-        <thead><tr><th>CSV column</th><th>Sample value</th><th>Field</th><th>Confidence</th></tr></thead>
+        <thead><tr><th>CSV column</th><th>Sample value</th><th>Mapped to</th></tr></thead>
         <tbody>
-          {rows.map((row) => (
-            <tr key={row[0]}>
-              <td><code>{row[0]}</code></td>
-              <td>{row[1]}</td>
-              <td><select defaultValue={row[2]}><option>{row[2]}</option><option>Notes</option><option>Skip column</option></select></td>
-              <td><span className={row[3] === "Review needed" ? "review" : "auto"}>{row[3]}</span></td>
+          {headers.map((header, index) => {
+            const guessed = guessImportField(header);
+            const selected = mapping[header] ?? "skip";
+            const needsReview = selected === "skip" || (isStandardImportField(selected) && guessed === "skip");
+            return (
+            <tr key={header}>
+              <td><code>{header}</code></td>
+              <td>{rows[0]?.[index] || "—"}</td>
+              <td>
+                <select
+                  value={selected}
+                  onChange={(event) => {
+                    const nextValue = event.target.value as ImportMappingValue | "__create_custom__";
+                    if (nextValue === "__create_custom__") {
+                      startCustomField(header);
+                      return;
+                    }
+                    onChangeMapping(header, nextValue);
+                  }}
+                >
+                  {IMPORT_TARGET_FIELDS.map((field) => (
+                    <option key={field.key} value={field.key}>{field.label}</option>
+                  ))}
+                  {customFields.map((field) => (
+                    <option key={field.id} value={`custom:${field.id}`}>{`Custom field: ${field.label}`}</option>
+                  ))}
+                  <option value="__create_custom__">Create custom field…</option>
+                  <option value="skip">Skip column</option>
+                </select>
+                <span className={`ddh-mapping-status ${needsReview ? "review" : "auto"}`}>
+                  {selected.startsWith("custom:")
+                    ? "Custom field"
+                    : guessed === "skip"
+                      ? "Needs review"
+                      : "Auto-mapped"}
+                </span>
+                {selected.startsWith("custom:") ? (
+                  <span className="ddh-mapping-meta">{mappingLabelForValue(selected, customFields)}</span>
+                ) : null}
+                {draftHeader === header ? (
+                  <div className="ddh-custom-field-editor">
+                    <input
+                      type="text"
+                      value={draftLabel}
+                      onChange={(event) => setDraftLabel(event.target.value)}
+                      placeholder="Custom field name"
+                    />
+                    <select value={draftType} onChange={(event) => setDraftType(event.target.value as CustomImportFieldType)}>
+                      <option value="text">Text</option>
+                      <option value="date">Date</option>
+                      <option value="single_select">Single select</option>
+                    </select>
+                    <div className="ddh-inline-actions">
+                      <button type="button" className="ddh-btn" onClick={() => setDraftHeader(null)}>Cancel</button>
+                      <button type="button" className="ddh-btn ddh-btn-primary" onClick={saveCustomField} disabled={!draftLabel.trim()}>
+                        Add field
+                      </button>
+                    </div>
+                  </div>
+                ) : null}
+              </td>
             </tr>
-          ))}
+          )})}
         </tbody>
       </table>
-      <div className="ddh-step-foot"><button type="button" className="ddh-btn" onClick={onBack}>Back</button><button type="button" className="ddh-btn ddh-btn-primary" onClick={onNext}>Continue</button></div>
+      <div className="ddh-step-foot"><button type="button" className="ddh-btn" onClick={onBack}>Back</button><button type="button" className="ddh-btn ddh-btn-primary" onClick={onNext} disabled={missingRequired.length > 0}>Continue</button></div>
     </>
   );
 }
 
-function ImportStepThree({ onBack, onApply }: { onBack: () => void; onApply: () => void }) {
-  const rows = [
-    ["Northwind Services LLC", "LLC", "CA, TX, NV", "Federal income, State income, Payroll (941), Sales/Use", "Maya Chen", "Merge with existing"],
-    ["Harbor Studio Partners", "Partnership", "NY, NJ", "Federal income, State income, PTE election", "Evan Malik", "Create"],
-    ["Greenway Consulting LLC", "LLC", "CO", "Federal income, State income", "Avery Morris", "Create"],
-    ["Harbor Ridge Retail", "C-Corp", "CA, AZ", "Federal income, Sales/Use, Franchise", "Lena Ortiz", "Create"],
-    ["Blue Summit Therapy Group", "Prof Corp", "WA, OR", "Federal income, State income, 941", "Dr. Nia Brooks", "Create"]
-  ];
+function ImportStepThree({
+  fileName,
+  rows,
+  existingClientNames,
+  decisions,
+  missingRequired,
+  onChangeDecision,
+  onBack,
+  onApply
+}: {
+  fileName: string;
+  rows: string[][];
+  existingClientNames: string[];
+  decisions: ImportDecision[];
+  missingRequired: string[];
+  onChangeDecision: (rowIndex: number, decision: ImportDecision) => void;
+  onBack: () => void;
+  onApply: () => void | Promise<void>;
+}) {
+  const previewRows = rows.map((row, rowIndex) => ({
+    client: row[0] || "—",
+    entity: row[1] || "—",
+    states: row[2] || "—",
+    taxes: row[5] || "—",
+    assignee: row[3] || "—",
+    matchedExisting: existingClientNames.some((name) => name.trim().toLowerCase() === row[0].trim().toLowerCase()),
+    decision: decisions[rowIndex] ?? "keep"
+  }));
+  const mergeCount = decisions.filter((decision) => decision === "merge").length;
+  const createCount = decisions.filter((decision) => decision === "keep").length;
+  const skipCount = decisions.filter((decision) => decision === "skip").length;
   return (
     <>
-      <p className="ddh-import-note">5 rows parsed · 1 existing client match · 4 new client cards will be created.</p>
+      <p className="ddh-import-note">{fileName} · {rows.length} rows parsed · {mergeCount} update{mergeCount === 1 ? "" : "s"} · {createCount} new card{createCount === 1 ? "" : "s"} · {skipCount} skip{skipCount === 1 ? "" : "s"}.</p>
+      {missingRequired.length ? <p className="ddh-import-warning">This file still has unresolved required fields: {missingRequired.join(", ")}.</p> : null}
       <table className="ddh-review-table">
         <thead><tr><th>Client</th><th>Entity</th><th>States</th><th>Tax types</th><th>Assignee</th><th>Action</th></tr></thead>
         <tbody>
-          {rows.map((row) => (
-            <tr key={row[0]} className={row[5] !== "Create" ? "warn" : ""}>
-              {row.map((cell, index) => <td key={index}><span className={index === 5 ? (cell === "Create" ? "auto" : "review") : ""}>{cell}</span></td>)}
+          {previewRows.map((row, rowIndex) => (
+            <tr key={`${row.client}-${rowIndex}`} className={row.decision !== "keep" ? "warn" : ""}>
+              <td>{row.client}</td>
+              <td>{row.entity}</td>
+              <td>{row.states}</td>
+              <td>{row.taxes}</td>
+              <td>{row.assignee}</td>
+              <td>
+                <select value={row.decision} onChange={(event) => onChangeDecision(rowIndex, event.target.value as ImportDecision)}>
+                  <option value="keep">Create new card</option>
+                  {row.matchedExisting ? <option value="merge">Update existing client</option> : null}
+                  <option value="skip">Skip row</option>
+                </select>
+              </td>
             </tr>
           ))}
         </tbody>
       </table>
-      <div className="ddh-step-foot"><button type="button" className="ddh-btn" onClick={onBack}>Back</button><button type="button" className="ddh-btn ddh-btn-primary" onClick={onApply}>Apply import</button></div>
+  <div className="ddh-step-foot"><button type="button" className="ddh-btn" onClick={onBack}>Back</button><button type="button" className="ddh-btn ddh-btn-primary" onClick={() => void onApply()} disabled={rows.length === 0 || missingRequired.length > 0}>Apply import</button></div>
     </>
   );
 }
 
-function ImportStepDone({ result, onDone }: { result: ImportApplyResult | null; onDone: () => void }) {
+function ImportStepPlanReview({
+  items,
+  actions,
+  windows,
+  onBack,
+  onChangeAction,
+  onChangeWindow,
+  onApprove
+}: {
+  items: ProposedPlanItem[];
+  actions: ProposedPlanAction[];
+  windows: ProposedLaterWindow[];
+  onBack: () => void;
+  onChangeAction: (index: number, action: ProposedPlanAction) => void;
+  onChangeWindow: (index: number, window: ProposedLaterWindow) => void;
+  onApprove: () => void;
+}) {
+  const nowCount = actions.filter((action) => action === "now").length;
+  const laterCount = actions.filter((action) => action === "later").length;
+  const skipCount = actions.filter((action) => action === "skip").length;
+
+  return (
+    <>
+      <p className="ddh-import-note">
+        Review the proposed work plan before anything enters the work queue. Decide which items start now and which should be planned for later.
+      </p>
+      <div className="import-plan-summary">
+        <span><strong>{items.length}</strong> proposed items</span>
+        <span><strong>{nowCount}</strong> do now</span>
+        <span><strong>{laterCount}</strong> plan for later</span>
+        <span><strong>{skipCount}</strong> skip</span>
+      </div>
+      <table className="ddh-review-table">
+        <thead><tr><th>Client</th><th>Proposed task</th><th>Deadline</th><th>Why now</th><th>Decision</th><th>Planned time</th></tr></thead>
+        <tbody>
+          {items.map((item, index) => (
+            <tr key={item.id}>
+              <td>{item.clientName}</td>
+              <td>
+                <strong>{item.taskTitle}</strong>
+                <div className="muted">{item.taxType}</div>
+              </td>
+              <td>{item.dueLabel}</td>
+              <td>
+                <span className={`badge-pill ${item.urgency === "urgent" ? "red" : item.urgency === "medium" ? "gold" : "blue"} thin`}>
+                  {item.recommendedWindow}
+                </span>
+                <div className="muted">{item.reason}</div>
+              </td>
+              <td>
+                <select value={actions[index] ?? "later"} onChange={(event) => onChangeAction(index, event.target.value as ProposedPlanAction)}>
+                  <option value="now">Now prepare to do it</option>
+                  <option value="later">Leave it for later</option>
+                  <option value="skip">Skip for now</option>
+                </select>
+              </td>
+              <td>
+                {actions[index] === "later" ? (
+                  <select value={windows[index] ?? "next_week"} onChange={(event) => onChangeWindow(index, event.target.value as ProposedLaterWindow)}>
+                    <option value="tomorrow">Tomorrow</option>
+                    <option value="this_week">This week</option>
+                    <option value="next_week">Next week</option>
+                    <option value="two_weeks">In two weeks</option>
+                  </select>
+                ) : (
+                  <span className="muted">{actions[index] === "now" ? "Do now" : "Not added"}</span>
+                )}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <div className="ddh-step-foot">
+        <button type="button" className="ddh-btn" onClick={onBack}>Back</button>
+        <button type="button" className="ddh-btn ddh-btn-primary" onClick={onApprove}>Approve plan</button>
+      </div>
+    </>
+  );
+}
+
+function ImportStepDone({
+  result,
+  planSummary,
+  onDone
+}: {
+  result: ImportApplyResult | null;
+  planSummary: { now: number; later: number; skipped: number } | null;
+  onDone: () => void;
+}) {
   return (
     <div className="ddh-import-done">
-      <div>✓</div>
+      <div className="ddh-import-done-mark">✓</div>
       <h2>{result ? `${result.created} new · ${result.merged} updated` : "Import complete"}</h2>
       <p>Full-year deadline calendars generated. New clients were added to the directory and existing matches were updated in place.</p>
+      {planSummary ? (
+        <div className="import-plan-summary import-plan-summary-final">
+          <span><strong>{planSummary.now}</strong> start now</span>
+          <span><strong>{planSummary.later}</strong> planned for later</span>
+          <span><strong>{planSummary.skipped}</strong> skipped</span>
+        </div>
+      ) : null}
       {result ? (
         <div className="import-complete-breakdown">
           {result.createdClientNames.length ? (
             <div className="import-complete-group">
               <span className="import-result-label">New client cards created</span>
-              <div className="import-result-chips">
+              <ul className="import-complete-list">
                 {result.createdClientNames.map((name) => (
-                  <span key={name} className="badge-pill green thin">{name}</span>
+                  <li key={name}>{name}</li>
                 ))}
-              </div>
+              </ul>
             </div>
           ) : null}
           {result.mergedClientNames.length ? (
             <div className="import-complete-group">
               <span className="import-result-label">Existing clients updated</span>
-              <div className="import-result-chips">
+              <ul className="import-complete-list">
                 {result.mergedClientNames.map((name) => (
-                  <span key={name} className="badge-pill blue thin">{name}</span>
+                  <li key={name}>{name}</li>
                 ))}
-              </div>
+              </ul>
             </div>
           ) : null}
         </div>
@@ -1204,6 +2129,19 @@ function ClientDetailSurface({
   const hasChangedDeadlines = deadlines.some((deadline) => changedDeadlineIds.includes(deadline.id));
   const nextDeadline = deadlines[0] || null;
   const latestActivity = recentActivity[0] || null;
+  const [exportOpen, setExportOpen] = useState(false);
+  const exportRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    function handlePointerDown(event: MouseEvent) {
+      if (!exportRef.current) return;
+      if (!exportRef.current.contains(event.target as Node)) {
+        setExportOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handlePointerDown);
+    return () => document.removeEventListener("mousedown", handlePointerDown);
+  }, []);
 
   return (
     <section className="ddh-work-detail client-detail-lite">
@@ -1219,20 +2157,42 @@ function ClientDetailSurface({
           <p>Review the client profile, derived deadlines, blockers, extensions, and reminders in one place.</p>
         </div>
         <div className="detail-actions">
-          <button
-            type="button"
-            className="ddh-btn"
-            onClick={() => onExport?.(`${client.name} — full deadline pack`, "csv")}
-          >
-            Export CSV
-          </button>
-          <button
-            type="button"
-            className="ddh-btn"
-            onClick={() => onExport?.(`${client.name} — full deadline pack`, "pdf")}
-          >
-            Export PDF
-          </button>
+          <div className="filter-popover-wrap export-menu-wrap" ref={exportRef}>
+            <button
+              type="button"
+              className={`filter-trigger ${exportOpen ? "open" : ""}`}
+              aria-label="Export client detail"
+              onClick={() => setExportOpen((current) => !current)}
+            >
+              <DownloadIcon /> Export
+            </button>
+            {exportOpen ? (
+              <div className="filter-popover export-menu" role="menu">
+                <button
+                  type="button"
+                  className="export-menu-item"
+                  onClick={() => {
+                    onExport?.(`${client.name} — full deadline pack`, "csv");
+                    setExportOpen(false);
+                  }}
+                >
+                  <span>Export CSV</span>
+                  <small>Spreadsheet of this client’s deadlines</small>
+                </button>
+                <button
+                  type="button"
+                  className="export-menu-item"
+                  onClick={() => {
+                    onExport?.(`${client.name} — full deadline pack`, "pdf");
+                    setExportOpen(false);
+                  }}
+                >
+                  <span>Export PDF</span>
+                  <small>Printable summary for client review</small>
+                </button>
+              </div>
+            ) : null}
+          </div>
         </div>
       </div>
 
@@ -1286,7 +2246,7 @@ function ClientDetailSurface({
             body="This client has no generated deadlines in the current demo dataset."
           />
         ) : (
-          <div className="deadlines-table" role="table">
+          <div className="deadlines-table client-deadlines-table" role="table">
             <div className="deadlines-table-head" role="row">
               <span role="columnheader">Tax type</span>
               <span role="columnheader">Jurisdiction</span>
