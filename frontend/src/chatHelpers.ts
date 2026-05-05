@@ -128,7 +128,7 @@ export function extractClientNames(text: string): string[] {
 
 export function surfaceTitle(view: ViewEnvelope): string {
   if (view.type === "ListCard") return (view.data as { title?: string }).title || "Deadline list";
-  if (view.type === "ClientCard") return "Focused client";
+  if (view.type === "ClientCard") return (view.data as { client_name?: string }).client_name || "Client workspace";
   if (view.type === "ConfirmCard") return "Confirm change";
   if (view.type === "HistoryCard") return "Source and history";
   if (view.type === "GuidanceCard") return "Need context";
@@ -145,7 +145,14 @@ export function surfaceSummary(view: ViewEnvelope): string {
     const data = view.data as { description?: string; items?: TaskItem[] };
     return data.description || `${data.items?.length || 0} deadline items ready for review.`;
   }
-  if (view.type === "ClientCard") return "Review one client before you confirm or send outreach.";
+  if (view.type === "ClientCard") {
+    const data = view.data as { client_name?: string; deadlines?: TaskItem[] };
+    const first = data.deadlines?.[0];
+    if (first) {
+      return `${first.tax_type || "Deadline"} due ${first.due_date || "unknown"}, status ${first.status || "unknown"}.`;
+    }
+    return `Review ${data.client_name || "this client"} before you confirm or send outreach.`;
+  }
   if (view.type === "ConfirmCard")
     return "This step writes back to the backend, so DueDateHQ asks for confirmation first.";
   if (view.type === "HistoryCard") return "Trace the source, due date, and status changes before you act.";

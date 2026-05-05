@@ -1919,6 +1919,7 @@ input {
   min-height: 0;
   display: grid;
   grid-template-columns: 1fr;
+  overflow: hidden;
 }
 
 .section-shell {
@@ -1933,6 +1934,7 @@ input {
   min-height: 0;
   display: grid;
   grid-template-columns: minmax(0, 1fr) 480px;
+  overflow: hidden;
 }
 
 .workspace-stage {
@@ -1956,6 +1958,7 @@ input {
 }
 
 .workspace-stage-body {
+  flex: 1;
   min-height: 0;
   overflow: auto;
 }
@@ -4057,9 +4060,9 @@ input {
    ============================================================================ */
 
 body {
-  height: auto;
+  height: 100vh;
   min-height: 100vh;
-  overflow: auto;
+  overflow: hidden;
   background: #e0ddd6;
   padding: 0;
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
@@ -4068,7 +4071,7 @@ body {
 .app-shell {
   width: 100%;
   min-height: 100vh;
-  height: auto;
+  height: 100vh;
   margin: 0;
   overflow: hidden;
   border: 0;

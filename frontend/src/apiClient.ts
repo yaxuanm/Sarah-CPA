@@ -1,5 +1,14 @@
 import type { ActionPlan, DirectAction, ViewEnvelope } from "./types";
 
+export type BackendResponse = {
+  message?: string;
+  view?: ViewEnvelope;
+  actions?: ActionPlan[];
+  workspace_update?: Record<string, unknown>;
+  next_step?: Record<string, unknown>;
+  suggested_actions?: ActionPlan[];
+};
+
 export type StreamUpdate =
   | { event: "agent_step"; label: string; detail?: string; tone?: string }
   | { event: "thinking"; message: string }
@@ -22,7 +31,7 @@ export type StreamUpdate =
   | { event: "view_rendered"; view: ViewEnvelope | null; actions: ActionPlan[] }
   | { event: "feedback_recorded"; signal?: string }
   | { event: "message_delta"; delta: string }
-  | { event: "done"; response?: { message?: string; view?: ViewEnvelope; actions?: ActionPlan[] }; session?: Record<string, unknown> };
+  | { event: "done"; response?: BackendResponse; session?: Record<string, unknown> };
 
 export async function streamChat(params: {
   apiBase: string;
@@ -74,7 +83,7 @@ export async function bootstrapToday(params: {
   tenantId: string;
   session: Record<string, unknown>;
 }): Promise<{
-  response: { message?: string; view?: ViewEnvelope; actions?: ActionPlan[] };
+  response: BackendResponse;
   session: Record<string, unknown>;
 }> {
   const response = await fetch(`${params.apiBase.replace(/\/$/, "")}/bootstrap/today`, {
@@ -99,7 +108,7 @@ export async function executeAction(params: {
   session: Record<string, unknown>;
   action: DirectAction;
 }): Promise<{
-  response: { message?: string; view?: ViewEnvelope; actions?: ActionPlan[] };
+  response: BackendResponse;
   session: Record<string, unknown>;
 }> {
   const response = await fetch(`${params.apiBase.replace(/\/$/, "")}/action`, {

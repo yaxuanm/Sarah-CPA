@@ -13,7 +13,7 @@
 //   - It does not invent new view types, plan types, or design tokens.
 
 import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
-import { bootstrapToday, executeAction, streamChat } from "./apiClient";
+import { bootstrapToday, executeAction, streamChat, type BackendResponse } from "./apiClient";
 import { mockDeadlines, mockRules } from "./mockData";
 import type {
   ActionPlan,
@@ -29,7 +29,6 @@ import {
   appendBreadcrumb,
   buildQuickActions,
   buildWorkspaceSnapshot,
-  humanIntentStatus,
   surfaceTitle,
   summarizeView
 } from "./chatHelpers";
@@ -44,12 +43,13 @@ const tenantId = import.meta.env.VITE_DUEDATEHQ_TENANT_ID || "2403c5e1-85ac-4593
 const apiBase = import.meta.env.VITE_DUEDATEHQ_API_BASE || "http://127.0.0.1:8000";
 
 const initialActions: ActionPlan[] = [];
+const openingAssistantMessage = "早上好。Aurora 的 federal income 5 月 15 日到期，最紧急。先处理这个？";
 
 export function App() {
   const [currentSection, setCurrentSection] = useState<SectionId>("work");
   const [chatOpen, setChatOpen] = useState(false);
   const [messages, setMessages] = useState<ChatMessage[]>([
-    { id: id(), role: "system", text: "我在。你说要查什么，我把结果放到页面上。" }
+    { id: id(), role: "system", text: openingAssistantMessage }
   ]);
   const [view, setView] = useState<ViewEnvelope | null>(null);
   const [actions, setActions] = useState<ActionPlan[]>(initialActions);
@@ -61,7 +61,9 @@ export function App() {
   const [session, setSession] = useState<Record<string, unknown>>({
     tenant_id: tenantId,
     session_id: "frontend-validation-session",
-    today: "2026-04-26"
+    today: "2026-04-26",
+    history_window: [{ actor: "system", text: openingAssistantMessage }],
+    state_summary: "Sarah Johnson is a Texas independent CPA managing about 60 clients. The current opening recommendation is Aurora Tech Labs federal income, due 2026-05-15."
   });
   const [busy, setBusy] = useState(false);
   const [apiBootstrapped, setApiBootstrapped] = useState(false);
@@ -161,6 +163,36 @@ export function App() {
   function showResultOnPage(nextView: ViewEnvelope, nextActions: ActionPlan[]) {
     setView(nextView);
     setActions(nextActions);
+  }
+
+  function applyBackendResponse(response?: BackendResponse, options?: { createdFrom?: string; addMaterial?: boolean }) {
+    if (!response) return;
+    const workspaceUpdate = response.workspace_update;
+    const nextWorkspace =
+      workspaceUpdate && typeof workspaceUpdate === "object"
+        ? workspaceUpdate.next_workspace
+        : null;
+    const nextActions =
+      response.suggested_actions && response.suggested_actions.length
+        ? response.suggested_actions
+        : response.actions;
+    const responseView =
+      response.view ||
+      (nextWorkspace &&
+      typeof nextWorkspace === "object" &&
+      "type" in nextWorkspace &&
+      "data" in nextWorkspace
+        ? (nextWorkspace as ViewEnvelope)
+        : null);
+
+    if (responseView) {
+      showResultOnPage(responseView, nextActions || []);
+      if (options?.addMaterial && shouldInsertMaterial(responseView)) {
+        addWorkspace(responseView, nextActions || [], { createdFrom: options.createdFrom || "页面操作" });
+      }
+    } else if (nextActions) {
+      setActions(nextActions);
+    }
   }
 
   function addWorkspace(
@@ -312,8 +344,7 @@ export function App() {
         tenantId,
         session: { ...session, current_view: view }
       });
-      if (result.response.view) setView(result.response.view);
-      setActions(result.response.actions || []);
+      applyBackendResponse(result.response);
       setSession(result.session);
       setBackendState("ready");
     } catch {
@@ -348,43 +379,21 @@ export function App() {
         },
         onUpdate: (update) => {
           if (update.event === "agent_step") {
-            const message = secretaryStepText(update.label, update.detail);
-            if (thinkingMessageId) {
-              replaceMessage(thinkingMessageId, message);
-            } else {
-              thinkingMessageId = append("status", message);
-            }
             return;
           }
           if (update.event === "thinking") {
-            thinkingMessageId = append("status", "我先理解一下。");
             return;
           }
           if (update.event === "intent_confirmed") {
-            const message = update.intentLabel === "client_list"
-              ? "这是客户数量问题，我去查客户列表。"
-              : humanIntentStatus(update.intentLabel, update.planSource);
-            if (thinkingMessageId) {
-              replaceMessage(thinkingMessageId, message);
-            } else {
-              thinkingMessageId = append("status", message);
-            }
+            return;
           }
           if (update.event === "action_started" && update.actionType === "render") {
-            const announce = secretaryStepText(update.template || update.announce);
             setDisplayLoading("我来拿一下。");
-            if (thinkingMessageId) {
-              replaceMessage(thinkingMessageId, announce);
-            } else {
-              thinkingMessageId = append("status", announce);
-            }
+            return;
           }
           if (update.event === "render_event") {
             const renderView = update.view || viewFromRenderEvent(update.templateId, update.filledSlots);
             if (renderView && shouldInsertMaterial(renderView)) {
-              if (thinkingMessageId) {
-                replaceMessage(thinkingMessageId, "结果已更新到页面。");
-              }
               showResultOnPage(renderView, update.actions || []);
               addWorkspace(renderView, update.actions || [], {
                 summary: update.summary || update.crossReference?.summary,
@@ -404,9 +413,6 @@ export function App() {
             }
             if (update.view) {
               if (shouldInsertMaterial(update.view)) {
-                if (thinkingMessageId) {
-                  replaceMessage(thinkingMessageId, "结果已更新到页面。");
-                }
                 showResultOnPage(update.view, update.actions || []);
                 addWorkspace(update.view, update.actions || [], { createdFrom: cleaned });
                 const reply = renderReplyForView(update.view);
@@ -435,6 +441,9 @@ export function App() {
           }
           if (update.event === "done" && update.response?.message && !streamedMessageId) {
             append("system", update.response.message);
+          }
+          if (update.event === "done" && update.response) {
+            applyBackendResponse(update.response);
           }
         }
       });
@@ -504,12 +513,7 @@ export function App() {
         action
       });
       if (result.response.message) append("system", result.response.message);
-      if (result.response.view) {
-        setView(result.response.view);
-        showResultOnPage(result.response.view, result.response.actions || []);
-        addWorkspace(result.response.view, result.response.actions || [], { createdFrom: userEcho || "页面操作" });
-      }
-      setActions(result.response.actions || []);
+      applyBackendResponse(result.response, { createdFrom: userEcho || "页面操作", addMaterial: true });
       setSession(result.session);
       setBackendState("ready");
     } catch (error) {

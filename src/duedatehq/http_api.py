@@ -36,6 +36,10 @@ def create_fastapi_app(db_path: str | None = None):
             "http://localhost:5173",
             "http://127.0.0.1:5174",
             "http://localhost:5174",
+            "http://127.0.0.1:5182",
+            "http://localhost:5182",
+            "http://127.0.0.1:5183",
+            "http://localhost:5183",
         ],
         allow_credentials=True,
         allow_methods=["*"],
@@ -132,49 +136,50 @@ def create_fastapi_app(db_path: str | None = None):
             action = secretary.get("action") if isinstance(secretary.get("action"), dict) else {}
             if action.get("type") == "render":
                 render_template = str(action.get("template") or (response.get("view") or {}).get("type") or "generated_workspace")
-                yield _sse("agent_step", {"label": "准备材料", "detail": action.get("announce") or "拿出材料", "tone": "gold"})
-                yield _sse(
-                    "action_started",
-                    {
-                        "type": "render",
-                        "announce": action.get("announce"),
-                        "template": render_template,
-                    },
-                )
-                slots = _slots_from_secretary_action(action, session)
-                yield _sse("agent_step", {"label": "resolve_template", "detail": render_template, "tone": "blue"})
-                template_result = app_state.template_tools.run_render_loop(
-                    intent=render_template,
-                    slots=slots,
-                    tenant_id=session["tenant_id"],
-                    session=session,
-                    response_view=response.get("view") if isinstance(response.get("view"), dict) else None,
-                )
-                resolution = template_result["resolution"]
-                yield _sse(
-                    "agent_step",
-                    {
-                        "label": "fetch_slot_data",
-                        "detail": f"{resolution.get('status')}:{resolution.get('template_id') or resolution.get('base_template_id') or resolution.get('staging_template_id')}",
-                        "tone": "gold",
-                    },
-                )
-                yield _sse("agent_step", {"label": "dispatch_render", "detail": template_result["render_event"]["render_id"], "tone": "green"})
-                yield _sse(
-                    "render_event",
-                    {
-                        **template_result["render_event"],
-                        "resolution": resolution,
-                        "actions": response.get("actions", []),
-                        "summary": action.get("summary"),
-                        "highlight": action.get("highlight") if isinstance(action.get("highlight"), list) else [],
-                        "cross_reference": {
-                            "reply": reply,
+                if _needs_template_render_loop(response.get("view"), render_template):
+                    yield _sse("agent_step", {"label": "准备材料", "detail": action.get("announce") or "拿出材料", "tone": "gold"})
+                    yield _sse(
+                        "action_started",
+                        {
+                            "type": "render",
+                            "announce": action.get("announce"),
+                            "template": render_template,
+                        },
+                    )
+                    slots = _slots_from_secretary_action(action, session)
+                    yield _sse("agent_step", {"label": "resolve_template", "detail": render_template, "tone": "blue"})
+                    template_result = app_state.template_tools.run_render_loop(
+                        intent=render_template,
+                        slots=slots,
+                        tenant_id=session["tenant_id"],
+                        session=session,
+                        response_view=response.get("view") if isinstance(response.get("view"), dict) else None,
+                    )
+                    resolution = template_result["resolution"]
+                    yield _sse(
+                        "agent_step",
+                        {
+                            "label": "fetch_slot_data",
+                            "detail": f"{resolution.get('status')}:{resolution.get('template_id') or resolution.get('base_template_id') or resolution.get('staging_template_id')}",
+                            "tone": "gold",
+                        },
+                    )
+                    yield _sse("agent_step", {"label": "dispatch_render", "detail": template_result["render_event"]["render_id"], "tone": "green"})
+                    yield _sse(
+                        "render_event",
+                        {
+                            **template_result["render_event"],
+                            "resolution": resolution,
+                            "actions": response.get("actions", []),
                             "summary": action.get("summary"),
                             "highlight": action.get("highlight") if isinstance(action.get("highlight"), list) else [],
+                            "cross_reference": {
+                                "reply": reply,
+                                "summary": action.get("summary"),
+                                "highlight": action.get("highlight") if isinstance(action.get("highlight"), list) else [],
+                            },
                         },
-                    },
-                )
+                    )
                 yield _sse("workspace_rendered", {"view": response.get("view"), "actions": response.get("actions", [])})
             yield _sse("view_rendered", {"view": response.get("view"), "actions": response.get("actions", [])})
             new_feedback = _latest_new_feedback_event(session, previous_feedback_count)
@@ -201,6 +206,30 @@ def _slots_from_secretary_action(action: dict[str, Any], session: dict[str, Any]
     if session.get("current_view"):
         slots.setdefault("current_view_type", (session.get("current_view") or {}).get("type") if isinstance(session.get("current_view"), dict) else None)
     return slots
+
+
+def _needs_template_render_loop(view: Any, render_template: str) -> bool:
+    """Only synthesize render specs for genuinely generated surfaces.
+
+    Registered product views such as ClientCard/ListCard already came back from
+    the interaction backend. Running them through the template toolset can
+    produce a misleading generated_workspace render_event before the real view.
+    """
+    if isinstance(view, dict) and view.get("type") in {
+        "ClientCard",
+        "ListCard",
+        "ConfirmCard",
+        "HistoryCard",
+        "GuidanceCard",
+        "TaxChangeRadarCard",
+        "ClientListCard",
+        "ReviewQueueCard",
+        "ReminderPreviewCard",
+    }:
+        return False
+    return render_template in {"generated_workspace", "RenderSpecSurface"} or (
+        isinstance(view, dict) and view.get("type") == "RenderSpecSurface"
+    )
 
 
 def _prepare_session(body: dict[str, Any]) -> dict[str, Any]:

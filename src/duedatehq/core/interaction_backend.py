@@ -87,6 +87,10 @@ class InteractionBackend:
             self._append_history(session, "system", workspace_guard_response.get("message", ""))
             return {"status": "ok", **workspace_guard_response, "session_id": session.get("session_id")}
 
+        current_action_plan = self._current_action_plan_from_text(text, session)
+        if current_action_plan:
+            return self._process_plan_turn(text, current_action_plan, session, plan_source="current_workspace_action")
+
         if not self.agent_kernel:
             response = self._agent_unavailable_response("现在没有可用的 agent，所以我不能研判这个问题。")
             self._remember_response(session, response)
@@ -283,7 +287,7 @@ class InteractionBackend:
 
     def process_action(self, plan: dict[str, Any], session: dict[str, Any]) -> dict[str, Any]:
         try:
-            self.executor.execute(plan)
+            action_result = self.executor.execute(plan)
         except PlanExecutionError as exc:
             return {
                 "status": "action_failed",
@@ -309,6 +313,7 @@ class InteractionBackend:
             }
         )
         response = self.response_generator.generate(follow_up_result, session)
+        self._attach_closed_loop_followup(response, action_result, session)
         return {
             "status": "ok",
             **response,
@@ -329,6 +334,100 @@ class InteractionBackend:
             "intent_label": "client_deadline_list",
             "op_class": "read",
         }
+
+    def _current_action_plan_from_text(self, user_input: str, session: dict[str, Any]) -> dict[str, Any] | None:
+        action_name = self._requested_deadline_action(user_input)
+        if not action_name:
+            return None
+        for action in session.get("current_actions") or []:
+            if not isinstance(action, dict) or not isinstance(action.get("plan"), dict):
+                continue
+            plan = action["plan"]
+            if str(plan.get("intent_label") or "").endswith(f"_{action_name}"):
+                return plan
+            for step in plan.get("plan", []) or []:
+                if isinstance(step, dict):
+                    args = step.get("args") if isinstance(step.get("args"), dict) else {}
+                    if args.get("action") == action_name:
+                        return plan
+        return None
+
+    def _requested_deadline_action(self, user_input: str) -> str | None:
+        text = user_input.strip().casefold()
+        if not text:
+            return None
+        if any(term in text for term in ["标记完成", "完成", "已处理", "做完", "已经做完", "complete", "mark complete", "done"]):
+            return "complete"
+        if any(term in text for term in ["稍后", "晚点", "提醒", "snooze"]):
+            return "snooze"
+        if any(term in text for term in ["不适用", "waive"]):
+            return "waive"
+        return None
+
+    def _attach_closed_loop_followup(
+        self,
+        response: dict[str, Any],
+        action_result: dict[str, Any],
+        session: dict[str, Any],
+    ) -> None:
+        final_data = action_result.get("final_data") if isinstance(action_result, dict) else {}
+        if not isinstance(final_data, dict) or not final_data.get("deadline_id"):
+            return
+
+        deadline_id = str(final_data["deadline_id"])
+        new_status = str(final_data.get("new_status") or "")
+        response["workspace_update"] = {
+            "type": "deadline_status_changed",
+            "deadline_id": deadline_id,
+            "new_status": new_status,
+            "previous_status": final_data.get("previous_status"),
+            "next_workspace": response.get("view"),
+        }
+        response["next_step"] = self._next_step_after_deadline_action(final_data, response, session)
+        response["message"] = self._closed_loop_message(final_data, response)
+        response["secretary"] = {
+            "reply": response["message"],
+            "action": {
+                "type": "render" if response.get("view") else "none",
+                "template": (response.get("view") or {}).get("type") if isinstance(response.get("view"), dict) else None,
+                "summary": response.get("state_summary"),
+                "highlight": [deadline_id],
+            },
+        }
+
+    def _next_step_after_deadline_action(
+        self,
+        final_data: dict[str, Any],
+        response: dict[str, Any],
+        session: dict[str, Any],
+    ) -> dict[str, Any]:
+        view = response.get("view") if isinstance(response.get("view"), dict) else {}
+        data = view.get("data") if isinstance(view.get("data"), dict) else {}
+        items = [item for item in data.get("items", []) if isinstance(item, dict)]
+        first = items[0] if items else {}
+        if first:
+            return {
+                "suggestion": f"{first.get('client_name') or '下一位客户'} 的 {first.get('tax_type') or '下一项'} 现在最需要看。",
+                "target": {
+                    "client_id": first.get("client_id"),
+                    "deadline_id": first.get("deadline_id"),
+                },
+                "actions": ["下一件", "回到今日清单", "稍后"],
+                "workspace_hint": "ClientWorkspace",
+            }
+        return {
+            "suggestion": "今天没有更急的待处理事项。",
+            "target": None,
+            "actions": ["看本周剩余"],
+            "workspace_hint": "TodayQueue",
+        }
+
+    def _closed_loop_message(self, final_data: dict[str, Any], response: dict[str, Any]) -> str:
+        status = str(final_data.get("new_status") or "")
+        verb = "完成了" if status == "completed" else "更新了"
+        next_step = response.get("next_step") if isinstance(response.get("next_step"), dict) else {}
+        suggestion = next_step.get("suggestion") or "左侧已经更新。"
+        return f"{verb}。{suggestion}"
 
     def _guard_cross_workspace_request(self, user_input: str, session: dict[str, Any]) -> dict[str, Any] | None:
         workspace = session.get("current_workspace") if isinstance(session.get("current_workspace"), dict) else {}
@@ -461,10 +560,113 @@ class InteractionBackend:
         user_input: str,
         session: dict[str, Any],
     ) -> dict[str, Any] | None:
+        direct_response = self._render_registered_workspace_from_agent(decision, session)
+        if direct_response:
+            return direct_response
         response = self.surface_composer.compose_agent_strategy(decision, user_input, session)
         if response and decision.secretary_envelope:
             response["secretary"] = decision.secretary_envelope
         return response
+
+    def _render_registered_workspace_from_agent(
+        self,
+        decision: AgentKernelDecision,
+        session: dict[str, Any],
+    ) -> dict[str, Any] | None:
+        envelope = decision.secretary_envelope if isinstance(decision.secretary_envelope, dict) else {}
+        action = envelope.get("action") if isinstance(envelope.get("action"), dict) else {}
+        template = str(action.get("template") or "").casefold().strip()
+        workspace = action.get("workspace") if isinstance(action.get("workspace"), dict) else {}
+        fields = workspace.get("fields") if isinstance(workspace.get("fields"), dict) else {}
+
+        if template in {"today", "today_queue", "workload_plan"}:
+            response = self.process_plan(
+                {
+                    "plan": [
+                        {
+                            "step_id": "s1",
+                            "type": "cli_call",
+                            "cli_group": "today",
+                            "cli_command": "today",
+                            "args": {"tenant_id": session["tenant_id"], "limit": 5, "enrich": True},
+                        }
+                    ],
+                    "intent_label": "today",
+                    "op_class": "read",
+                },
+                session,
+            )
+            return self._with_agent_reply(response, decision)
+
+        if template in {"client_summary", "client_workspace", "client", "deadline_view"}:
+            client_id = self._client_id_from_agent_fields(fields, session)
+            if not client_id:
+                return None
+            response = self.process_plan(self._client_deadline_plan(session["tenant_id"], client_id), session)
+            return self._with_agent_reply(response, decision)
+
+        return None
+
+    def _with_agent_reply(self, response: dict[str, Any], decision: AgentKernelDecision) -> dict[str, Any]:
+        if decision.answer:
+            response["message"] = decision.answer
+        if decision.secretary_envelope:
+            response["secretary"] = decision.secretary_envelope
+        return response
+
+    def _client_id_from_agent_fields(self, fields: dict[str, Any], session: dict[str, Any]) -> str | None:
+        entity = fields.get("entity") if isinstance(fields.get("entity"), dict) else {}
+        data = fields.get("data") if isinstance(fields.get("data"), dict) else {}
+        candidates: list[Any] = [
+            fields.get("client_id"),
+            entity.get("value"),
+            data.get("value"),
+        ]
+        for value in candidates:
+            client_id = self._client_id_from_value(value, session)
+            if client_id:
+                return client_id
+
+        for item in session.get("selectable_items") or []:
+            if isinstance(item, dict) and item.get("client_id"):
+                return str(item["client_id"])
+        return None
+
+    def _client_id_from_value(self, value: Any, session: dict[str, Any]) -> str | None:
+        if isinstance(value, dict):
+            for key in ("client_id", "id"):
+                if value.get(key):
+                    return str(value[key])
+            if value.get("client") and isinstance(value["client"], dict):
+                return self._client_id_from_value(value["client"], session)
+            if value.get("name"):
+                return self._client_id_from_name(str(value["name"]), session)
+        if isinstance(value, list):
+            for item in value:
+                client_id = self._client_id_from_value(item, session)
+                if client_id:
+                    return client_id
+            return None
+        if value is None:
+            return None
+        text = str(value).strip()
+        if not text:
+            return None
+        if any(isinstance(item, dict) and item.get("client_id") == text for item in session.get("selectable_items") or []):
+            return text
+        return self._client_id_from_name(text, session)
+
+    def _client_id_from_name(self, name: str, session: dict[str, Any]) -> str | None:
+        if not session.get("tenant_id"):
+            return None
+        needle = name.casefold().strip()
+        if not needle:
+            return None
+        for client in self.response_generator.engine.list_clients(session["tenant_id"]):
+            client_name = client.name.casefold()
+            if needle == client.client_id.casefold() or needle == client_name or needle in client_name or client_name in needle:
+                return client.client_id
+        return None
 
     def _compose_work_surface_response(
         self,

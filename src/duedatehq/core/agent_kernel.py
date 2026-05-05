@@ -22,6 +22,8 @@ ALLOWED_DATA_REQUESTS = {
     "all_clients",
     "all_deadlines",
     "client_deadlines",
+    "client_workspace",
+    "deadline_available_actions",
     "blockers",
     "tasks",
     "rules",
@@ -142,12 +144,14 @@ class AgentKernelDecision:
 
 def _data_requests_for_secretary_template(template: str) -> list[str]:
     lowered = template.casefold()
+    if lowered in {"client_summary", "client_workspace", "open_workspace"} or "client" in lowered:
+        return ["all_clients", "client_deadlines", "client_workspace"]
+    if lowered in {"today", "today_queue", "workload_plan"}:
+        return ["all_clients", "all_deadlines"]
     if "deadline" in lowered:
         return ["all_clients", "all_deadlines"]
     if "workload" in lowered or "plan" in lowered:
         return ["all_clients", "all_deadlines"]
-    if "client" in lowered:
-        return ["all_clients", "client_deadlines"]
     return ["current_view"]
 
 
@@ -218,7 +222,7 @@ class ClaudeAgentKernel:
         return decision
 
     def _call_model(self, system_prompt: str, user_input: str, session: dict[str, Any]) -> str:
-        messages: list[dict[str, Any]] = [{"role": "user", "content": user_input}]
+        messages = self._conversation_messages(user_input, session)
         for _ in range(self.max_tool_rounds + 1):
             response = self.client.messages.create(  # type: ignore[union-attr]
                 model=self.model,
@@ -253,6 +257,37 @@ class ClaudeAgentKernel:
             )
         return '{"route":"ask_clarifying_question","need_type":"agent_tool_loop_exhausted","render_policy":"no_view_needed","data_requests":[],"answer_mode":"answer_only","answer":"agent 这轮没有完成研判。","confidence":0}'
 
+    def _conversation_messages(self, user_input: str, session: dict[str, Any]) -> list[dict[str, Any]]:
+        """Send the real conversation to Claude, not just the latest utterance.
+
+        Short confirmations like "好" are only meaningful when the previous
+        assistant question is present as a model message.
+        """
+        raw_history = session.get("history_window") if isinstance(session.get("history_window"), list) else []
+        messages: list[dict[str, str]] = []
+        for item in raw_history[-20:]:
+            if not isinstance(item, dict):
+                continue
+            text = str(item.get("text") or "").strip()
+            if not text:
+                continue
+            actor = str(item.get("actor") or "").casefold()
+            role = "assistant" if actor in {"assistant", "system"} else "user"
+            messages.append({"role": role, "content": text})
+
+        if not messages or messages[-1]["role"] != "user" or messages[-1]["content"] != user_input:
+            messages.append({"role": "user", "content": user_input})
+        if messages and messages[0]["role"] == "assistant":
+            messages.insert(0, {"role": "user", "content": "Continue this DueDateHQ conversation. Use the prior assistant question as context."})
+
+        merged: list[dict[str, str]] = []
+        for message in messages:
+            if merged and merged[-1]["role"] == message["role"]:
+                merged[-1]["content"] = f"{merged[-1]['content']}\n\n{message['content']}"
+            else:
+                merged.append(message)
+        return merged
+
     def _build_system_prompt(self, session: dict[str, Any]) -> str:
         context = {
             "current_view": self._summarize_view(session.get("current_view")),
@@ -272,17 +307,76 @@ class ClaudeAgentKernel:
             "recent_history": session.get("history_window", [])[-8:],
         }
         return f"""
-You are DueDateHQ's personal secretary.
+You are DueDateHQ for Sarah Johnson, an independent CPA in Texas who manages about 60 clients.
+
+Sarah opens this product during real work. The left side is her work surface: today's queue,
+client pages, deadline rows, status tags, reminders, and audit/source details. The right side
+is a short conversation with you. Your job is to help her move work forward without sounding
+like a generic assistant.
+
+Core product behavior:
+- Sarah says what she wants. You decide the smallest useful reply and the smallest useful UI update.
+- Every answer should be bounded: draft one email, check one rule, record one operation, push one reminder,
+  or answer one status question.
+- Think like a controlled operator, not a commentator. Every turn should resolve to one operation class:
+  navigate, read, draft, record, mutate, monitor, or refresh.
+- A mutate operation is not complete until the backend has executed it and the affected workspace has been
+  refreshed. Never merely say that a record was completed if the operation was not actually run.
+- After any record or mutate operation, plan the next step from the refreshed state: same client remaining work,
+  today's more urgent work, waiting dependency, or all clear.
+- If you do something that changes work state, the result must be reflected in the work surface through
+  an allowed render/action path. If a write is required, prepare it or request confirmation; never pretend
+  a write happened unless the backend/action path supports it.
+- Do not over-explain the system, your reasoning, templates, tools, or backend.
+- Do not say "I am organizing this request", "next workspace is ready", "I will process this question",
+  or similar mechanical status text.
+
+Voice:
+- Speak like a competent operations assistant for a CPA, not like a chatbot.
+- Default to short, plain sentences. Usually 1-3 sentences.
+- Use concrete client names, tax type, jurisdiction, due date, and status when available.
+- If Sarah writes in English, answer in English. If she writes in Chinese, answer in Chinese.
+- When drafting client-facing text, make the draft itself client-ready and concise.
+
+Examples of the desired behavior:
+- Opening context: "早上好。Aurora 的 federal income 5 月 15 日到期，最紧急。先处理这个？"
+- User: "好。" Reply: "好，打开 Aurora。" Render/update the Aurora client workspace.
+- If Aurora is open or selected, next useful reply should be concrete, e.g.
+  "Aurora 缺 Q1 文件，要帮你起草催文件邮件吗？"
+- User: "帮我起草催文件邮件。" Reply:
+  "草稿好了：
+
+  Hi, we're working on your federal income return, due May 15. We still need your Q1 financial records. Could you send these over by end of week?
+
+  发出去后告我一声。"
+- User: "发了。" Reply: "记下了。" Prepare/record the status update if an allowed action exists.
+- User: "标记完成。" If current_actions contains a matching complete action, let the backend confirmation/write
+  path handle it. Do not answer with a summary-only render.
+- User: "加州今年 PTE 截止日有没有变化？" Reply: "没有，还是 5 月 30 日。有新公告我会更新你。"
+- User: "今天还有什么没处理完的？" Reply:
+  "Aurora 等客户回文件。Northwind PTE 还剩两条，下周处理来得及。其他都好。"
+
+Follow-up rule:
+- Short confirmations such as "好", "yes", "ok", "do that", "就这个", or "先处理这个" usually accept the
+  previous assistant suggestion in recent_history. Resolve them from recent_history and current visible work
+  before asking for clarification.
+- If the previous assistant suggestion named Aurora / federal income / May 15, "好" means open or continue that
+  Aurora work item, not "generate a generic work surface".
 
 The product principle is: conversation never stops. Rendering is a gesture in the conversation,
 like putting a file on the desk, not a replacement for replying.
 
+Closed-loop principle:
+Every operation must complete five steps: understand -> execute or confirm -> sync left/right state ->
+plan next step -> present result plus next action. If you cannot execute or confirm a write, say what is
+missing and do not claim the state changed.
+
 Use native tool use plus a ReAct loop:
-1. Reply naturally first, like a real secretary.
+1. Decide the operational result Sarah needs.
 2. Decide whether showing material is more information-dense than describing it.
 3. Call tools when real data is needed before showing material.
 4. If the user's intent or entity is missing, reply with a clarification and do not render.
-5. If you render, naturally announce the gesture in the reply, e.g. "我把 Acme 的截止日期拉出来给你看。"
+5. If you render, naturally announce it in the reply only if it helps, e.g. "打开 Aurora。"
 
 Infer what the user needs right now from:
 - the user message
@@ -293,7 +387,7 @@ Infer what the user needs right now from:
 - selectable items
 - allowed data/action space
 
-Prefer the Secretary Envelope schema below. Return ONLY JSON. No markdown.
+Return the Secretary Envelope schema below. Return ONLY JSON. No markdown.
 
 Secretary Envelope schema:
 {{
@@ -301,7 +395,7 @@ Secretary Envelope schema:
     "action": {{
       "type": "render | none",
       "announce": "verb phrase used in reply, e.g. 拉出来 | 拿出来 | 整理出来",
-      "template": "deadline_view | workload_plan | client_summary | tax_change_radar | generated_workspace",
+      "template": "today | deadline_view | client_summary | client_workspace | tax_change_radar | generated_workspace",
       "summary": "one judgment sentence for the display header",
       "highlight": ["ids mentioned in reply, e.g. deadline_001 or client_id"],
       "workspace": null | {{
@@ -326,43 +420,16 @@ Action rules:
 - If the user input has no clear action verb, action.type="none" and reply asks what to handle.
 - If the action is clear but the entity/object is missing, action.type="none" and reply asks for that entity.
 - If action and entity are clear, action.type="render" only when material is more useful than text.
+- To switch the left work surface to one client, use template="client_summary" or "client_workspace".
+- To switch to today's queue, use template="today".
+- Use generated_workspace only when no registered work surface can represent the result.
 - Broad portfolio questions such as "最近有啥值得注意的", "what needs attention", "what should I look at", or "any risks" are clear enough: render a portfolio/triage surface using available deadlines, rules, notices, clients, and blockers.
 - Never render instead of clarifying.
 - Never render without a natural reply.
 - If reply names a specific client/deadline as the key point, put the matching id in action.highlight and use the same judgment in action.summary.
 
-Legacy decision schema is still accepted for compatibility:
-
-Schema:
-{{
-  "route": "answer_current_view | render_strategy_surface | prepare_action | ask_clarifying_question",
-  "need_type": "short semantic label, e.g. client_risk_review, workload_comparison, explain_current_view",
-  "render_policy": "keep_current_view | no_view_needed | update_current_view | render_new_view",
-  "data_requests": ["current_view | visible_deadlines | all_clients | all_deadlines | client_deadlines | blockers | tasks | rules | rule_review_queue | notices"],
-  "answer_mode": "answer_only | answer_and_render | render_only",
-  "view_goal": "what the right-side surface should help the user decide",
-  "surface_kind": "TaxChangeRadar | ClientImpactMatrix | WeeklyExecutionList | SourceAudit | null",
-  "answer": "optional concise answer if current context is already enough",
-  "selected_refs": ["item_1"],
-  "suggested_actions": [
-    {{"label": "short button label", "intent": "natural language prompt to send if clicked", "style": "primary | secondary"}}
-  ],
-  "next_step": "one concrete next step, or null",
-  "requires_confirmation": false,
-  "confidence": 0.0,
-  "reason": "short internal reason"
-}}
-
-Rules:
-- Prefer answer_current_view only when the current page already contains enough information and a new surface would not improve decision-making.
-- If the user asks for a synthesis, comparison, prioritization, overview, status, explanation of multiple visible items, or "what should I do", prefer render_strategy_surface and request the minimum allowed data.
-- If the user asks about policy updates, tax news, rule changes, notices, regulations, or recent changes that may affect clients, use render_strategy_surface with surface_kind="TaxChangeRadar" and request rules, rule_review_queue, notices, all_clients, and all_deadlines.
-- For unknown but useful UI needs, choose render_strategy_surface with a clear view_goal.
-- For normal natural-language workflow requests, reason about the user's real need first. Do not hand off to a rule-based planner.
-- Never execute writes. If a write may be needed, choose prepare_action and requires_confirmation=true.
-- Do not invent facts. If facts are needed, call tools before final JSON.
-- If a user asks a normal advisory question, answer conversationally and still choose whether the current view should stay or a better surface should be rendered.
-- Suggested actions are optional. Include only actions that directly follow from your tool results and the user's stated need. Do not emit generic or canned actions just to fill space.
+Do not return the legacy route/render_policy schema. It is accepted only for old compatibility tests, not for this
+product chat path.
 
 AVAILABLE_VIEWS:
 - ListCard: multiple deadlines or clients in a list.
@@ -371,7 +438,8 @@ AVAILABLE_VIEWS:
 - HistoryCard: source/audit/history for one item.
 - GuidanceCard: one missing bit of context or a short unblocker.
 - TaxChangeRadarCard: policy, rule, notice, tax-news, or tax-change monitoring surface that shows data boundaries, rule signals, and affected client deadlines.
-- RenderSpecSurface: synthesized or ad-hoc work surface for comparisons, portfolio status, prioritization, risk, explanation, or a view not yet hard-coded.
+- RenderSpecSurface: last-resort synthesized surface for a genuinely missing product view. Do not use it for
+  "好", opening a client, today's queue, draft generation, recording operations, deadline actions, or rule checks.
 
 Context:
 {json.dumps(context, ensure_ascii=False, indent=2, default=str)}
@@ -422,6 +490,60 @@ Context:
                         "status": {"type": "string", "enum": ["pending", "completed", "snoozed", "waived", "overridden"]},
                         "limit": {"type": "integer", "minimum": 1, "maximum": 100},
                     },
+                    "additionalProperties": False,
+                },
+            },
+            {
+                "name": "open_workspace",
+                "description": "Resolve and prepare a registered work surface such as TodayQueue or ClientWorkspace. Use this before deciding to open a client workspace.",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "workspace": {"type": "string", "enum": ["today", "client_workspace"]},
+                        "client_id": {"type": "string"},
+                        "client_name": {"type": "string"},
+                    },
+                    "required": ["workspace"],
+                    "additionalProperties": False,
+                },
+            },
+            {
+                "name": "deadline_available_actions",
+                "description": "List allowed actions for a deadline before proposing complete/snooze/waive/override.",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {"deadline_id": {"type": "string"}},
+                    "required": ["deadline_id"],
+                    "additionalProperties": False,
+                },
+            },
+            {
+                "name": "generate_draft",
+                "description": "Generate a bounded client-facing draft for the selected or named client/deadline. This does not send anything.",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "client_id": {"type": "string"},
+                        "client_name": {"type": "string"},
+                        "deadline_id": {"type": "string"},
+                        "draft_type": {"type": "string", "enum": ["missing_documents_email"]},
+                    },
+                    "required": ["draft_type"],
+                    "additionalProperties": False,
+                },
+            },
+            {
+                "name": "record_operation",
+                "description": "Prepare a record-operation result for the conversation. Use for notes like client email sent; persistent writes still require a backend-supported action.",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "client_id": {"type": "string"},
+                        "client_name": {"type": "string"},
+                        "operation": {"type": "string"},
+                        "deadline_id": {"type": "string"},
+                    },
+                    "required": ["operation"],
                     "additionalProperties": False,
                 },
             },
@@ -523,6 +645,46 @@ Context:
                     limit=int(tool_input.get("limit") or 100),
                 )
                 return {"client_id": client_id, "deadlines": self._serialize_deadlines(tenant_id, deadlines)}
+            if name == "open_workspace":
+                workspace = str(tool_input.get("workspace") or "")
+                if workspace == "today":
+                    deadlines = self.engine.today_enriched(tenant_id, 5)
+                    return {
+                        "workspace": "today",
+                        "template": "today",
+                        "deadlines": self._json_safe(deadlines),
+                    }
+                if workspace == "client_workspace":
+                    client_id = self._resolve_client_id(tenant_id, tool_input, session)
+                    if not client_id:
+                        return {"error": "client_not_resolved", "known_clients": self._known_client_names(tenant_id)}
+                    bundle = self.engine.get_client_bundle(tenant_id, client_id)
+                    return {
+                        "workspace": "client_workspace",
+                        "template": "client_summary",
+                        "client_id": client_id,
+                        "client": self._serialize_record(bundle["client"]),
+                        "deadlines": self._serialize_deadlines(tenant_id, list(bundle.get("deadlines", []))),
+                        "tasks": [self._serialize_record(item) for item in list(bundle.get("tasks", []))],
+                        "blockers": [self._serialize_record(item) for item in list(bundle.get("blockers", []))],
+                    }
+            if name == "deadline_available_actions":
+                deadline_id = str(tool_input.get("deadline_id") or "")
+                if not deadline_id:
+                    return {"error": "deadline_id_required"}
+                return self.engine.available_deadline_actions(tenant_id, deadline_id)
+            if name == "generate_draft":
+                return self._generate_draft_tool_result(tenant_id, tool_input, session)
+            if name == "record_operation":
+                client_id = self._resolve_client_id(tenant_id, tool_input, session)
+                return {
+                    "operation": str(tool_input.get("operation") or ""),
+                    "client_id": client_id,
+                    "client_name": tool_input.get("client_name"),
+                    "deadline_id": tool_input.get("deadline_id"),
+                    "status": "prepared",
+                    "write_boundary": "conversation operation only; persistent writes require backend action support",
+                }
             if name == "list_blockers":
                 client_id = self._resolve_client_id(tenant_id, tool_input, session)
                 blockers = self.engine.list_blockers(
@@ -553,6 +715,33 @@ Context:
         except (KeyError, ValueError, TypeError) as exc:
             return {"error": type(exc).__name__, "message": str(exc)}
         return {"error": "unknown_tool", "tool": name}
+
+    def _generate_draft_tool_result(self, tenant_id: str, tool_input: dict[str, Any], session: dict[str, Any]) -> dict[str, Any]:
+        client_id = self._resolve_client_id(tenant_id, tool_input, session)
+        if not client_id:
+            return {"error": "client_not_resolved", "known_clients": self._known_client_names(tenant_id)}
+        client = self.engine.get_client(tenant_id, client_id)
+        deadlines = self.engine.list_deadlines(tenant_id, client_id=client_id, status=DeadlineStatus.PENDING, limit=20)
+        deadline_id = str(tool_input.get("deadline_id") or "")
+        selected = next((item for item in deadlines if item.deadline_id == deadline_id), deadlines[0] if deadlines else None)
+        if not selected:
+            return {"error": "deadline_not_resolved", "client_id": client_id, "client_name": client.name}
+        missing_item = "Q1 financial records"
+        draft = (
+            f"Hi,\n\n"
+            f"We're working on your {selected.tax_type} return, due {selected.due_date.isoformat()}. "
+            f"We still need your {missing_item}. Could you send these over by end of week?\n\n"
+            f"Thank you,\nSarah"
+        )
+        return {
+            "client_id": client_id,
+            "client_name": client.name,
+            "deadline_id": selected.deadline_id,
+            "tax_type": selected.tax_type,
+            "jurisdiction": selected.jurisdiction,
+            "due_date": selected.due_date.isoformat(),
+            "draft": draft,
+        }
 
     def _block_to_dict(self, block: Any) -> dict[str, Any]:
         if isinstance(block, dict):
