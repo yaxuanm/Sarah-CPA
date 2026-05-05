@@ -811,6 +811,41 @@ export function App() {
                   <p><strong>Archived</strong><span>The item is handled and removed from active triage.</span></p>
                 </div>
               </article>
+
+              <article className="docs-card docs-wide docs-tech-card">
+                <span className="docs-kicker">Technical reference</span>
+                <h3>Local demo, CLI, and API</h3>
+                <div className="docs-tech-grid">
+                  <div>
+                    <h4>Run locally</h4>
+                    <code>cd frontend && VITE_DUEDATEHQ_API_BASE=http://127.0.0.1:8000 npm run dev</code>
+                    <code>uv run --with fastapi --with uvicorn uvicorn duedatehq.http_api:create_fastapi_app --factory --reload --port 8000</code>
+                    <code>uv run python scripts/seed_small_demo.py</code>
+                  </div>
+                  <div>
+                    <h4>CLI</h4>
+                    <code>uv run python -m duedatehq.cli --help</code>
+                    <code>uv run python -m duedatehq.cli import preview demo-data/due-datehq-demo-import.csv</code>
+                    <code>uv run python -m duedatehq.cli notify config add &lt;tenant_id&gt; --channel email --destination ops@example.com</code>
+                  </div>
+                  <div>
+                    <h4>API routes</h4>
+                    <code>POST /bootstrap/today</code>
+                    <code>POST /import/preview</code>
+                    <code>POST /review/interpret/&lt;tenant_id&gt;</code>
+                    <code>GET /review/impact/&lt;tenant_id&gt;</code>
+                    <code>POST /clients/&lt;tenant_id&gt;/&lt;client_id&gt;/email/draft</code>
+                  </div>
+                  <div>
+                    <h4>AI behavior</h4>
+                    <p>
+                      AI assist uses Anthropic when <code>ANTHROPIC_API_KEY</code> or <code>CLAUDE_API_KEY</code> is configured.
+                      Without credentials, the same endpoints return deterministic fallback output so the demo remains stable.
+                    </p>
+                    <p>Primary AI-backed surfaces are import mapping, policy interpretation, and client follow-up drafting.</p>
+                  </div>
+                </div>
+              </article>
             </div>
           </section>
         </div>

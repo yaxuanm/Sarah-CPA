@@ -4388,6 +4388,33 @@ body {
   white-space: normal;
 }
 
+.docs-tech-card {
+  background: #fbfaf7;
+}
+
+.docs-tech-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px 18px;
+}
+
+.docs-tech-grid h4 {
+  margin: 0 0 6px;
+  color: #101828;
+  font-size: 13px;
+}
+
+.docs-tech-grid p {
+  margin: 0 0 8px;
+}
+
+.docs-tech-grid p code {
+  display: inline;
+  margin: 0;
+  padding: 1px 4px;
+  font-size: 10.5px;
+}
+
 .docs-foot {
   padding: 0 22px 22px;
   color: #68655f;
