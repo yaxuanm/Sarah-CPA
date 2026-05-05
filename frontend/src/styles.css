@@ -4214,6 +4214,107 @@ body {
   color: #ffffff;
 }
 
+.docs-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 140;
+  display: grid;
+  place-items: center;
+  padding: 28px;
+  background: rgba(17, 18, 20, 0.38);
+}
+
+.docs-panel {
+  width: min(920px, calc(100vw - 48px));
+  max-height: min(760px, calc(100vh - 48px));
+  overflow: auto;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  border-radius: 18px;
+  background: #f7f4ed;
+  box-shadow: 0 28px 90px rgba(17, 18, 20, 0.28);
+}
+
+.docs-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 24px 26px 18px;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+  background: #ffffff;
+}
+
+.docs-head h2 {
+  margin: 0 0 5px;
+  color: #111827;
+  font-size: 22px;
+}
+
+.docs-head p {
+  max-width: 620px;
+  margin: 0;
+  color: #68655f;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.docs-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  padding: 18px 20px;
+}
+
+.docs-card {
+  min-height: 170px;
+  padding: 16px 17px;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  border-radius: 14px;
+  background: #ffffff;
+}
+
+.docs-card h3 {
+  margin: 0 0 10px;
+  color: #101828;
+  font-size: 15px;
+}
+
+.docs-card p,
+.docs-card li {
+  color: #4f4b45;
+  font-size: 12.5px;
+  line-height: 1.55;
+}
+
+.docs-card ol {
+  margin: 0;
+  padding-left: 18px;
+}
+
+.docs-card code {
+  display: block;
+  margin-top: 8px;
+  padding: 8px 9px;
+  border-radius: 8px;
+  background: #f3f1ec;
+  color: #1f2937;
+  font-family: var(--mono);
+  font-size: 11px;
+  line-height: 1.45;
+  white-space: normal;
+}
+
+.docs-foot {
+  padding: 0 22px 22px;
+  color: #68655f;
+  font-size: 12px;
+}
+
+.docs-foot code {
+  color: #111827;
+  font-family: var(--mono);
+}
+
 .tenant-name {
   color: rgba(255, 255, 255, 0.45);
   font-size: 12px;

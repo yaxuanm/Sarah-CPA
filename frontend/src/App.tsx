@@ -79,6 +79,7 @@ export function App() {
     tone: "green" | "blue" | "gold" | "red";
   }[]>([]);
   const [messagesOpen, setMessagesOpen] = useState(false);
+  const [docsOpen, setDocsOpen] = useState(false);
   const [portfolioDeadlines, setPortfolioDeadlines] = useState(() => mockDeadlines.map((d) => ({ ...d })));
   const [portfolioRules, setPortfolioRules] = useState(() => mockRules.map((r) => ({ ...r })));
   const [resolvedRuleIds, setResolvedRuleIds] = useState<string[]>([]);
@@ -406,6 +407,13 @@ export function App() {
           >
             Ask
           </button>
+          <button
+            type="button"
+            className="topbar-ask-btn"
+            onClick={() => setDocsOpen(true)}
+          >
+            Docs
+          </button>
           <div className="tenant-name">Johnson CPA PLLC</div>
           <div className="message-shell" ref={messageMenuRef}>
             <button
@@ -618,6 +626,64 @@ export function App() {
               />
             </div>
           </div>
+        </div>
+      ) : null}
+
+      {docsOpen ? (
+        <div
+          className="docs-overlay"
+          role="dialog"
+          aria-modal="true"
+          aria-label="DueDateHQ docs"
+          onClick={() => setDocsOpen(false)}
+        >
+          <section className="docs-panel" onClick={(event) => event.stopPropagation()}>
+            <div className="docs-head">
+              <div>
+                <div className="eyebrow">Docs</div>
+                <h2>DueDateHQ demo and CLI guide</h2>
+                <p>Use this as the quick reference for the current product demo, backend routes, and CLI workflow.</p>
+              </div>
+              <button type="button" className="chat-close" aria-label="Close docs" onClick={() => setDocsOpen(false)}>
+                ×
+              </button>
+            </div>
+
+            <div className="docs-grid">
+              <article className="docs-card">
+                <h3>Demo story</h3>
+                <ol>
+                  <li>Import a client portfolio, confirm mappings, review generated work plan.</li>
+                  <li>Open Work queue, triage Work now / Blocked / Needs review / Archive.</li>
+                  <li>Review official rule changes, inspect affected clients, apply or dismiss.</li>
+                </ol>
+              </article>
+
+              <article className="docs-card">
+                <h3>CLI basics</h3>
+                <code>uv run python -m duedatehq.cli --help</code>
+                <code>uv run python -m duedatehq.cli import preview demo-data/due-datehq-demo-import.csv</code>
+                <code>uv run python -m duedatehq.cli notify config add &lt;tenant_id&gt; --channel email --destination ops@example.com</code>
+              </article>
+
+              <article className="docs-card">
+                <h3>Backend demo APIs</h3>
+                <p><strong>Import preview</strong> parses CSV text and supports manual mapping overrides.</p>
+                <p><strong>Policy interpret</strong> extracts source fields and affected clients from CA/TX/NY style official updates.</p>
+                <p><strong>Email draft</strong> generates a client follow-up from a deadline or task context, then queues delivery.</p>
+              </article>
+
+              <article className="docs-card">
+                <h3>AI and reminder status</h3>
+                <p>AI assist uses Anthropic when an API key is configured; otherwise the backend uses deterministic fallback through the same API path.</p>
+                <p>CPA reminders support Email and WeChat routes in settings. Demo delivery can be queued without sending to real users.</p>
+              </article>
+            </div>
+
+            <div className="docs-foot">
+              Full GitHub docs: <code>docs/demo-operator-guide.md</code>, <code>docs/cli-reference.md</code>, and <code>handoff/redesign-v2-handoff.md</code>.
+            </div>
+          </section>
         </div>
       ) : null}
     </div>
