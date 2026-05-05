@@ -4349,6 +4349,29 @@ body {
   margin-top: 6px;
 }
 
+.docs-glossary {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px 18px;
+}
+
+.docs-glossary p {
+  display: grid;
+  grid-template-columns: 150px 1fr;
+  gap: 10px;
+  margin: 0;
+  padding: 8px 0;
+  border-top: 1px solid rgba(0, 0, 0, 0.07);
+}
+
+.docs-glossary strong {
+  color: #101828;
+}
+
+.docs-glossary span {
+  color: #68655f;
+}
+
 .docs-card code {
   display: block;
   margin-top: 8px;

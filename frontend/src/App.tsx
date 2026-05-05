@@ -641,10 +641,10 @@ export function App() {
             <div className="docs-head">
               <div>
                 <div className="eyebrow">Docs</div>
-                <h2>DueDateHQ demo and CLI guide</h2>
+                <h2>DueDateHQ product guide</h2>
                 <p>
-                  A compact operator guide for the current MVP: what to demo, what each screen means,
-                  where AI participates, and which backend routes support the flow.
+                  Learn how to import clients, review deadline work, handle official tax changes,
+                  and keep your client portfolio current.
                 </p>
               </div>
               <button type="button" className="chat-close" aria-label="Close docs" onClick={() => setDocsOpen(false)}>
@@ -654,85 +654,108 @@ export function App() {
 
             <div className="docs-grid">
               <article className="docs-card docs-wide">
-                <span className="docs-kicker">Product frame</span>
-                <h3>What DueDateHQ is</h3>
+                <span className="docs-kicker">Overview</span>
+                <h3>What DueDateHQ helps you manage</h3>
                 <p>
-                  DueDateHQ is a CPA practice-management dashboard for tax deadlines. It does not prepare or file returns.
-                  It helps the CPA import a client portfolio, derive deadline work, monitor official rule changes,
-                  decide what needs attention this week, and document follow-up actions.
+                  DueDateHQ keeps client tax deadlines, blockers, rule-change reviews, reminders,
+                  extensions, and archived work in one operational dashboard.
                 </p>
                 <p>
-                  The smallest operational unit is a work item: client, tax type, jurisdiction, due date,
-                  status, assignee, source, reminders, blocker, extension state, and activity history.
+                  It is designed for planning and triage. It helps you decide what should happen next,
+                  but it does not prepare or file tax returns inside the product.
                 </p>
               </article>
 
               <article className="docs-card">
-                <span className="docs-kicker">5-minute demo</span>
-                <h3>Run of show</h3>
+                <span className="docs-kicker">Ask</span>
+                <h3>Use generated workspaces</h3>
+                <ul>
+                  <li>Click <strong>Ask</strong> when you want a focused workspace for a specific question or workflow.</li>
+                  <li>Ask in plain language, such as “show blocked California clients” or “summarize what changed this week.”</li>
+                  <li>The system renders a temporary workspace beside the conversation, instead of forcing every request into the fixed dashboard layout.</li>
+                  <li>Use the main dashboard for source-of-truth work such as importing clients, editing work items, applying rule changes, and archiving.</li>
+                </ul>
+              </article>
+
+              <article className="docs-card">
+                <span className="docs-kicker">Clients</span>
+                <h3>Import clients</h3>
                 <ol>
-                  <li><strong>Import:</strong> upload CSV, map columns, review rows, create or update clients.</li>
-                  <li><strong>Weekly triage:</strong> open Work, check Work now / Blocked / Needs review / Archive.</li>
-                  <li><strong>Rule change:</strong> open Review, inspect source and affected clients, apply or dismiss.</li>
+                  <li>Open <strong>Clients</strong>, then choose <strong>Import</strong>.</li>
+                  <li>Upload a CSV exported from your existing client system.</li>
+                  <li>Review column mapping and fix any fields that were mapped incorrectly.</li>
+                  <li>Review the detected rows before anything is added or updated.</li>
+                  <li>Finish import to create new clients or update matching clients in place.</li>
                 </ol>
               </article>
 
               <article className="docs-card">
-                <span className="docs-kicker">Screen logic</span>
-                <h3>Where to look</h3>
+                <span className="docs-kicker">Work</span>
+                <h3>Use the work queue</h3>
                 <ul>
-                  <li><strong>Work</strong> is the Monday triage queue: active work, blocked items, review-driven work, and archive.</li>
-                  <li><strong>Clients</strong> is the portfolio directory: profile, derived deadlines, blockers, reminders, and recent activity.</li>
-                  <li><strong>Review</strong> is the official-change queue: source, diff, affected clients, apply/dismiss decision.</li>
-                  <li><strong>Settings</strong> holds editable defaults and reminder channels, not operational status history.</li>
+                  <li><strong>Work now</strong> shows items that can be acted on immediately.</li>
+                  <li><strong>Blocked</strong> shows items waiting on documents, confirmation, or profile details.</li>
+                  <li><strong>Needs review</strong> shows work connected to an official change that still needs a CPA decision.</li>
+                  <li><strong>Archive</strong> keeps completed or dismissed items out of the active queue.</li>
                 </ul>
               </article>
 
               <article className="docs-card">
-                <span className="docs-kicker">State model</span>
-                <h3>Work item flow</h3>
+                <span className="docs-kicker">Details</span>
+                <h3>Open a work item</h3>
                 <ul>
-                  <li><strong>Active</strong> means the CPA can work on it now.</li>
-                  <li><strong>Blocked</strong> means a client document, confirmation, or profile detail is missing.</li>
-                  <li><strong>Needs review</strong> means a rule or notice needs a CPA decision before it changes work.</li>
-                  <li><strong>Extension approved</strong> means an extension was filed and can be revoked in demo.</li>
-                  <li><strong>Archived</strong> means the work was handled and removed from the active queue.</li>
+                  <li>Use <strong>Edit task</strong> to change the title, assignee, due date, priority, note, or blocker reason.</li>
+                  <li>Use <strong>Actions</strong> to file or revoke an extension, mark the item blocked, resolve a blocker, or archive the item.</li>
+                  <li>Use <strong>Client follow-up</strong> when the next step is asking the client for missing information.</li>
+                  <li>Reminder and blocker panels show what is already scheduled and why the item may be stuck.</li>
                 </ul>
               </article>
 
               <article className="docs-card">
-                <span className="docs-kicker">AI assist</span>
-                <h3>Where AI participates</h3>
+                <span className="docs-kicker">Review</span>
+                <h3>Review official changes</h3>
                 <ul>
-                  <li><strong>Import mapping:</strong> infer CSV fields and explain rows that need attention.</li>
-                  <li><strong>Policy interpretation:</strong> summarize official source text and identify affected clients.</li>
-                  <li><strong>Client follow-up:</strong> draft an email from the selected work item, blocker, contact, and due date.</li>
+                  <li>Open <strong>Review</strong> when an official rule or notice may affect your portfolio.</li>
+                  <li>Open a row to inspect the source, the before/after change, and affected clients.</li>
+                  <li>Choose <strong>Apply</strong> when the change should update related client work.</li>
+                  <li>Choose <strong>Dismiss</strong> when the change does not apply to the current portfolio.</li>
                 </ul>
-                <p>AI is intentionally lightweight in the UI: show it only at moments where it transforms messy input into structured work.</p>
               </article>
 
               <article className="docs-card">
-                <span className="docs-kicker">Backend demo APIs</span>
-                <h3>Routes to verify</h3>
-                <code>POST /import/preview</code>
-                <code>POST /review/interpret/&lt;tenant_id&gt;</code>
-                <code>GET /review/impact/&lt;tenant_id&gt;</code>
-                <code>POST /clients/&lt;tenant_id&gt;/&lt;client_id&gt;/email/draft</code>
-                <code>PATCH /settings/&lt;tenant_id&gt;/notification-routes/&lt;route_id&gt;</code>
+                <span className="docs-kicker">Clients</span>
+                <h3>Read a client profile</h3>
+                <ul>
+                  <li>The profile summarizes entity type, state footprint, tax scope, contacts, and next due date.</li>
+                  <li>The deadline calendar lists derived work for that client.</li>
+                  <li>Client history shows recent imports, blockers, reminders, and changes that affected this client.</li>
+                  <li>Export creates a CSV or PDF view for sharing outside the dashboard.</li>
+                </ul>
+              </article>
+
+              <article className="docs-card">
+                <span className="docs-kicker">Settings</span>
+                <h3>Configure reminders</h3>
+                <ul>
+                  <li>Set the default reminder cadence for deadline work.</li>
+                  <li>Connect email or messaging channels for CPA reminders.</li>
+                  <li>Update firm defaults without changing individual client records.</li>
+                  <li>Settings are for configuration, not for daily work history.</li>
+                </ul>
               </article>
 
               <article className="docs-card docs-wide">
-                <span className="docs-kicker">Local commands</span>
-                <h3>Operator checklist</h3>
-                <code>cd frontend && VITE_DUEDATEHQ_API_BASE=http://127.0.0.1:8000 npm run dev</code>
-                <code>uv run --with fastapi --with uvicorn uvicorn duedatehq.http_api:create_fastapi_app --factory --reload --port 8000</code>
-                <code>uv run python scripts/seed_small_demo.py</code>
-                <code>uv run python -m duedatehq.cli import preview demo-data/due-datehq-demo-import.csv</code>
+                <span className="docs-kicker">Glossary</span>
+                <h3>Status terms</h3>
+                <div className="docs-glossary">
+                  <p><strong>Active</strong><span>The work can move forward now.</span></p>
+                  <p><strong>Blocked</strong><span>Something is missing before work can continue.</span></p>
+                  <p><strong>Needs review</strong><span>A CPA decision is required before the item changes state.</span></p>
+                  <p><strong>Overdue</strong><span>The due date has passed and the item is still not archived.</span></p>
+                  <p><strong>Extension approved</strong><span>An extension has been filed and the effective due date changed.</span></p>
+                  <p><strong>Archived</strong><span>The item is handled and removed from active triage.</span></p>
+                </div>
               </article>
-            </div>
-
-            <div className="docs-foot">
-              Full repo docs: <code>docs/demo-operator-guide.md</code>, <code>docs/duedatehq-prd.md</code>, <code>docs/cli-reference.md</code>, and <code>handoff/redesign-v2-handoff.md</code>.
             </div>
           </section>
         </div>
