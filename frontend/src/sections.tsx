@@ -2952,7 +2952,6 @@ export function ReviewSection({
       <div className="ddh-review-info">
         <div>
           <strong>{pendingRules.length} official changes need review</strong>
-          <span>{mockSyncStatus.rules_auto_applied_today} auto-applied today - {mockSyncStatus.source_count} sources healthy</span>
         </div>
         <div>
           Last full sync <strong>{mockSyncStatus.last_full_sync}</strong> - Next sync <strong>{mockSyncStatus.next_scheduled_sync}</strong>

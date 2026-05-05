@@ -4473,11 +4473,12 @@ body {
 }
 
 .lane-help-trigger.mini {
-  width: 18px;
-  height: 18px;
+  width: 15px;
+  height: 15px;
   padding: 0;
-  font-size: 10px;
+  font-size: 9px;
   line-height: 1;
+  border-width: 0.5px;
 }
 
 .review-info-help .lane-help-tooltip {
@@ -5713,13 +5714,17 @@ body {
 }
 
 .ddh-review-info div:last-child {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 14px;
   text-align: right;
   line-height: 1.7;
 }
 
 .ddh-review-info em {
   display: inline-block;
-  margin-top: 4px;
+  margin-top: 0;
   padding: 2px 8px;
   border-radius: 20px;
   background: #e7f3e7;
