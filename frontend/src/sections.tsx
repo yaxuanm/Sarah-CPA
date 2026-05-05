@@ -3151,15 +3151,27 @@ function ReviewRule({
 }
 
 export function SettingsSection({ tenantId, onNotify }: SectionContext) {
+  const initialDefaults = {
+    displayName: "Johnson CPA PLLC",
+    timezone: "America/Los_Angeles",
+    fiscalYear: "Calendar (Jan - Dec)",
+    primaryChannel: "Email"
+  };
   const [displayName, setDisplayName] = useState("Johnson CPA PLLC");
   const [timezone, setTimezone] = useState("America/Los_Angeles");
   const [fiscalYear, setFiscalYear] = useState("Calendar (Jan - Dec)");
   const [primaryChannel, setPrimaryChannel] = useState("Email");
+  const [savedDefaults, setSavedDefaults] = useState(initialDefaults);
   const [connections, setConnections] = useState([
     { id: "email", label: "Email", destination: "sarah@johnsoncpa.com", connected: true },
     { id: "wechat", label: "WeChat", destination: "Johnson CPA service account", connected: false }
   ]);
   const [lastSavedAt, setLastSavedAt] = useState<string | null>(null);
+  const hasDefaultChanges =
+    displayName !== savedDefaults.displayName ||
+    timezone !== savedDefaults.timezone ||
+    fiscalYear !== savedDefaults.fiscalYear ||
+    primaryChannel !== savedDefaults.primaryChannel;
 
   function toggleConnection(connectionId: string) {
     setConnections((current) =>
@@ -3173,6 +3185,7 @@ export function SettingsSection({ tenantId, onNotify }: SectionContext) {
 
   function saveSettings() {
     const stamp = new Date().toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
+    setSavedDefaults({ displayName, timezone, fiscalYear, primaryChannel });
     setLastSavedAt(stamp);
     onNotify?.("Saved workspace settings for this demo workspace.", "green");
   }
@@ -3200,13 +3213,15 @@ export function SettingsSection({ tenantId, onNotify }: SectionContext) {
         <SettingRow label="Tenant ID" sub="Sent on every backend request - read only." value={tenantId} mono />
         <div className="ddh-settings-foot">
           <span>{lastSavedAt ? `Saved at ${lastSavedAt}` : "Anchored today: Apr 26, 2026"}</span>
-          <button
-            type="button"
-            className="ddh-btn ddh-btn-primary"
-            onClick={saveSettings}
-          >
-            Save changes
-          </button>
+          {hasDefaultChanges ? (
+            <button
+              type="button"
+              className="ddh-btn ddh-btn-primary"
+              onClick={saveSettings}
+            >
+              Save changes
+            </button>
+          ) : null}
         </div>
       </SettingsCard>
       <SettingsCard label="Connections" title="CPA reminder connections" subtitle="Where DueDateHQ can notify the CPA when work needs attention.">
