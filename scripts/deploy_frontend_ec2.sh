@@ -15,6 +15,7 @@ API_BASE="${VITE_DUEDATEHQ_API_BASE:-/demo-api/duedatehq}"
 cd "$FRONTEND_DIR"
 VITE_DUEDATEHQ_API_BASE="$API_BASE" npm run build -- --base="$PUBLIC_BASE"
 cp "$ROOT_DIR/demo-day-deck.html" "$FRONTEND_DIR/dist/demo-day-deck.html"
+cp "$ROOT_DIR/due-datehq-ten-minute-story-compact.html" "$FRONTEND_DIR/dist/due-datehq-ten-minute-story-compact.html"
 
 rsync -avz --delete \
   -e "ssh -i $KEY -o StrictHostKeyChecking=accept-new" \
