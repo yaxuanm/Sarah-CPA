@@ -1743,7 +1743,6 @@ export function ClientsSection({ onExport, onNotify, importLaunchToken = 0, dead
           record={record}
           changedDeadlineIds={changedDeadlineIds}
           onBack={() => setSelectedClientId(null)}
-          onExport={onExport}
           onNotify={onNotify}
           onUpdateClient={(clientId, nextClient) => {
             setRecords((current) =>
@@ -2566,14 +2565,12 @@ function ClientDetailSurface({
   record,
   changedDeadlineIds,
   onBack,
-  onExport,
   onNotify,
   onUpdateClient
 }: {
   record: ClientRecord;
   changedDeadlineIds: string[];
   onBack: () => void;
-  onExport?: (scope: string, format: "csv" | "pdf") => void;
   onNotify?: (text: string, tone?: "green" | "blue" | "gold" | "red") => void;
   onUpdateClient?: (clientId: string, nextClient: MockClient) => void;
 }) {
@@ -2582,7 +2579,6 @@ function ClientDetailSurface({
   const hasChangedDeadlines = deadlines.some((deadline) => changedDeadlineIds.includes(deadline.id));
   const nextDeadline = deadlines[0] || null;
   const latestActivity = recentActivity[0] || null;
-  const [exportOpen, setExportOpen] = useState(false);
   const [editingClient, setEditingClient] = useState(false);
   const [clientDraft, setClientDraft] = useState({
     name: client.name,
@@ -2593,19 +2589,6 @@ function ClientDetailSurface({
     taxes: client.applicable_taxes.join(", "),
     notes: client.notes || ""
   });
-  const exportRef = useRef<HTMLDivElement | null>(null);
-
-  useEffect(() => {
-    function handlePointerDown(event: MouseEvent) {
-      if (!exportRef.current) return;
-      if (!exportRef.current.contains(event.target as Node)) {
-        setExportOpen(false);
-      }
-    }
-    document.addEventListener("mousedown", handlePointerDown);
-    return () => document.removeEventListener("mousedown", handlePointerDown);
-  }, []);
-
   useEffect(() => {
     setEditingClient(false);
     setClientDraft({
@@ -2677,42 +2660,6 @@ function ClientDetailSurface({
           >
             {editingClient ? "Cancel edit" : "Edit client"}
           </button>
-          <div className="filter-popover-wrap export-menu-wrap" ref={exportRef}>
-            <button
-              type="button"
-              className={`filter-trigger ${exportOpen ? "open" : ""}`}
-              aria-label="Export client detail"
-              onClick={() => setExportOpen((current) => !current)}
-            >
-              <DownloadIcon /> Export
-            </button>
-            {exportOpen ? (
-              <div className="filter-popover export-menu" role="menu">
-                <button
-                  type="button"
-                  className="export-menu-item"
-                  onClick={() => {
-                    onExport?.(`${client.name} — full deadline pack`, "csv");
-                    setExportOpen(false);
-                  }}
-                >
-                  <span>Export CSV</span>
-                  <small>Spreadsheet of this client’s deadlines</small>
-                </button>
-                <button
-                  type="button"
-                  className="export-menu-item"
-                  onClick={() => {
-                    onExport?.(`${client.name} — full deadline pack`, "pdf");
-                    setExportOpen(false);
-                  }}
-                >
-                  <span>Export PDF</span>
-                  <small>Printable summary for client review</small>
-                </button>
-              </div>
-            ) : null}
-          </div>
         </div>
       </div>
 
