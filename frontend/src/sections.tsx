@@ -1,4 +1,4 @@
-import { ChangeEvent, Dispatch, DragEvent, ReactElement, SetStateAction, useEffect, useMemo, useRef, useState } from "react";
+import { ChangeEvent, Dispatch, DragEvent, ReactElement, ReactNode, SetStateAction, useEffect, useMemo, useRef, useState } from "react";
 import type { ViewEnvelope } from "./types";
 import {
   ArchiveIcon,
@@ -1703,13 +1703,20 @@ export function ClientsSection({ onExport, onNotify, importLaunchToken = 0, dead
 
   const filteredRecords = useMemo(
     () =>
-      recordsWithLiveDeadlines.filter((record) => {
-        if (stateFilter !== "All" && !record.client.states.includes(stateFilter)) return false;
-        if (taxFilter !== "All" && !record.client.applicable_taxes.includes(taxFilter as TaxType)) return false;
-        if (recentImportResult && importFocus === "new" && !recentImportResult.createdClientIds.includes(record.client.id)) return false;
-        if (recentImportResult && importFocus === "updated" && !recentImportResult.mergedClientIds.includes(record.client.id)) return false;
-        return true;
-      }),
+      recordsWithLiveDeadlines
+        .filter((record) => {
+          if (stateFilter !== "All" && !record.client.states.includes(stateFilter)) return false;
+          if (taxFilter !== "All" && !record.client.applicable_taxes.includes(taxFilter as TaxType)) return false;
+          if (recentImportResult && importFocus === "new" && !recentImportResult.createdClientIds.includes(record.client.id)) return false;
+          if (recentImportResult && importFocus === "updated" && !recentImportResult.mergedClientIds.includes(record.client.id)) return false;
+          return true;
+        })
+        .sort((a, b) => {
+          const rank = { high: 0, watch: 1, calm: 2 };
+          const aRank = a.client.risk_label === "high" ? rank.high : a.client.risk_label === "watch" ? rank.watch : rank.calm;
+          const bRank = b.client.risk_label === "high" ? rank.high : b.client.risk_label === "watch" ? rank.watch : rank.calm;
+          return aRank - bRank || a.client.name.localeCompare(b.client.name);
+        }),
     [recordsWithLiveDeadlines, stateFilter, taxFilter, recentImportResult, importFocus]
   );
 
@@ -1932,9 +1939,7 @@ function ClientTile({
         <span><strong>{client.blocked_deadlines}</strong> blocked</span>
         <span><strong>{client.extensions_filed}</strong> extensions</span>
       </div>
-      <p>{client.notes}</p>
       <div className="ddh-client-foot">
-        <span>{client.primary_contact_name}</span>
         <span className="client-tile-link">
           <span>Details</span>
           <ChevronRightIcon />
@@ -3163,8 +3168,8 @@ export function SettingsSection({ tenantId, onNotify }: SectionContext) {
   const [primaryChannel, setPrimaryChannel] = useState("Email");
   const [savedDefaults, setSavedDefaults] = useState(initialDefaults);
   const [connections, setConnections] = useState([
-    { id: "email", label: "Email", destination: "sarah@johnsoncpa.com", connected: true },
-    { id: "wechat", label: "WeChat", destination: "Johnson CPA service account", connected: false }
+    { id: "email", label: "Email", destination: "sarah@johnsoncpa.com", connected: true, authPending: false },
+    { id: "slack", label: "Slack", destination: "#tax-deadline-alerts", connected: false, authPending: false }
   ]);
   const [lastSavedAt, setLastSavedAt] = useState<string | null>(null);
   const hasDefaultChanges =
@@ -3174,10 +3179,25 @@ export function SettingsSection({ tenantId, onNotify }: SectionContext) {
     primaryChannel !== savedDefaults.primaryChannel;
 
   function toggleConnection(connectionId: string) {
+    const connection = connections.find((item) => item.id === connectionId);
+    if (connection?.id === "slack" && !connection.connected && !connection.authPending) {
+      window.open(
+        "https://slack.com/oauth/v2/authorize?scope=chat:write,channels:read&state=duedatehq-demo",
+        "_blank",
+        "noopener,noreferrer"
+      );
+      setConnections((current) =>
+        current.map((item) =>
+          item.id === connectionId ? { ...item, authPending: true } : item
+        )
+      );
+      onNotify?.("Slack authorization opened in a new tab.", "blue");
+      return;
+    }
     setConnections((current) =>
       current.map((connection) =>
         connection.id === connectionId
-          ? { ...connection, connected: !connection.connected }
+          ? { ...connection, connected: !connection.connected, authPending: false }
           : connection
       )
     );
@@ -3211,9 +3231,10 @@ export function SettingsSection({ tenantId, onNotify }: SectionContext) {
           onChange={setPrimaryChannel}
         />
         <SettingRow label="Tenant ID" sub="Sent on every backend request - read only." value={tenantId} mono />
-        <div className="ddh-settings-foot">
-          <span>{lastSavedAt ? `Saved at ${lastSavedAt}` : "Anchored today: Apr 26, 2026"}</span>
-          {hasDefaultChanges ? (
+        {(lastSavedAt || hasDefaultChanges) ? (
+          <div className="ddh-settings-foot">
+            <span>{lastSavedAt ? `Saved at ${lastSavedAt}` : ""}</span>
+            {hasDefaultChanges ? (
             <button
               type="button"
               className="ddh-btn ddh-btn-primary"
@@ -3221,8 +3242,9 @@ export function SettingsSection({ tenantId, onNotify }: SectionContext) {
             >
               Save changes
             </button>
-          ) : null}
-        </div>
+            ) : null}
+          </div>
+        ) : null}
       </SettingsCard>
       <SettingsCard label="Connections" title="CPA reminder connections" subtitle="Where DueDateHQ can notify the CPA when work needs attention.">
         <div className="settings-connection-grid">
@@ -3233,9 +3255,11 @@ export function SettingsSection({ tenantId, onNotify }: SectionContext) {
                 <span>{connection.destination}</span>
               </div>
               <div className="settings-connection-actions">
-                <em className={connection.connected ? "enabled" : ""}>{connection.connected ? "Connected" : "Not connected"}</em>
+                <em className={connection.connected ? "enabled" : connection.authPending ? "pending" : ""}>
+                  {connection.connected ? "Connected" : connection.authPending ? "Authorizing" : "Not connected"}
+                </em>
                 <button type="button" className="ddh-btn ddh-btn-sm" onClick={() => toggleConnection(connection.id)}>
-                  {connection.connected ? "Disconnect" : "Connect"}
+                  {connection.connected ? "Disconnect" : connection.authPending ? "Complete setup" : "Connect"}
                 </button>
               </div>
             </div>
@@ -3246,7 +3270,7 @@ export function SettingsSection({ tenantId, onNotify }: SectionContext) {
   );
 }
 
-function SettingsCard({ label, title, subtitle, children }: { label: string; title: string; subtitle: string; children: ReactElement | ReactElement[] }) {
+function SettingsCard({ label, title, subtitle, children }: { label: string; title: string; subtitle: string; children: ReactNode }) {
   return (
     <article className="ddh-settings-card">
       <div className="ddh-eyebrow">{label}</div>
@@ -3310,7 +3334,7 @@ function SelectSettingRow({
   );
 }
 
-export const sectionOrder: SectionId[] = ["work", "clients", "review", "settings"];
+export const sectionOrder: SectionId[] = ["work", "clients", "review"];
 
 export function SectionNav({
   current,

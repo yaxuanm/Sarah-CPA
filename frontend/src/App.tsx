@@ -79,6 +79,7 @@ export function App() {
     tone: "green" | "blue" | "gold" | "red";
   }[]>([]);
   const [messagesOpen, setMessagesOpen] = useState(false);
+  const [accountOpen, setAccountOpen] = useState(false);
   const [docsOpen, setDocsOpen] = useState(false);
   const [portfolioDeadlines, setPortfolioDeadlines] = useState(() => mockDeadlines.map((d) => ({ ...d })));
   const [portfolioRules, setPortfolioRules] = useState(() => mockRules.map((r) => ({ ...r })));
@@ -87,6 +88,7 @@ export function App() {
   const [reviewFocusRuleId, setReviewFocusRuleId] = useState<string | null>(null);
   const streamRef = useRef<HTMLDivElement | null>(null);
   const messageMenuRef = useRef<HTMLDivElement | null>(null);
+  const accountMenuRef = useRef<HTMLDivElement | null>(null);
 
   // Track recent visual contexts so the agent kernel knows what the CPA has
   // already seen when it decides what to render next.
@@ -160,6 +162,23 @@ export function App() {
       document.removeEventListener("keydown", onKey);
     };
   }, [messagesOpen]);
+
+  useEffect(() => {
+    if (!accountOpen) return;
+    function onDocClick(event: MouseEvent) {
+      if (!accountMenuRef.current) return;
+      if (!accountMenuRef.current.contains(event.target as Node)) setAccountOpen(false);
+    }
+    function onKey(event: KeyboardEvent) {
+      if (event.key === "Escape") setAccountOpen(false);
+    }
+    document.addEventListener("mousedown", onDocClick);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDocClick);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [accountOpen]);
 
   // Pop the drilldown overlay only when the resolved envelope adds
   // information beyond what the active section already shows.
@@ -407,14 +426,50 @@ export function App() {
           >
             Ask
           </button>
-          <button
-            type="button"
-            className="topbar-ask-btn"
-            onClick={() => setDocsOpen(true)}
-          >
-            Docs
-          </button>
-          <div className="tenant-name">Johnson CPA PLLC</div>
+          <div className="account-menu-shell" ref={accountMenuRef}>
+            <button
+              type="button"
+              className={`tenant-name account-trigger ${accountOpen ? "open" : ""}`}
+              onClick={() => setAccountOpen((current) => !current)}
+              aria-haspopup="menu"
+              aria-expanded={accountOpen}
+            >
+              Johnson CPA PLLC
+            </button>
+            {accountOpen ? (
+              <div className="account-menu" role="menu">
+                <div className="account-menu-head">
+                  <strong>Johnson CPA PLLC</strong>
+                  <span>Signed in as Sarah Johnson</span>
+                </div>
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => {
+                    setCurrentSection("settings");
+                    setAppMode("dashboard");
+                    setDrilldownOpen(false);
+                    setAccountOpen(false);
+                  }}
+                >
+                  Workspace settings
+                </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => {
+                    setDocsOpen(true);
+                    setAccountOpen(false);
+                  }}
+                >
+                  Product docs
+                </button>
+                <button type="button" role="menuitem" disabled>
+                  Log out
+                </button>
+              </div>
+            ) : null}
+          </div>
           <div className="message-shell" ref={messageMenuRef}>
             <button
               type="button"

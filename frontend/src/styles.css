@@ -4407,6 +4407,76 @@ body {
   text-transform: none;
 }
 
+.account-menu-shell {
+  position: relative;
+}
+
+.account-trigger {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+}
+
+.account-trigger:hover,
+.account-trigger.open {
+  color: rgba(255, 255, 255, 0.88);
+}
+
+.account-menu {
+  position: absolute;
+  top: calc(100% + 10px);
+  right: 0;
+  z-index: 95;
+  width: 220px;
+  padding: 8px;
+  border: 1px solid var(--paper-3);
+  border-radius: 10px;
+  background: #ffffff;
+  box-shadow: 0 16px 38px rgba(17, 18, 20, 0.22);
+}
+
+.account-menu-head {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 10px 10px;
+  border-bottom: 1px solid var(--paper-2);
+}
+
+.account-menu-head strong {
+  color: var(--ink);
+  font-size: 13px;
+}
+
+.account-menu-head span {
+  color: var(--ink-3);
+  font-size: 11px;
+}
+
+.account-menu button {
+  appearance: none;
+  width: 100%;
+  padding: 9px 10px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.account-menu button:hover:not(:disabled) {
+  background: var(--paper);
+}
+
+.account-menu button:disabled {
+  color: var(--ink-4);
+  cursor: not-allowed;
+}
+
 .connection-pill,
 .message-shell,
 .avatar {
@@ -5199,6 +5269,7 @@ body {
   border: 0.5px solid rgba(0, 0, 0, 0.07);
   border-radius: 12px;
   background: #ffffff;
+  text-align: left;
 }
 
 .ddh-client-card.high,
@@ -5268,7 +5339,7 @@ body {
 
 .ddh-client-foot {
   display: flex;
-  justify-content: space-between;
+  justify-content: flex-end;
   align-items: center;
   padding-top: 9px;
   border-top: 0.5px solid rgba(0, 0, 0, 0.07);
@@ -5886,8 +5957,11 @@ body {
   font-size: 11px;
 }
 
-.ddh-setting-row input {
+.ddh-setting-row input,
+.ddh-setting-row select {
+  box-sizing: border-box;
   min-width: 180px;
+  height: 28px;
   padding: 5px 10px;
   border: 0.5px solid rgba(0, 0, 0, 0.12);
   border-radius: 6px;
@@ -5910,6 +5984,12 @@ body {
   cursor: text;
 }
 
+.ddh-setting-row .setting-input.compact {
+  min-width: 180px;
+  height: 28px;
+  font-size: 12px;
+}
+
 .ddh-setting-row input.editable:focus,
 .ddh-setting-row select:focus {
   border-color: var(--ink);
@@ -5925,6 +6005,12 @@ body {
 
 .ddh-setting-row em.enabled {
   color: #1e7a3e;
+  font-weight: 600;
+}
+
+.ddh-setting-row em.pending,
+.settings-connection-row em.pending {
+  color: #a06a08;
   font-weight: 600;
 }
 
