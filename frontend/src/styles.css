@@ -3289,7 +3289,7 @@ input {
   display: grid;
   grid-template-columns: minmax(0, 1.7fr) minmax(320px, 0.95fr);
   gap: 16px;
-  align-items: start;
+  align-items: stretch;
   padding: 18px 0 20px;
 }
 
@@ -4922,7 +4922,13 @@ body {
 }
 
 .client-profile-card {
-  align-self: start;
+  align-self: stretch;
+  height: 100%;
+}
+
+.client-detail-grid .detail-right,
+.client-detail-grid .detail-history-card {
+  height: 100%;
 }
 
 .client-profile-card .detail-bigtext {
@@ -4963,6 +4969,21 @@ body {
   color: #6b6b66;
   font-size: 12.5px;
   line-height: 1.45;
+}
+
+.client-editor {
+  margin-top: 0;
+}
+
+.client-tax-chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 12px;
+}
+
+.client-tax-chip-row button {
+  cursor: pointer;
 }
 
 .detail-right {

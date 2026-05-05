@@ -476,6 +476,9 @@ type ImportApplyResult = {
   mergedClientNames: string[];
 };
 
+const ENTITY_TYPE_OPTIONS: EntityType[] = ["LLC", "S-Corp", "C-Corp", "Partnership", "Sole Proprietorship", "Professional Corp"];
+const TAX_TYPE_OPTIONS: TaxType[] = ["Federal income", "State income", "Sales/Use", "Property", "Payroll (941)", "Franchise", "Excise", "PTE election"];
+
 function ChangeBadge({ kind = "changed" }: { kind?: "new" | "changed" }) {
   return <span className={`badge-pill ${kind === "new" ? "green" : "blue"} thin`}>{kind === "new" ? "New" : "Changed"}</span>;
 }
@@ -1741,6 +1744,30 @@ export function ClientsSection({ onExport, onNotify, importLaunchToken = 0, dead
           changedDeadlineIds={changedDeadlineIds}
           onBack={() => setSelectedClientId(null)}
           onExport={onExport}
+          onNotify={onNotify}
+          onUpdateClient={(clientId, nextClient) => {
+            setRecords((current) =>
+              current.map((entry) =>
+                entry.client.id === clientId
+                  ? {
+                      ...entry,
+                      client: nextClient,
+                      activity: [
+                        {
+                          id: `act-client-edit-${clientId}-${Date.now()}`,
+                          when: "Just now",
+                          actor: "Maya Chen",
+                          action: "updated client profile",
+                          detail: `Updated ${nextClient.name} profile fields.`,
+                          category: "import"
+                        },
+                        ...entry.activity
+                      ]
+                    }
+                  : entry
+              )
+            );
+          }}
         />
       );
     }
@@ -2539,12 +2566,16 @@ function ClientDetailSurface({
   record,
   changedDeadlineIds,
   onBack,
-  onExport
+  onExport,
+  onNotify,
+  onUpdateClient
 }: {
   record: ClientRecord;
   changedDeadlineIds: string[];
   onBack: () => void;
   onExport?: (scope: string, format: "csv" | "pdf") => void;
+  onNotify?: (text: string, tone?: "green" | "blue" | "gold" | "red") => void;
+  onUpdateClient?: (clientId: string, nextClient: MockClient) => void;
 }) {
   const { client, deadlines, blockers, reminders, activity: recentActivity } = record;
   const extensionDeadlines = deadlines.filter((deadline) => deadline.extension_status);
@@ -2552,6 +2583,16 @@ function ClientDetailSurface({
   const nextDeadline = deadlines[0] || null;
   const latestActivity = recentActivity[0] || null;
   const [exportOpen, setExportOpen] = useState(false);
+  const [editingClient, setEditingClient] = useState(false);
+  const [clientDraft, setClientDraft] = useState({
+    name: client.name,
+    entityType: client.entity_type,
+    states: client.states.join(", "),
+    contactName: client.primary_contact_name,
+    contactEmail: client.primary_contact_email,
+    taxes: client.applicable_taxes.join(", "),
+    notes: client.notes || ""
+  });
   const exportRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -2564,6 +2605,49 @@ function ClientDetailSurface({
     document.addEventListener("mousedown", handlePointerDown);
     return () => document.removeEventListener("mousedown", handlePointerDown);
   }, []);
+
+  useEffect(() => {
+    setEditingClient(false);
+    setClientDraft({
+      name: client.name,
+      entityType: client.entity_type,
+      states: client.states.join(", "),
+      contactName: client.primary_contact_name,
+      contactEmail: client.primary_contact_email,
+      taxes: client.applicable_taxes.join(", "),
+      notes: client.notes || ""
+    });
+  }, [client.id]);
+
+  function resetClientDraft() {
+    setClientDraft({
+      name: client.name,
+      entityType: client.entity_type,
+      states: client.states.join(", "),
+      contactName: client.primary_contact_name,
+      contactEmail: client.primary_contact_email,
+      taxes: client.applicable_taxes.join(", "),
+      notes: client.notes || ""
+    });
+  }
+
+  function saveClientDraft() {
+    const nextTaxes = normalizeTaxes(clientDraft.taxes);
+    const nextStates = normalizeStates(clientDraft.states);
+    const nextClient: MockClient = {
+      ...client,
+      name: clientDraft.name.trim() || client.name,
+      entity_type: clientDraft.entityType as EntityType,
+      states: nextStates.length ? nextStates : client.states,
+      primary_contact_name: clientDraft.contactName.trim() || client.primary_contact_name,
+      primary_contact_email: clientDraft.contactEmail.trim() || client.primary_contact_email,
+      applicable_taxes: nextTaxes.length ? nextTaxes : client.applicable_taxes,
+      notes: clientDraft.notes.trim()
+    };
+    onUpdateClient?.(client.id, nextClient);
+    setEditingClient(false);
+    onNotify?.(`Updated ${nextClient.name} profile.`, "blue");
+  }
 
   return (
     <section className="ddh-work-detail client-detail-lite">
@@ -2579,6 +2663,20 @@ function ClientDetailSurface({
           <p>Review the client profile, derived deadlines, blockers, extensions, and reminders in one place.</p>
         </div>
         <div className="detail-actions">
+          <button
+            type="button"
+            className="ddh-btn"
+            onClick={() => {
+              if (editingClient) {
+                resetClientDraft();
+                setEditingClient(false);
+                return;
+              }
+              setEditingClient(true);
+            }}
+          >
+            {editingClient ? "Cancel edit" : "Edit client"}
+          </button>
           <div className="filter-popover-wrap export-menu-wrap" ref={exportRef}>
             <button
               type="button"
@@ -2621,15 +2719,134 @@ function ClientDetailSurface({
       <div className="detail-grid client-detail-grid">
         <article className="detail-card client-profile-card">
           <div className="detail-card-lbl">Client</div>
-          <div className="detail-bigtext">{client.entity_type} · {client.states.join(", ")}</div>
-          <div className="detail-date">{client.primary_contact_name} · {client.primary_contact_email}</div>
-          <div className="detail-fields">
-            <div className="df"><span>Taxes</span><strong>{client.applicable_taxes.slice(0, 3).join(" · ")}{client.applicable_taxes.length > 3 ? ` +${client.applicable_taxes.length - 3}` : ""}</strong></div>
-            <div className="df"><span>Next due</span><strong>{nextDeadline ? `${nextDeadline.due_label} · ${formatDaysRemaining(nextDeadline)}` : "No deadlines"}</strong></div>
-            <div className="df"><span>Open blockers</span><strong>{blockers.length}</strong></div>
-            <div className="df"><span>Extensions</span><strong>{extensionDeadlines.length}</strong></div>
-          </div>
-          {client.notes ? <p className="client-note-strip">{client.notes}</p> : null}
+          {editingClient ? (
+            <div className="detail-editor client-editor">
+              <div className="detail-editor-grid">
+                <label>
+                  <span>Client name</span>
+                  <input
+                    className="setting-input"
+                    value={clientDraft.name}
+                    onChange={(event) => setClientDraft((current) => ({ ...current, name: event.target.value }))}
+                  />
+                </label>
+                <label>
+                  <span>Entity type</span>
+                  <select
+                    className="setting-input"
+                    value={clientDraft.entityType}
+                    onChange={(event) => setClientDraft((current) => ({ ...current, entityType: event.target.value as EntityType }))}
+                  >
+                    {ENTITY_TYPE_OPTIONS.map((option) => (
+                      <option key={option} value={option}>{option}</option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  <span>States</span>
+                  <input
+                    className="setting-input"
+                    value={clientDraft.states}
+                    onChange={(event) => setClientDraft((current) => ({ ...current, states: event.target.value }))}
+                  />
+                </label>
+                <label>
+                  <span>Contact name</span>
+                  <input
+                    className="setting-input"
+                    value={clientDraft.contactName}
+                    onChange={(event) => setClientDraft((current) => ({ ...current, contactName: event.target.value }))}
+                  />
+                </label>
+                <label>
+                  <span>Contact email</span>
+                  <input
+                    className="setting-input"
+                    value={clientDraft.contactEmail}
+                    onChange={(event) => setClientDraft((current) => ({ ...current, contactEmail: event.target.value }))}
+                  />
+                </label>
+                <label>
+                  <span>Tax scope</span>
+                  <select
+                    className="setting-input"
+                    value=""
+                    onChange={(event) => {
+                      const nextTax = event.target.value as TaxType;
+                      if (!nextTax) return;
+                      setClientDraft((current) => {
+                        const currentTaxes = normalizeTaxes(current.taxes);
+                        const nextTaxes = currentTaxes.includes(nextTax)
+                          ? currentTaxes.filter((tax) => tax !== nextTax)
+                          : [...currentTaxes, nextTax];
+                        return { ...current, taxes: nextTaxes.join(", ") };
+                      });
+                    }}
+                  >
+                    <option value="">Add or remove tax type</option>
+                    {TAX_TYPE_OPTIONS.map((option) => (
+                      <option key={option} value={option}>
+                        {normalizeTaxes(clientDraft.taxes).includes(option) ? "Remove" : "Add"} {option}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+              <div className="client-tax-chip-row">
+                {normalizeTaxes(clientDraft.taxes).map((tax) => (
+                  <button
+                    type="button"
+                    key={tax}
+                    className="badge-pill blue thin"
+                    onClick={() =>
+                      setClientDraft((current) => ({
+                        ...current,
+                        taxes: normalizeTaxes(current.taxes).filter((item) => item !== tax).join(", ")
+                      }))
+                    }
+                  >
+                    {tax} ×
+                  </button>
+                ))}
+              </div>
+              <label className="detail-editor-block">
+                <span>Notes</span>
+                <textarea
+                  className="setting-input detail-editor-textarea"
+                  value={clientDraft.notes}
+                  rows={3}
+                  onChange={(event) => setClientDraft((current) => ({ ...current, notes: event.target.value }))}
+                />
+              </label>
+              <div className="detail-editor-actions">
+                <button
+                  type="button"
+                  className="ddh-btn"
+                  onClick={() => {
+                    resetClientDraft();
+                    setEditingClient(false);
+                  }}
+                >
+                  Cancel
+                </button>
+                <button type="button" className="ddh-btn ddh-btn-primary" onClick={saveClientDraft}>
+                  Save client
+                </button>
+              </div>
+            </div>
+          ) : (
+            <>
+              <div className="detail-bigtext">{client.entity_type} · {client.states.join(", ")}</div>
+              <div className="detail-date">{client.primary_contact_name} · {client.primary_contact_email}</div>
+              <div className="detail-fields">
+                <div className="df"><span>Taxes</span><strong>{client.applicable_taxes.slice(0, 3).join(" · ")}{client.applicable_taxes.length > 3 ? ` +${client.applicable_taxes.length - 3}` : ""}</strong></div>
+                <div className="df"><span>Next due</span><strong>{nextDeadline ? `${nextDeadline.due_label} · ${formatDaysRemaining(nextDeadline)}` : "No deadlines"}</strong></div>
+                <div className="df"><span>Open blockers</span><strong>{blockers.length}</strong></div>
+                <div className="df"><span>Extensions</span><strong>{extensionDeadlines.length}</strong></div>
+              </div>
+              {client.notes ? <p className="client-note-strip">{client.notes}</p> : null}
+            </>
+          )}
         </article>
 
         <aside className="detail-right">
