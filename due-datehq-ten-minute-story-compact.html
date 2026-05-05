@@ -84,6 +84,21 @@
       font-size: 13px;
     }
 
+    .lang-toggle {
+      min-height: 30px;
+      padding: 4px 12px;
+      border: 1px solid rgba(255, 255, 255, 0.26);
+      border-radius: 999px;
+      color: #fff;
+      background: rgba(255, 255, 255, 0.08);
+      cursor: pointer;
+    }
+
+    .lang-toggle:hover {
+      border-color: rgba(255, 255, 255, 0.52);
+      background: rgba(255, 255, 255, 0.14);
+    }
+
     .pill {
       display: inline-flex;
       align-items: center;
@@ -837,6 +852,7 @@
         <span>DueDateHQ 十分钟展示故事</span>
       </div>
       <div class="top-meta">
+        <button id="lang-toggle" class="lang-toggle" type="button">EN</button>
         <span class="pill">10 minutes</span>
         <span class="pill">Demo Day compact</span>
       </div>
@@ -969,6 +985,29 @@
       </article>
 
       <article class="slide">
+        <p class="eyebrow">未来期待</p>
+        <h2>同一个 CPA 用户基础，可以转出三个飞轮。</h2>
+        <div class="grid-3">
+          <div class="card dark">
+            <span class="number">1</span>
+            <h3>规则库飞轮</h3>
+            <p>用户越多，官方规则变化被更多真实客户组合验证，规则库越准。</p>
+          </div>
+          <div class="card dark">
+            <span class="number">2</span>
+            <h3>意图飞轮</h3>
+            <p>CPA 的高频表达会收敛成 Intent Library，Ask 越用越快、越便宜。</p>
+          </div>
+          <div class="card dark">
+            <span class="number">3</span>
+            <h3>数据飞轮</h3>
+            <p>客户画像、deadline、状态和审计记录越完整，产品越难被替代。</p>
+          </div>
+        </div>
+        <p class="lead compact">今天 demo 的是第一个 wedge：deadline intelligence。长期目标是成为 deadline-heavy CPA practice 的 operating layer。</p>
+      </article>
+
+      <article class="slide">
         <p class="eyebrow">收尾</p>
         <h2>DueDateHQ 保护的，是 CPA 的判断力。</h2>
         <p class="lead">一个 CPA 最有价值的东西，从来不是她记住了多少截止日期，而是她对客户情况的理解和判断。</p>
@@ -983,7 +1022,7 @@
       <div class="progress" aria-hidden="true"><span id="progress-bar"></span></div>
       <div class="controls">
         <button id="prev" aria-label="上一页">←</button>
-        <div class="slide-count" id="slide-count">1 / 11</div>
+        <div class="slide-count" id="slide-count">1 / 12</div>
         <button id="next" aria-label="下一页">→</button>
       </div>
     </footer>
@@ -995,7 +1034,64 @@
     const slideCount = document.getElementById("slide-count");
     const prevButton = document.getElementById("prev");
     const nextButton = document.getElementById("next");
+    const langToggle = document.getElementById("lang-toggle");
     let current = 0;
+    let currentLang = localStorage.getItem("duedatehq-compact-lang") || "zh";
+
+    const translations = {
+      "把 CPA 从截止日期里解放出来。": "Free CPAs from deadline tracking.",
+      "同一个 CPA 用户基础，可以转出三个飞轮。": "One CPA user base can compound into three flywheels.",
+      "规则库飞轮": "Rule library flywheel",
+      "意图飞轮": "Intent flywheel",
+      "数据飞轮": "Data flywheel",
+      "今天 demo 的是第一个 wedge：deadline intelligence。长期目标是成为 deadline-heavy CPA practice 的 operating layer。": "Today’s demo shows the first wedge: deadline intelligence. The long-term goal is to become the operating layer for deadline-heavy CPA practices.",
+      "收尾": "Close",
+      "未来期待": "Future",
+      "开场": "Opening",
+      "客户痛点": "Customer pain",
+      "现有工具": "Current tools",
+      "为什么是 AI": "Why AI",
+      "产品演示 1": "Product demo 1",
+      "产品演示 2": "Product demo 2",
+      "产品演示 3": "Product demo 3",
+      "当前完成度": "Current status"
+    };
+
+    function normalizeText(value) {
+      return String(value || "").replace(/\s+/g, " ").trim();
+    }
+
+    function collectTextNodes(root) {
+      const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+        acceptNode(node) {
+          const parent = node.parentElement;
+          if (!parent || ["SCRIPT", "STYLE"].includes(parent.tagName)) return NodeFilter.FILTER_REJECT;
+          if (!normalizeText(node.nodeValue)) return NodeFilter.FILTER_REJECT;
+          return NodeFilter.FILTER_ACCEPT;
+        }
+      });
+      const nodes = [];
+      while (walker.nextNode()) nodes.push(walker.currentNode);
+      return nodes;
+    }
+
+    function applyLanguage(lang) {
+      currentLang = lang;
+      localStorage.setItem("duedatehq-compact-lang", lang);
+      document.documentElement.lang = lang === "en" ? "en" : "zh-CN";
+      collectTextNodes(document.body).forEach((node) => {
+        if (!node.__cnText) node.__cnText = node.nodeValue;
+        const key = normalizeText(node.__cnText);
+        const translated = translations[key];
+        if (lang === "en" && translated) {
+          node.nodeValue = node.__cnText.replace(node.__cnText.trim(), translated);
+        } else {
+          node.nodeValue = node.__cnText;
+        }
+      });
+      if (langToggle) langToggle.textContent = lang === "en" ? "中文" : "EN";
+      showSlide(current);
+    }
 
     function showSlide(index) {
       current = Math.max(0, Math.min(slides.length - 1, index));
@@ -1011,6 +1107,9 @@
 
     prevButton.addEventListener("click", () => showSlide(current - 1));
     nextButton.addEventListener("click", () => showSlide(current + 1));
+    langToggle?.addEventListener("click", () => {
+      applyLanguage(currentLang === "en" ? "zh" : "en");
+    });
 
     window.addEventListener("keydown", (event) => {
       if (event.key === "ArrowRight" || event.key === "PageDown" || event.key === " ") {
@@ -1025,7 +1124,7 @@
       if (event.key === "End") showSlide(slides.length - 1);
     });
 
-    showSlide(0);
+    applyLanguage(currentLang === "en" ? "en" : "zh");
   </script>
 </body>
 </html>
