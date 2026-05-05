@@ -4258,7 +4258,7 @@ body {
 }
 
 .docs-panel {
-  width: min(920px, calc(100vw - 48px));
+  width: min(1040px, calc(100vw - 48px));
   max-height: min(760px, calc(100vh - 48px));
   overflow: auto;
   border: 1px solid rgba(0, 0, 0, 0.08);
@@ -4299,11 +4299,27 @@ body {
 }
 
 .docs-card {
-  min-height: 170px;
+  min-height: 168px;
   padding: 16px 17px;
   border: 1px solid rgba(0, 0, 0, 0.08);
   border-radius: 14px;
   background: #ffffff;
+}
+
+.docs-card.docs-wide {
+  grid-column: 1 / -1;
+  min-height: auto;
+}
+
+.docs-kicker {
+  display: block;
+  margin-bottom: 7px;
+  color: #8d8a84;
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
 }
 
 .docs-card h3 {
@@ -4322,6 +4338,15 @@ body {
 .docs-card ol {
   margin: 0;
   padding-left: 18px;
+}
+
+.docs-card ul {
+  margin: 0;
+  padding-left: 18px;
+}
+
+.docs-card li + li {
+  margin-top: 6px;
 }
 
 .docs-card code {

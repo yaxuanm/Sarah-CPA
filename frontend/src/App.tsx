@@ -642,7 +642,10 @@ export function App() {
               <div>
                 <div className="eyebrow">Docs</div>
                 <h2>DueDateHQ demo and CLI guide</h2>
-                <p>Use this as the quick reference for the current product demo, backend routes, and CLI workflow.</p>
+                <p>
+                  A compact operator guide for the current MVP: what to demo, what each screen means,
+                  where AI participates, and which backend routes support the flow.
+                </p>
               </div>
               <button type="button" className="chat-close" aria-label="Close docs" onClick={() => setDocsOpen(false)}>
                 ×
@@ -650,38 +653,86 @@ export function App() {
             </div>
 
             <div className="docs-grid">
+              <article className="docs-card docs-wide">
+                <span className="docs-kicker">Product frame</span>
+                <h3>What DueDateHQ is</h3>
+                <p>
+                  DueDateHQ is a CPA practice-management dashboard for tax deadlines. It does not prepare or file returns.
+                  It helps the CPA import a client portfolio, derive deadline work, monitor official rule changes,
+                  decide what needs attention this week, and document follow-up actions.
+                </p>
+                <p>
+                  The smallest operational unit is a work item: client, tax type, jurisdiction, due date,
+                  status, assignee, source, reminders, blocker, extension state, and activity history.
+                </p>
+              </article>
+
               <article className="docs-card">
-                <h3>Demo story</h3>
+                <span className="docs-kicker">5-minute demo</span>
+                <h3>Run of show</h3>
                 <ol>
-                  <li>Import a client portfolio, confirm mappings, review generated work plan.</li>
-                  <li>Open Work queue, triage Work now / Blocked / Needs review / Archive.</li>
-                  <li>Review official rule changes, inspect affected clients, apply or dismiss.</li>
+                  <li><strong>Import:</strong> upload CSV, map columns, review rows, create or update clients.</li>
+                  <li><strong>Weekly triage:</strong> open Work, check Work now / Blocked / Needs review / Archive.</li>
+                  <li><strong>Rule change:</strong> open Review, inspect source and affected clients, apply or dismiss.</li>
                 </ol>
               </article>
 
               <article className="docs-card">
-                <h3>CLI basics</h3>
-                <code>uv run python -m duedatehq.cli --help</code>
+                <span className="docs-kicker">Screen logic</span>
+                <h3>Where to look</h3>
+                <ul>
+                  <li><strong>Work</strong> is the Monday triage queue: active work, blocked items, review-driven work, and archive.</li>
+                  <li><strong>Clients</strong> is the portfolio directory: profile, derived deadlines, blockers, reminders, and recent activity.</li>
+                  <li><strong>Review</strong> is the official-change queue: source, diff, affected clients, apply/dismiss decision.</li>
+                  <li><strong>Settings</strong> holds editable defaults and reminder channels, not operational status history.</li>
+                </ul>
+              </article>
+
+              <article className="docs-card">
+                <span className="docs-kicker">State model</span>
+                <h3>Work item flow</h3>
+                <ul>
+                  <li><strong>Active</strong> means the CPA can work on it now.</li>
+                  <li><strong>Blocked</strong> means a client document, confirmation, or profile detail is missing.</li>
+                  <li><strong>Needs review</strong> means a rule or notice needs a CPA decision before it changes work.</li>
+                  <li><strong>Extension approved</strong> means an extension was filed and can be revoked in demo.</li>
+                  <li><strong>Archived</strong> means the work was handled and removed from the active queue.</li>
+                </ul>
+              </article>
+
+              <article className="docs-card">
+                <span className="docs-kicker">AI assist</span>
+                <h3>Where AI participates</h3>
+                <ul>
+                  <li><strong>Import mapping:</strong> infer CSV fields and explain rows that need attention.</li>
+                  <li><strong>Policy interpretation:</strong> summarize official source text and identify affected clients.</li>
+                  <li><strong>Client follow-up:</strong> draft an email from the selected work item, blocker, contact, and due date.</li>
+                </ul>
+                <p>AI is intentionally lightweight in the UI: show it only at moments where it transforms messy input into structured work.</p>
+              </article>
+
+              <article className="docs-card">
+                <span className="docs-kicker">Backend demo APIs</span>
+                <h3>Routes to verify</h3>
+                <code>POST /import/preview</code>
+                <code>POST /review/interpret/&lt;tenant_id&gt;</code>
+                <code>GET /review/impact/&lt;tenant_id&gt;</code>
+                <code>POST /clients/&lt;tenant_id&gt;/&lt;client_id&gt;/email/draft</code>
+                <code>PATCH /settings/&lt;tenant_id&gt;/notification-routes/&lt;route_id&gt;</code>
+              </article>
+
+              <article className="docs-card docs-wide">
+                <span className="docs-kicker">Local commands</span>
+                <h3>Operator checklist</h3>
+                <code>cd frontend && VITE_DUEDATEHQ_API_BASE=http://127.0.0.1:8000 npm run dev</code>
+                <code>uv run --with fastapi --with uvicorn uvicorn duedatehq.http_api:create_fastapi_app --factory --reload --port 8000</code>
+                <code>uv run python scripts/seed_small_demo.py</code>
                 <code>uv run python -m duedatehq.cli import preview demo-data/due-datehq-demo-import.csv</code>
-                <code>uv run python -m duedatehq.cli notify config add &lt;tenant_id&gt; --channel email --destination ops@example.com</code>
-              </article>
-
-              <article className="docs-card">
-                <h3>Backend demo APIs</h3>
-                <p><strong>Import preview</strong> parses CSV text and supports manual mapping overrides.</p>
-                <p><strong>Policy interpret</strong> extracts source fields and affected clients from CA/TX/NY style official updates.</p>
-                <p><strong>Email draft</strong> generates a client follow-up from a deadline or task context, then queues delivery.</p>
-              </article>
-
-              <article className="docs-card">
-                <h3>AI and reminder status</h3>
-                <p>AI assist uses Anthropic when an API key is configured; otherwise the backend uses deterministic fallback through the same API path.</p>
-                <p>CPA reminders support Email and WeChat routes in settings. Demo delivery can be queued without sending to real users.</p>
               </article>
             </div>
 
             <div className="docs-foot">
-              Full GitHub docs: <code>docs/demo-operator-guide.md</code>, <code>docs/cli-reference.md</code>, and <code>handoff/redesign-v2-handoff.md</code>.
+              Full repo docs: <code>docs/demo-operator-guide.md</code>, <code>docs/duedatehq-prd.md</code>, <code>docs/cli-reference.md</code>, and <code>handoff/redesign-v2-handoff.md</code>.
             </div>
           </section>
         </div>
