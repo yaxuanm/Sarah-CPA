@@ -1,0 +1,967 @@
+<!DOCTYPE html>
+<!-- droploft:forked-from:slug=gv8rm3 -->
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DueDateHQ — 用户故事与价值主张画布</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght,ital@9..144,400;9..144,500;9..144,600;9..144,700;9..144,400,1&family=Inter+Tight:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg:        #fafaf7;
+    --paper:     #ffffff;
+    --cream:     #f4f2ec;
+    --ink:       #15140f;
+    --ink-2:     #3a3630;
+    --slate:     #5a554a;
+    --muted:     #8a8478;
+    --muted-2:   #b8b3a6;
+    --rule:      #e8e3d6;
+
+    --gold:      #b8943f;
+    --gold-bg:   #fbf6ec;
+
+    /* AI accent — used for "AI/LLM solvable" markers */
+    --ai:        #5b4a8a;
+    --ai-bg:     #f3f0fa;
+    --ai-line:   #d4c9ec;
+
+    --pain:      #b91c1c;
+    --pain-bg:   #fdf2f0;
+    --gain:      #4a6b3e;
+    --gain-bg:   #f1f4ed;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    font-family: 'Inter Tight', -apple-system, sans-serif;
+    font-size: 15px;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* Subtle paper texture */
+  body::before {
+    content: '';
+    position: fixed; inset: 0; pointer-events: none; z-index: 0;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='200' height='200' filter='url(%23n)' opacity='0.025'/%3E%3C/svg%3E");
+  }
+
+  .wrap { max-width: 1180px; margin: 0 auto; padding: 0 32px; position: relative; z-index: 1; }
+
+  /* ─────── HEADER ─────── */
+  .doc-header {
+    padding: 56px 0 40px;
+    border-bottom: 1px solid var(--rule);
+    margin-bottom: 56px;
+  }
+  .doc-meta {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 24px;
+  }
+  .doc-meta-tag {
+    background: var(--cream);
+    padding: 4px 10px;
+    border-radius: 4px;
+    color: var(--ink-2);
+    border: 1px solid var(--rule);
+  }
+  .doc-meta-sep {
+    width: 4px; height: 4px;
+    background: var(--muted-2);
+    border-radius: 50%;
+  }
+
+  .doc-title {
+    font-family: 'Fraunces', serif;
+    font-size: clamp(2.2rem, 4.5vw, 3.4rem);
+    font-weight: 600;
+    letter-spacing: -0.025em;
+    line-height: 1.05;
+    color: var(--ink);
+    margin-bottom: 14px;
+  }
+  .doc-title em { font-style: italic; color: var(--gold); font-weight: 500; }
+
+  .doc-sub {
+    font-size: 17px;
+    color: var(--slate);
+    max-width: 640px;
+    line-height: 1.55;
+  }
+
+  .doc-info {
+    display: flex;
+    gap: 36px;
+    margin-top: 32px;
+    padding-top: 24px;
+    border-top: 1px solid var(--rule);
+    flex-wrap: wrap;
+  }
+  .doc-info-item .label {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 4px;
+  }
+  .doc-info-item .value {
+    font-family: 'Fraunces', serif;
+    font-size: 15px;
+    font-weight: 500;
+    color: var(--ink);
+  }
+
+  /* ─────── SECTIONS ─────── */
+  section { margin-bottom: 80px; }
+
+  .section-head {
+    display: flex;
+    align-items: baseline;
+    gap: 14px;
+    margin-bottom: 36px;
+  }
+  .section-num {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    color: var(--gold);
+    letter-spacing: 0.12em;
+    min-width: 32px;
+  }
+  .section-title {
+    font-family: 'Fraunces', serif;
+    font-size: 2rem;
+    font-weight: 600;
+    letter-spacing: -0.02em;
+    color: var(--ink);
+    border-bottom: 2px solid var(--gold);
+    padding-bottom: 6px;
+    flex: 1;
+  }
+  .section-intro {
+    font-size: 15px;
+    color: var(--slate);
+    margin-bottom: 32px;
+    max-width: 780px;
+  }
+
+  /* ─────── USER STORIES ─────── */
+  .stories {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 24px;
+  }
+
+  .story {
+    background: var(--paper);
+    border: 1px solid var(--rule);
+    border-radius: 10px;
+    overflow: hidden;
+    transition: box-shadow 0.2s ease;
+  }
+  .story:hover { box-shadow: 0 8px 24px -12px rgba(20,18,14,0.08); }
+
+  .story-head {
+    display: grid;
+    grid-template-columns: 80px 1fr auto;
+    gap: 24px;
+    align-items: center;
+    padding: 22px 28px;
+    border-bottom: 1px solid var(--rule);
+    background: var(--cream);
+  }
+
+  .story-num {
+    font-family: 'Fraunces', serif;
+    font-style: italic;
+    font-size: 48px;
+    color: var(--gold);
+    line-height: 1;
+    font-weight: 400;
+  }
+
+  .story-title {
+    font-family: 'Fraunces', serif;
+    font-size: 22px;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    color: var(--ink);
+    margin-bottom: 4px;
+  }
+  .story-persona {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+
+  .story-priority {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    padding: 6px 12px;
+    border-radius: 4px;
+    background: var(--paper);
+    border: 1px solid var(--rule);
+    color: var(--ink-2);
+    font-weight: 600;
+  }
+  .story-priority.p0 { background: #fef2f2; color: var(--pain); border-color: #fecaca; }
+  .story-priority.p1 { background: var(--gold-bg); color: var(--gold); border-color: #ecd9ad; }
+  .story-priority.p2 { background: var(--gain-bg); color: var(--gain); border-color: #c8d4be; }
+
+  .story-body {
+    padding: 28px;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 32px;
+  }
+
+  @media (max-width: 800px) {
+    .story-body { grid-template-columns: 1fr; }
+    .story-head { grid-template-columns: 60px 1fr; }
+    .story-priority { grid-column: 2; justify-self: start; margin-top: 8px; }
+  }
+
+  .story-narrative {
+    font-size: 15px;
+    color: var(--slate);
+    line-height: 1.7;
+    padding-right: 24px;
+    border-right: 1px solid var(--rule);
+  }
+  .story-narrative .quote {
+    font-family: 'Fraunces', serif;
+    font-style: italic;
+    font-size: 16px;
+    color: var(--ink-2);
+    padding: 14px 0 14px 16px;
+    border-left: 2px solid var(--gold);
+    margin: 14px 0;
+    line-height: 1.55;
+  }
+
+  .story-meta h4 {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 12px;
+    margin-top: 0;
+  }
+  .story-meta h4:not(:first-child) { margin-top: 22px; }
+
+  .ac-list { list-style: none; }
+  .ac-list li {
+    font-size: 14px;
+    color: var(--ink-2);
+    padding: 6px 0 6px 22px;
+    position: relative;
+    line-height: 1.5;
+  }
+  .ac-list li::before {
+    content: '';
+    position: absolute;
+    left: 0; top: 11px;
+    width: 12px; height: 12px;
+    border: 1.5px solid var(--muted-2);
+    border-radius: 3px;
+  }
+
+  .tags { display: flex; flex-wrap: wrap; gap: 6px; }
+  .tag {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10.5px;
+    letter-spacing: 0.04em;
+    padding: 3px 8px;
+    border-radius: 4px;
+    background: var(--cream);
+    color: var(--ink-2);
+    border: 1px solid var(--rule);
+  }
+  .tag.ai {
+    background: var(--ai-bg);
+    color: var(--ai);
+    border-color: var(--ai-line);
+  }
+
+  /* ─────── VPC LEGEND ─────── */
+  .legend {
+    display: flex;
+    gap: 20px;
+    flex-wrap: wrap;
+    padding: 14px 18px;
+    background: var(--paper);
+    border: 1px solid var(--rule);
+    border-radius: 8px;
+    margin-bottom: 24px;
+    font-size: 12.5px;
+    color: var(--ink-2);
+  }
+  .legend-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .legend-marker {
+    width: 14px; height: 14px;
+    border-radius: 3px;
+    border: 1px solid var(--rule);
+  }
+  .legend-marker.ai {
+    background: var(--ai-bg);
+    border-color: var(--ai-line);
+    position: relative;
+  }
+  .legend-marker.ai::after {
+    content: '✦';
+    position: absolute;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    color: var(--ai);
+    font-size: 9px;
+    line-height: 1;
+  }
+
+  /* ─────── VALUE PROPOSITION CANVAS ─────── */
+  .vpc {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 24px;
+    margin-top: 8px;
+  }
+
+  @media (max-width: 900px) {
+    .vpc { grid-template-columns: 1fr; }
+  }
+
+  .vpc-side {
+    background: var(--paper);
+    border: 1px solid var(--rule);
+    border-radius: 12px;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .vpc-side-head {
+    padding: 20px 24px;
+    border-bottom: 1px solid var(--rule);
+    background: var(--cream);
+  }
+  .vpc-side-head .eyebrow {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 4px;
+  }
+  .vpc-side-head .name {
+    font-family: 'Fraunces', serif;
+    font-size: 20px;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    color: var(--ink);
+  }
+  .vpc-side-head .name em { font-style: italic; color: var(--gold); }
+
+  .vpc-block { padding: 22px 24px; border-bottom: 1px solid var(--rule); }
+  .vpc-block:last-child { border-bottom: none; flex: 1; }
+
+  .vpc-block-head {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 14px;
+  }
+  .vpc-block-icon {
+    width: 28px; height: 28px;
+    border-radius: 6px;
+    display: grid; place-items: center;
+    flex-shrink: 0;
+  }
+  .vpc-block-icon svg { width: 15px; height: 15px; }
+
+  .vpc-block-icon.jobs { background: var(--cream); color: var(--ink); }
+  .vpc-block-icon.pains { background: var(--pain-bg); color: var(--pain); }
+  .vpc-block-icon.gains { background: var(--gain-bg); color: var(--gain); }
+  .vpc-block-icon.products { background: var(--cream); color: var(--ink); }
+  .vpc-block-icon.relievers { background: var(--pain-bg); color: var(--pain); }
+  .vpc-block-icon.creators { background: var(--gain-bg); color: var(--gain); }
+
+  .vpc-block-title {
+    font-family: 'Fraunces', serif;
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--ink);
+  }
+  .vpc-block-sub {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-left: auto;
+  }
+
+  .vpc-list { list-style: none; }
+  .vpc-list li {
+    position: relative;
+    padding: 10px 12px 10px 28px;
+    font-size: 13.5px;
+    color: var(--ink-2);
+    line-height: 1.5;
+    border-radius: 6px;
+    margin-bottom: 4px;
+    transition: background 0.15s ease;
+  }
+  .vpc-list li:hover { background: var(--cream); }
+  .vpc-list li::before {
+    content: '';
+    position: absolute;
+    left: 12px; top: 17px;
+    width: 5px; height: 5px;
+    background: var(--muted-2);
+    border-radius: 50%;
+  }
+
+  /* AI-solvable item — distinctive treatment */
+  .vpc-list li.ai-solvable {
+    background: var(--ai-bg);
+    padding-right: 36px;
+    border: 1px solid var(--ai-line);
+    margin-bottom: 6px;
+  }
+  .vpc-list li.ai-solvable:hover { background: #ece6f7; }
+  .vpc-list li.ai-solvable::before { background: var(--ai); }
+  .vpc-list li.ai-solvable::after {
+    content: '✦';
+    position: absolute;
+    right: 12px; top: 9px;
+    width: 18px; height: 18px;
+    background: var(--ai);
+    color: #fff;
+    border-radius: 50%;
+    display: grid;
+    place-items: center;
+    font-size: 9px;
+    line-height: 1;
+  }
+  .vpc-list li.ai-solvable strong { color: var(--ai); font-weight: 600; }
+
+  .vpc-list li .severity {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 9.5px;
+    letter-spacing: 0.06em;
+    color: var(--muted);
+    margin-left: 6px;
+    padding: 1px 5px;
+    background: var(--paper);
+    border-radius: 3px;
+    border: 1px solid var(--rule);
+    vertical-align: 1px;
+  }
+  .vpc-list li .severity.high { color: var(--pain); border-color: #fecaca; background: var(--pain-bg); }
+  .vpc-list li .severity.med  { color: var(--gold); border-color: #ecd9ad; background: var(--gold-bg); }
+  .vpc-list li .severity.low  { color: var(--gain); border-color: #c8d4be; background: var(--gain-bg); }
+
+  /* ─────── FIT SUMMARY ─────── */
+  .fit {
+    margin-top: 40px;
+    padding: 28px 32px;
+    background: var(--paper);
+    border: 1px solid var(--rule);
+    border-left: 4px solid var(--ai);
+    border-radius: 10px;
+  }
+  .fit-head {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 16px;
+  }
+  .fit-eyebrow {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--ai);
+    font-weight: 600;
+  }
+  .fit-title {
+    font-family: 'Fraunces', serif;
+    font-size: 20px;
+    font-weight: 600;
+    color: var(--ink);
+    margin-bottom: 12px;
+  }
+  .fit p {
+    color: var(--slate);
+    font-size: 14.5px;
+    line-height: 1.7;
+    margin-bottom: 10px;
+  }
+  .fit p:last-child { margin-bottom: 0; }
+  .fit strong { color: var(--ink); font-weight: 600; }
+
+  .fit-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 16px;
+    margin-top: 18px;
+  }
+  @media (max-width: 700px) { .fit-grid { grid-template-columns: 1fr; } }
+
+  .fit-cell {
+    padding: 14px 16px;
+    background: var(--ai-bg);
+    border-radius: 8px;
+    border: 1px solid var(--ai-line);
+  }
+  .fit-cell .num {
+    font-family: 'Fraunces', serif;
+    font-size: 28px;
+    font-weight: 600;
+    color: var(--ai);
+    line-height: 1;
+    margin-bottom: 6px;
+  }
+  .fit-cell .lbl {
+    font-size: 12.5px;
+    color: var(--ink-2);
+    line-height: 1.4;
+  }
+
+  /* ─────── FOOTER ─────── */
+  footer {
+    margin-top: 80px;
+    padding: 32px 0 48px;
+    border-top: 1px solid var(--rule);
+    text-align: center;
+  }
+  .footer-mark {
+    font-family: 'Fraunces', serif;
+    font-size: 18px;
+    font-weight: 600;
+    color: var(--ink);
+    margin-bottom: 8px;
+    letter-spacing: -0.01em;
+  }
+  .footer-mark em { font-style: italic; color: var(--gold); }
+  .footer-author {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+  .footer-author span { color: var(--ink-2); }
+</style>
+<meta name="droploft:fork-origin" content="https://stage-a.droploft.ai/d/gv8rm3">
+</head>
+<body>
+
+<div class="wrap">
+
+  <!-- ═══════════════════ HEADER ═══════════════════ -->
+  <header class="doc-header">
+    <div class="doc-meta">
+      <span class="doc-meta-tag">Internal · Product Team</span>
+      <span class="doc-meta-sep"></span>
+      <span>v0.1 · Discovery</span>
+      <span class="doc-meta-sep"></span>
+      <span>Apr 2026</span>
+    </div>
+
+    <h1 class="doc-title">用户故事 与 <em>价值主张画布</em></h1>
+    <p class="doc-sub">
+      为 DueDateHQ 产品团队整理的需求基线文档。包含三个代表性用户故事，以及完整的 Strategyzer 价值主张画布。
+      标记为 <span style="color:var(--ai); font-weight:600;">✦ AI 可解决</span> 的项是产品技术杠杆点，应作为优先迭代方向。
+    </p>
+
+    <div class="doc-info">
+      <div class="doc-info-item">
+        <div class="label">产品</div>
+        <div class="value">DueDateHQ</div>
+      </div>
+      <div class="doc-info-item">
+        <div class="label">目标用户</div>
+        <div class="value">独立 CPA / 小型事务所</div>
+      </div>
+      <div class="doc-info-item">
+        <div class="label">读者</div>
+        <div class="value">Product · Engineering · Design</div>
+      </div>
+      <div class="doc-info-item">
+        <div class="label">状态</div>
+        <div class="value">Draft for review</div>
+      </div>
+    </div>
+  </header>
+
+  <!-- ═══════════════════ 01 · USER STORIES ═══════════════════ -->
+  <section>
+    <div class="section-head">
+      <span class="section-num">01</span>
+      <h2 class="section-title">用户故事</h2>
+    </div>
+    <p class="section-intro">
+      三个故事覆盖产品最核心的使用场景：日常分诊、新客户上手、税法变更响应。每个故事按 "As a... I want... So that..." 标准格式撰写，并附验收标准与相关功能标签。
+    </p>
+
+    <div class="stories">
+
+      <!-- STORY 1 -->
+      <article class="story">
+        <div class="story-head">
+          <div class="story-num">01</div>
+          <div>
+            <div class="story-title">申报季的每周分诊</div>
+            <div class="story-persona">PERSONA · 独立 CPA · 服务 80 客户 · 多州</div>
+          </div>
+          <div class="story-priority p0">P0 · CORE</div>
+        </div>
+
+        <div class="story-body">
+          <div class="story-narrative">
+            <p><strong>作为</strong> 一名服务 80 个客户的独立 CPA，<strong>我希望</strong> 在每周一早上 8 点打开电脑后的 30 秒内，看到本周内所有需要采取行动的截止日期，<strong>这样</strong> 我就能立即决定本周的工作优先级，而不需要在 Excel、Outlook 日历和手写笔记之间来回切换。</p>
+            <div class="quote">
+              "我现在花在'确认这周到底要做什么'上的时间，比真正做事的时间还多。"
+              <br>—— Sarah Mitchell, CPA · 用户访谈
+            </div>
+            <p>申报季（1–4 月）期间，单次决策延误可能导致客户错过申报，进而面临罚款。当前 Sarah 用 Excel 维护一张 200+ 行的截止日期表，每周一早上花 45 分钟筛选、排序、与日历交叉核对。</p>
+          </div>
+
+          <div class="story-meta">
+            <h4>验收标准</h4>
+            <ul class="ac-list">
+              <li>登录后默认看板按"本周到期 / 本月预警 / 长期计划"分组</li>
+              <li>本周到期项必须显示具体倒计时（精确到天）</li>
+              <li>支持按客户、州、表单类型快速筛选，&lt; 1 秒响应</li>
+              <li>每个截止日支持一键标记"已完成 / 已延期 / 进行中"</li>
+              <li>整个分诊流程应可在 5 分钟内完成（vs. 当前 45 分钟）</li>
+            </ul>
+            <h4>相关功能</h4>
+            <div class="tags">
+              <span class="tag">主看板</span>
+              <span class="tag">三级分组</span>
+              <span class="tag">状态管理</span>
+              <span class="tag">筛选器</span>
+              <span class="tag ai">✦ 智能优先级排序</span>
+            </div>
+          </div>
+        </div>
+      </article>
+
+      <!-- STORY 2 -->
+      <article class="story">
+        <div class="story-head">
+          <div class="story-num">02</div>
+          <div>
+            <div class="story-title">从 TaxDome 导入接管 30 个客户</div>
+            <div class="story-persona">PERSONA · 新签约 CPA · 从竞品迁移</div>
+          </div>
+          <div class="story-priority p0">P0 · CORE</div>
+        </div>
+
+        <div class="story-body">
+          <div class="story-narrative">
+            <p><strong>作为</strong> 一名刚从 TaxDome 切换过来的 CPA，<strong>我希望</strong> 在 30 分钟内完成 30 个客户的导入，并自动生成他们全年的截止日期日历，<strong>这样</strong> 我可以立即开始使用产品，而不需要花一整周手工录入数据。</p>
+            <div class="quote">
+              "我在试用过 4 款工具，每一款都让我手工填写客户的州、实体类型、税种…… 第三个客户我就放弃了。"
+              <br>—— David Park, CPA · 用户访谈
+            </div>
+            <p>这是试用转付费的关键转化漏斗。商业计划书承诺"30 分钟上手"，工程实现的核心难点是 CSV 字段映射（不同竞品导出格式各异）和实体类型自动识别。</p>
+          </div>
+
+          <div class="story-meta">
+            <h4>验收标准</h4>
+            <ul class="ac-list">
+              <li>支持 TaxDome / Drake / Karbon / QuickBooks 导出 CSV</li>
+              <li>系统自动识别字段映射（客户名、EIN、州、实体类型）</li>
+              <li>对模糊或缺失字段，提供智能建议而非阻塞性错误</li>
+              <li>导入后立即生成每个客户的全年截止日历，无需额外配置</li>
+              <li>P95 完成时间 ≤ 30 分钟（30 个客户基准）</li>
+            </ul>
+            <h4>相关功能</h4>
+            <div class="tags">
+              <span class="tag">CSV 导入</span>
+              <span class="tag">字段映射</span>
+              <span class="tag">日历自动生成</span>
+              <span class="tag ai">✦ 实体类型自动识别</span>
+              <span class="tag ai">✦ 字段智能匹配</span>
+            </div>
+          </div>
+        </div>
+      </article>
+
+      <!-- STORY 3 -->
+      <article class="story">
+        <div class="story-head">
+          <div class="story-num">03</div>
+          <div>
+            <div class="story-title">州税局突发延期通知 24 小时响应</div>
+            <div class="story-persona">PERSONA · 多州 CPA · 关注合规风险</div>
+          </div>
+          <div class="story-priority p1">P1 · DIFFERENTIATOR</div>
+        </div>
+
+        <div class="story-body">
+          <div class="story-narrative">
+            <p><strong>作为</strong> 一名服务多州客户的 CPA，<strong>我希望</strong> 在某州税局因自然灾害或政策变化发布延期公告后的 24 小时内，自动收到我所有受影响客户的清单，<strong>这样</strong> 我可以第一时间通知客户、调整工作计划，而不必每天浏览 50 个州税局网站。</p>
+            <div class="quote">
+              "去年 IRS 给加州 LA 县延期到 10 月，我是从一个客户的微信群里知道的。我事后才发现我有 6 个客户都符合条件。"
+              <br>—— Jennifer Wu, CPA · 用户访谈
+            </div>
+            <p>这是 DueDateHQ 相对于 File In Time 等竞品的核心差异化能力。无 AI 的话，需要专职团队 7×24 监控 50+ 政府网站；有 AI 后，可被 1-2 人维持。</p>
+          </div>
+
+          <div class="story-meta">
+            <h4>验收标准</h4>
+            <ul class="ac-list">
+              <li>系统在 24 小时内捕获各州税局官方公告</li>
+              <li>自动判定哪些客户受影响（基于州 + 县 + 实体类型 + 税种）</li>
+              <li>主看板顶部 banner 推送 + 邮件通知</li>
+              <li>提供"一键查看受影响客户"+"批量调整截止日"操作</li>
+              <li>每条公告附"官方来源链接"用于人工核验</li>
+            </ul>
+            <h4>相关功能</h4>
+            <div class="tags">
+              <span class="tag">实时公告 banner</span>
+              <span class="tag">受影响客户匹配</span>
+              <span class="tag">官方来源链接</span>
+              <span class="tag ai">✦ 公告自动监控</span>
+              <span class="tag ai">✦ 公告语义解读</span>
+              <span class="tag ai">✦ 影响范围识别</span>
+            </div>
+          </div>
+        </div>
+      </article>
+
+    </div>
+  </section>
+
+  <!-- ═══════════════════ 02 · VALUE PROPOSITION CANVAS ═══════════════════ -->
+  <section>
+    <div class="section-head">
+      <span class="section-num">02</span>
+      <h2 class="section-title">价值主张画布</h2>
+    </div>
+    <p class="section-intro">
+      基于 Strategyzer 的标准 VPC 框架，左侧为客户档案（Customer Profile），右侧为价值地图（Value Map）。
+      标记 ✦ 的项目代表 AI/LLM 技术能够直接解决或显著优化的问题，是产品的核心技术杠杆。
+    </p>
+
+    <div class="legend">
+      <div class="legend-item">
+        <div class="legend-marker" style="background:var(--cream);"></div>
+        <span>常规功能项（工程实现）</span>
+      </div>
+      <div class="legend-item">
+        <div class="legend-marker ai"></div>
+        <span><strong style="color:var(--ai);">AI / LLM 可解决项</strong> — 优先迭代方向</span>
+      </div>
+      <div class="legend-item">
+        <div class="legend-marker" style="background:var(--pain-bg); border-color:#fecaca;"></div>
+        <span>严重程度：<span class="severity high" style="margin:0;">高</span> <span class="severity med" style="margin:0;">中</span> <span class="severity low" style="margin:0;">低</span></span>
+      </div>
+    </div>
+
+    <div class="vpc">
+
+      <!-- ═════ CUSTOMER PROFILE (LEFT) ═════ -->
+      <div class="vpc-side">
+        <div class="vpc-side-head">
+          <div class="eyebrow">Customer Profile · 客户档案</div>
+          <div class="name">独立 <em>CPA</em> · 服务多州小企业客户</div>
+        </div>
+
+        <!-- Customer Jobs -->
+        <div class="vpc-block">
+          <div class="vpc-block-head">
+            <div class="vpc-block-icon jobs">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 7h-4V5a2 2 0 00-2-2h-4a2 2 0 00-2 2v2H4a2 2 0 00-2 2v9a2 2 0 002 2h16a2 2 0 002-2V9a2 2 0 00-2-2z"/><line x1="2" y1="12" x2="22" y2="12"/></svg>
+            </div>
+            <div class="vpc-block-title">客户任务 · Jobs</div>
+            <div class="vpc-block-sub">to be done</div>
+          </div>
+          <ul class="vpc-list">
+            <li>追踪每个客户的所有联邦 + 州税务截止日期</li>
+            <li>判断每个客户适用哪些税种（基于州、实体类型、行业）</li>
+            <li>提前规划工作流，确保不漏任何一个申报节点</li>
+            <li>响应税法和截止日期的变更</li>
+            <li>向客户解释为什么某项申报必须在某日前完成</li>
+            <li>在罚款风险出现前主动通知客户准备资料</li>
+          </ul>
+        </div>
+
+        <!-- Pains -->
+        <div class="vpc-block">
+          <div class="vpc-block-head">
+            <div class="vpc-block-icon pains">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+            </div>
+            <div class="vpc-block-title">痛点 · Pains</div>
+            <div class="vpc-block-sub">怎么糟</div>
+          </div>
+          <ul class="vpc-list">
+            <li>Excel 表格无法应对 50 州 × 多税种的组合复杂度 <span class="severity high">高</span></li>
+            <li class="ai-solvable"><strong>各州税局公告分散，需人工每日浏览政府网站才能跟上变更</strong> <span class="severity high">高</span></li>
+            <li class="ai-solvable"><strong>政府公告语言晦涩，理解"是否影响我的客户"耗时</strong> <span class="severity high">高</span></li>
+            <li>客户跨州后，需手工查询每个州的特殊要求（PTE、特许经营税等） <span class="severity high">高</span></li>
+            <li>错过截止日的罚款责任最终由 CPA 承担，但工具不提供任何保障 <span class="severity high">高</span></li>
+            <li>现有专业工具（Karbon）价格 $5,000+/年，对独立 CPA 不友好 <span class="severity med">中</span></li>
+            <li class="ai-solvable"><strong>从竞品迁移时需手工录入所有客户数据，耗时数天</strong> <span class="severity med">中</span></li>
+            <li>申报季 1–4 月每周加班 20+ 小时，仍担心遗漏 <span class="severity med">中</span></li>
+          </ul>
+        </div>
+
+        <!-- Gains -->
+        <div class="vpc-block">
+          <div class="vpc-block-head">
+            <div class="vpc-block-icon gains">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+            </div>
+            <div class="vpc-block-title">期望收益 · Gains</div>
+            <div class="vpc-block-sub">怎么好</div>
+          </div>
+          <ul class="vpc-list">
+            <li>每周一花 5 分钟而非 45 分钟完成本周分诊 <span class="severity high">高</span></li>
+            <li>对"我有没有漏掉什么"有完整的心理踏实感 <span class="severity high">高</span></li>
+            <li class="ai-solvable"><strong>州税法变更后第一时间获知，并立即看到受影响客户清单</strong> <span class="severity high">高</span></li>
+            <li>工具上手 ≤ 30 分钟，不需要培训和长期适应期 <span class="severity med">中</span></li>
+            <li>对客户呈现专业、可信、不会出错的形象 <span class="severity med">中</span></li>
+            <li>能够承接更多多州客户而不增加合规风险 <span class="severity low">低</span></li>
+          </ul>
+        </div>
+      </div>
+
+      <!-- ═════ VALUE MAP (RIGHT) ═════ -->
+      <div class="vpc-side">
+        <div class="vpc-side-head">
+          <div class="eyebrow">Value Map · 价值地图</div>
+          <div class="name">DueDate<em>HQ</em></div>
+        </div>
+
+        <!-- Products & Services -->
+        <div class="vpc-block">
+          <div class="vpc-block-head">
+            <div class="vpc-block-icon products">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>
+            </div>
+            <div class="vpc-block-title">产品与服务 · Products</div>
+            <div class="vpc-block-sub">提供什么</div>
+          </div>
+          <ul class="vpc-list">
+            <li>50 州税务日期数据库（联邦 + 州 + 地方）</li>
+            <li>多客户跨州截止日看板（Web + 移动端）</li>
+            <li>客户档案系统（州、实体类型、税种自动绑定）</li>
+            <li>多渠道智能预警（应用内 + 邮件 + 短信）</li>
+            <li>延期申请追踪</li>
+            <li>CSV 导入 / 导出（PDF 客户报告）</li>
+            <li>合规日历 API（Phase 4）</li>
+          </ul>
+        </div>
+
+        <!-- Pain Relievers -->
+        <div class="vpc-block">
+          <div class="vpc-block-head">
+            <div class="vpc-block-icon relievers">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 12l2 2 4-4"/><circle cx="12" cy="12" r="10"/></svg>
+            </div>
+            <div class="vpc-block-title">痛点缓解 · Pain Relievers</div>
+            <div class="vpc-block-sub">如何减痛</div>
+          </div>
+          <ul class="vpc-list">
+            <li>预制 50 州税务日期数据库，免去手工录入 <span class="severity high">高</span></li>
+            <li class="ai-solvable"><strong>AI 自动监控 50+ 州税局官网 RSS 与公告页面</strong> <span class="severity high">高</span></li>
+            <li class="ai-solvable"><strong>LLM 自动解读公告内容并标记影响范围</strong> <span class="severity high">高</span></li>
+            <li class="ai-solvable"><strong>AI 自动匹配受影响客户清单（州+县+实体+税种）</strong> <span class="severity high">高</span></li>
+            <li class="ai-solvable"><strong>CSV 导入字段智能映射 + 实体类型自动识别</strong> <span class="severity med">中</span></li>
+            <li>$49/月定价，独立 CPA 友好 <span class="severity med">中</span></li>
+            <li>"官方来源链接"显示，支持一键人工核验 <span class="severity med">中</span></li>
+            <li>购买专业责任险，提供数据准确度 SLA <span class="severity low">低</span></li>
+          </ul>
+        </div>
+
+        <!-- Gain Creators -->
+        <div class="vpc-block">
+          <div class="vpc-block-head">
+            <div class="vpc-block-icon creators">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+            </div>
+            <div class="vpc-block-title">收益创造 · Gain Creators</div>
+            <div class="vpc-block-sub">如何加分</div>
+          </div>
+          <ul class="vpc-list">
+            <li>三段式分组看板让分诊从 45 分钟压缩到 5 分钟 <span class="severity high">高</span></li>
+            <li class="ai-solvable"><strong>AI 智能优先级排序：基于罚款金额、客户重要性、历史延误模式</strong> <span class="severity high">高</span></li>
+            <li>多客户日历自动生成（导入后立即可用） <span class="severity med">中</span></li>
+            <li class="ai-solvable"><strong>AI 助手回答自然语言问题（"我哪些客户需要交 PTE 税？"）</strong> <span class="severity med">中</span></li>
+            <li>专业 PDF 客户报告，提升 CPA 在客户面前的形象 <span class="severity med">中</span></li>
+            <li>支持向其他工具导出，降低锁定恐惧 <span class="severity low">低</span></li>
+          </ul>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- ─────── FIT SUMMARY ─────── -->
+    <div class="fit">
+      <div class="fit-head">
+        <span class="fit-eyebrow">✦ AI 杠杆点小结</span>
+      </div>
+      <h3 class="fit-title">为什么 LLM / AI 是 DueDateHQ 的核心战略资产</h3>
+      <p>
+        画布中标记 ✦ 的 <strong>9 项</strong> 都集中在<strong>同一类问题</strong>：将分散、晦涩、高维度的政府数据，转化为针对单个 CPA 客户组合的可执行情报。这类工作过去需要专职合规团队，今天可以由 LLM + 自动化监控以 1/10 的成本完成。
+      </p>
+      <p>
+        <strong>战略含义：</strong> 这不是"加点 AI 让产品看起来 fancy"，而是<strong>商业模式的可行性前提</strong>——没有 AI，DueDateHQ 在 $49/月的价格点上无法覆盖 50 州合规数据维护成本。AI 能力的强弱，直接决定我们与 File In Time、Karbon 等竞品的护城河深度。
+      </p>
+
+      <div class="fit-grid">
+        <div class="fit-cell">
+          <div class="num">9</div>
+          <div class="lbl">VPC 中的 AI 可解决项</div>
+        </div>
+        <div class="fit-cell">
+          <div class="num">~80%</div>
+          <div class="lbl">数据维护成本预期降幅<br>（vs 人工合规团队）</div>
+        </div>
+        <div class="fit-cell">
+          <div class="num">24h</div>
+          <div class="lbl">州税局公告响应 SLA<br>（核心差异化承诺）</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══════════════════ FOOTER ═══════════════════ -->
+  <footer>
+    <div class="footer-mark">DueDate<em>HQ</em></div>
+    <div class="footer-author">By <span>Luyu Zhang</span></div>
+  </footer>
+
+</div>
+
+<script defer src="https://static.cloudflareinsights.com/beacon.min.js/v8c78df7c7c0f484497ecbca7046644da1771523124516" integrity="sha512-8DS7rgIrAmghBFwoOTujcf6D9rXvH8xm8JQ1Ja01h9QX8EzXldiszufYa4IFfKdLUKTTrnSFXLDkUEOTrZQ8Qg==" data-cf-beacon='{"version":"2024.11.0","token":"eedff7dfa00c44a9b14b61e67c1ae908","r":1,"server_timing":{"name":{"cfCacheStatus":true,"cfEdge":true,"cfExtPri":true,"cfL4":true,"cfOrigin":true,"cfSpeedBrain":true},"location_startswith":null}}' crossorigin="anonymous"></script>
+</body>
+</html>

@@ -4,6 +4,7 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
+from duedatehq.core.models import NotificationChannel
 from duedatehq.http_api import _instant_response_prefix, _latest_new_feedback_event, _message_chunks, _sse, _thinking_status, create_fastapi_app
 
 
@@ -102,6 +103,173 @@ def test_fastapi_app_allows_frontend_origin(tmp_path):
 
     assert response.status_code == 200
     assert response.headers["access-control-allow-origin"] == "http://127.0.0.1:5173"
+
+    response = client.options(
+        "/review/impact/tenant-a",
+        headers={
+            "Origin": "http://127.0.0.1:5182",
+            "Access-Control-Request-Method": "GET",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.headers["access-control-allow-origin"] == "http://127.0.0.1:5182"
+
+
+def test_review_impact_endpoint_returns_backend_interpretation(tmp_path):
+    pytest.importorskip("fastapi")
+    pytest.importorskip("httpx")
+    from fastapi.testclient import TestClient
+
+    api = create_fastapi_app(str(tmp_path / "http-review-impact.sqlite3"))
+    tenant = api.state.app_state.engine.create_tenant("Tenant Review API")
+    api.state.app_state.engine.register_client(
+        tenant_id=tenant.tenant_id,
+        name="Sierra Wholesale Inc.",
+        entity_type="c-corp",
+        registered_states=["TX", "CA"],
+        tax_year=2026,
+    )
+    api.state.app_state.engine.fetch_from_source(
+        state="TX",
+        raw_text="Texas Comptroller updated economic nexus guidance; threshold changed but no due date was stated.",
+        source_url="https://comptroller.texas.gov/about/media-center/news/economic-nexus.html",
+        fetched_at=datetime(2026, 4, 24, tzinfo=timezone.utc),
+        actor="test",
+    )
+    client = TestClient(api)
+
+    response = client.get(f"/review/impact/{tenant.tenant_id}")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["rule_reviews"][0]["source"]["display_name"] == "Texas Comptroller News Releases"
+    assert payload["rule_reviews"][0]["affected_clients"][0]["client_name"] == "Sierra Wholesale Inc."
+
+
+def test_import_preview_endpoint_returns_ai_assist_payload(tmp_path):
+    pytest.importorskip("fastapi")
+    pytest.importorskip("httpx")
+    from fastapi.testclient import TestClient
+
+    api = create_fastapi_app(str(tmp_path / "http-import-preview.sqlite3"))
+    client = TestClient(api)
+
+    response = client.post(
+        "/import/preview",
+        json={
+            "source_name": "portfolio.csv",
+            "csv_text": "Account,Return Kind,Markets,Home\nNorthwind Services LLC,LLC,CA,CA\n",
+            "mapping_overrides": {"Account": "client_name", "Return Kind": "entity_type", "Markets": "operating_states", "Home": "home_jurisdiction"},
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["ready_to_generate"] is True
+    assert payload["ai_assist"]["normalized_clients"][0]["client_name"] == "Northwind Services LLC"
+
+
+def test_policy_interpret_endpoint_matches_affected_clients(tmp_path):
+    pytest.importorskip("fastapi")
+    pytest.importorskip("httpx")
+    from fastapi.testclient import TestClient
+
+    api = create_fastapi_app(str(tmp_path / "http-policy-interpret.sqlite3"))
+    tenant = api.state.app_state.engine.create_tenant("Tenant Policy Interpret")
+    api.state.app_state.engine.register_client(
+        tenant_id=tenant.tenant_id,
+        name="Aurora Tech Labs",
+        entity_type="c-corp",
+        registered_states=["CA"],
+        tax_year=2026,
+    )
+    client = TestClient(api)
+
+    response = client.post(
+        f"/review/interpret/{tenant.tenant_id}",
+        json={
+            "state": "CA",
+            "source_url": "https://www.ftb.ca.gov/about-ftb/newsroom/pte-election-update.html",
+            "raw_text": "California FTB says the PTE election deadline moves to May 30, 2026.",
+            "fetched_at": "2026-04-25T12:00:00+00:00",
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["source"]["display_name"] == "California Franchise Tax Board Newsroom"
+    assert payload["affected_clients"][0]["client_name"] == "Aurora Tech Labs"
+
+
+def test_settings_endpoint_updates_notification_route(tmp_path):
+    pytest.importorskip("fastapi")
+    pytest.importorskip("httpx")
+    from fastapi.testclient import TestClient
+
+    api = create_fastapi_app(str(tmp_path / "http-settings.sqlite3"))
+    tenant = api.state.app_state.engine.create_tenant("Tenant Settings API")
+    route = api.state.app_state.engine.configure_notification_route(
+        tenant.tenant_id,
+        NotificationChannel.EMAIL,
+        "owner@example.com",
+        actor="test",
+    )
+    client = TestClient(api)
+
+    settings = client.get(f"/settings/{tenant.tenant_id}")
+    assert settings.status_code == 200
+    assert settings.json()["notification_summary"]["enabled_channels"] == 1
+
+    response = client.patch(
+        f"/settings/{tenant.tenant_id}/notification-routes/{route.route_id}",
+        json={"enabled": False, "destination": "ops@example.com"},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["route"]["enabled"] is False
+    assert payload["route"]["destination"] == "ops@example.com"
+    assert payload["settings"]["notification_summary"]["enabled_channels"] == 0
+
+
+def test_email_draft_endpoint_uses_deadline_context(tmp_path):
+    pytest.importorskip("fastapi")
+    pytest.importorskip("httpx")
+    from fastapi.testclient import TestClient
+
+    api = create_fastapi_app(str(tmp_path / "http-email-draft.sqlite3"))
+    tenant = api.state.app_state.engine.create_tenant("Tenant Email Draft API")
+    api.state.app_state.engine.create_rule(
+        tax_type="federal_income",
+        jurisdiction="FEDERAL",
+        entity_types=["s-corp"],
+        deadline_date="2026-05-15",
+        effective_from="2026-01-01",
+        source_url="https://irs.gov/r1",
+        confidence_score=0.99,
+    )
+    client_record = api.state.app_state.engine.register_client(
+        tenant_id=tenant.tenant_id,
+        name="Acme LLC",
+        entity_type="s-corp",
+        registered_states=["CA"],
+        tax_year=2026,
+        primary_contact_name="Maya Chen",
+        primary_contact_email="maya@example.com",
+    )
+    deadline = api.state.app_state.engine.list_deadlines(tenant.tenant_id, client_record.client_id)[0]
+    client = TestClient(api)
+
+    response = client.post(
+        f"/clients/{tenant.tenant_id}/{client_record.client_id}/email/draft",
+        json={"deadline_id": deadline.deadline_id},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["to"] == "maya@example.com"
+    assert "Acme LLC" in payload["subject"]
 
 
 def test_bootstrap_today_uses_fast_default_entry(tmp_path):

@@ -35,6 +35,7 @@ class NotificationChannel(StrEnum):
     EMAIL = "email"
     SMS = "sms"
     SLACK = "slack"
+    WECHAT = "wechat"
 
 
 class NotificationStatus(StrEnum):
@@ -202,6 +203,23 @@ class Blocker:
     updated_at: datetime
     resolved_at: datetime | None = None
     dismissed_at: datetime | None = None
+
+
+@dataclass(slots=True)
+class ProposedPlanItem:
+    plan_item_id: str
+    tenant_id: str
+    client_id: str
+    deadline_id: str
+    client_name: str
+    task_title: str
+    tax_type: str
+    jurisdiction: str
+    related_due_date: str
+    recommended_window: str
+    reason: str
+    urgency: str
+    default_action: str
 
 
 @dataclass(slots=True)

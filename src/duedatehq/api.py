@@ -19,6 +19,11 @@ def get_status(db_path: str | None = None) -> dict[str, object]:
     }
 
 
+def review_impact(tenant_id: str, db_path: str | None = None, limit: int = 50) -> dict[str, object]:
+    app = create_app(db_path)
+    return app.engine.review_impact_payload(tenant_id, limit=limit)
+
+
 def chat(prompt: str, tenant_id: str | None = None, db_path: str | None = None, mode: str = "text") -> dict[str, object]:
     app = create_app(db_path)
     session = app.conversation.start_session(tenant_id, mode=InteractionMode(mode))

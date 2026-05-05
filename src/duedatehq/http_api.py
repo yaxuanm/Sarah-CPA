@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Any
 
 from .app import create_app
@@ -33,6 +34,8 @@ def create_fastapi_app(db_path: str | None = None):
         allow_origins=[
             "http://127.0.0.1:5173",
             "http://localhost:5173",
+            "http://127.0.0.1:5182",
+            "http://localhost:5182",
         ],
         allow_credentials=True,
         allow_methods=["*"],
@@ -135,6 +138,92 @@ def create_fastapi_app(db_path: str | None = None):
     @api.get("/flywheel/stats")
     def flywheel_stats():
         return app_state.intent_library.stats()
+
+    @api.get("/review/impact/{tenant_id}")
+    def review_impact(tenant_id: str, limit: int = 50):
+        return app_state.engine.review_impact_payload(tenant_id, limit=limit)
+
+    @api.post("/review/interpret/{tenant_id}")
+    def interpret_policy_change(tenant_id: str, body: dict[str, Any] = Body(...)):
+        fetched_at = body.get("fetched_at")
+        parsed_fetched_at = datetime.fromisoformat(fetched_at) if isinstance(fetched_at, str) else None
+        return app_state.engine.interpret_policy_change(
+            tenant_id,
+            raw_text=str(body["raw_text"]),
+            source_url=str(body.get("source_url") or ""),
+            source=body.get("source"),
+            state=body.get("state"),
+            fetched_at=parsed_fetched_at,
+        )
+
+    @api.post("/import/preview")
+    def import_preview(body: dict[str, Any] = Body(...)):
+        overrides = body.get("mapping_overrides")
+        return app_state.engine.preview_import_text(
+            source_name=str(body.get("source_name") or "upload.csv"),
+            csv_text=str(body["csv_text"]),
+            source_kind=str(body.get("source_kind") or "CSV import"),
+            mapping_overrides=overrides if isinstance(overrides, dict) else None,
+        )
+
+    @api.get("/settings/{tenant_id}")
+    def settings(tenant_id: str):
+        return app_state.engine.settings_payload(tenant_id)
+
+    @api.patch("/settings/{tenant_id}/notification-routes/{route_id}")
+    def update_notification_route(tenant_id: str, route_id: str, body: dict[str, Any] = Body(...)):
+        route = app_state.engine.update_notification_route(
+            tenant_id,
+            route_id,
+            destination=body.get("destination") if "destination" in body else None,
+            enabled=body.get("enabled") if "enabled" in body else None,
+            actor=str(body.get("actor") or "http-api"),
+        )
+        return {
+            "route": {
+                "route_id": route.route_id,
+                "channel": route.channel.value,
+                "destination": route.destination,
+                "enabled": route.enabled,
+                "created_at": route.created_at.isoformat(),
+            },
+            "settings": app_state.engine.settings_payload(tenant_id),
+        }
+
+    @api.post("/clients/{tenant_id}/{client_id}/email/draft")
+    def draft_client_email(tenant_id: str, client_id: str, body: dict[str, Any] = Body(...)):
+        return app_state.engine.draft_client_email(
+            tenant_id,
+            client_id,
+            deadline_id=body.get("deadline_id"),
+            task_id=body.get("task_id"),
+            extra_context=body.get("extra_context"),
+        )
+
+    @api.post("/clients/{tenant_id}/{client_id}/email")
+    def queue_client_email(tenant_id: str, client_id: str, body: dict[str, Any] = Body(...)):
+        delivery = app_state.engine.queue_client_email(
+            tenant_id,
+            client_id,
+            deadline_id=body.get("deadline_id"),
+            task_id=body.get("task_id"),
+            subject=str(body["subject"]),
+            body=str(body["body"]),
+            actor=str(body.get("actor") or "http-api"),
+        )
+        return {
+            "delivery": {
+                "delivery_id": delivery.delivery_id,
+                "client_id": delivery.client_id,
+                "deadline_id": delivery.deadline_id,
+                "channel": delivery.channel.value,
+                "destination": delivery.destination,
+                "subject": delivery.subject,
+                "body": delivery.body,
+                "status": delivery.status.value,
+                "created_at": delivery.created_at.isoformat(),
+            }
+        }
 
     return api
 

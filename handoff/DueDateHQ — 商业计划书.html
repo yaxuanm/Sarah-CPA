@@ -1,0 +1,810 @@
+<!DOCTYPE html>
+<!-- droploft:forked-from:slug=l2ls3i -->
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DueDateHQ — 商业计划书</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,600;0,700;1,400&family=Source+Serif+4:opsz,wght@8..60,300;8..60,400;8..60,500&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --ink:     #1a1714;
+    --paper:   #f5f0e8;
+    --cream:   #ede7d9;
+    --gold:    #b8943f;
+    --gold-lt: #d4ab5a;
+    --rust:    #8b3a2a;
+    --slate:   #3d3830;
+    --muted:   #7a7060;
+    --rule:    rgba(184,148,63,0.25);
+  }
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  html { scroll-behavior: smooth; }
+
+  body {
+    background: var(--paper);
+    color: var(--ink);
+    font-family: 'Source Serif 4', Georgia, serif;
+    font-size: 17px;
+    line-height: 1.75;
+  }
+
+  /* ── NOISE TEXTURE OVERLAY ── */
+  body::before {
+    content: '';
+    position: fixed; inset: 0; pointer-events: none; z-index: 0;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='200' height='200' filter='url(%23n)' opacity='0.035'/%3E%3C/svg%3E");
+    opacity: 0.6;
+  }
+
+  /* ── LAYOUT ── */
+  .wrap { max-width: 900px; margin: 0 auto; padding: 0 2rem; position: relative; z-index: 1; }
+
+  /* ── COVER ── */
+  .cover {
+    min-height: 100vh;
+    display: flex; flex-direction: column; justify-content: flex-end;
+    padding: 6rem 0 5rem;
+    border-bottom: 1px solid var(--rule);
+    position: relative; overflow: hidden;
+  }
+
+  .cover-rule {
+    position: absolute; top: 0; left: 0; right: 0; height: 6px;
+    background: linear-gradient(90deg, var(--gold) 0%, var(--gold-lt) 50%, var(--gold) 100%);
+  }
+
+  .cover-year {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.75rem; letter-spacing: 0.2em;
+    color: var(--gold); text-transform: uppercase;
+    margin-bottom: 2.5rem;
+    opacity: 0; animation: fadeUp 0.8s 0.2s forwards;
+  }
+
+  .cover-eyebrow {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.7rem; letter-spacing: 0.25em;
+    color: var(--muted); text-transform: uppercase;
+    margin-bottom: 1rem;
+    opacity: 0; animation: fadeUp 0.8s 0.4s forwards;
+  }
+
+  .cover-title {
+    font-family: 'Playfair Display', Georgia, serif;
+    font-size: clamp(3rem, 8vw, 5.5rem);
+    font-weight: 700; line-height: 1.0;
+    color: var(--ink); letter-spacing: -0.02em;
+    margin-bottom: 0.3rem;
+    opacity: 0; animation: fadeUp 0.9s 0.5s forwards;
+  }
+
+  .cover-title em {
+    font-style: italic; color: var(--gold);
+  }
+
+  .cover-subtitle {
+    font-size: 1.05rem; color: var(--muted);
+    font-weight: 300; max-width: 540px;
+    margin-top: 1.5rem; margin-bottom: 3rem;
+    opacity: 0; animation: fadeUp 0.8s 0.7s forwards;
+  }
+
+  .cover-meta {
+    display: flex; gap: 3rem; flex-wrap: wrap;
+    border-top: 1px solid var(--rule); padding-top: 2rem;
+    opacity: 0; animation: fadeUp 0.8s 0.9s forwards;
+  }
+
+  .cover-meta-item { }
+  .cover-meta-label {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.65rem; letter-spacing: 0.18em;
+    text-transform: uppercase; color: var(--muted);
+    display: block; margin-bottom: 0.2rem;
+  }
+  .cover-meta-value {
+    font-family: 'Playfair Display', serif;
+    font-size: 1.1rem; color: var(--gold); font-weight: 600;
+  }
+
+  /* ── SECTION STRUCTURE ── */
+  section { padding: 6rem 0; border-bottom: 1px solid var(--rule); }
+  section:last-of-type { border-bottom: none; }
+
+  .section-header {
+    display: flex; align-items: baseline; gap: 1.2rem;
+    margin-bottom: 3.5rem;
+  }
+
+  .section-num {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.7rem; color: var(--gold);
+    letter-spacing: 0.12em; min-width: 2.5rem;
+  }
+
+  .section-title {
+    font-family: 'Playfair Display', serif;
+    font-size: 2rem; font-weight: 600;
+    color: var(--ink); line-height: 1.2;
+    border-bottom: 2px solid var(--gold);
+    padding-bottom: 0.4rem;
+  }
+
+  h3 {
+    font-family: 'Playfair Display', serif;
+    font-size: 1.2rem; font-weight: 600;
+    color: var(--slate); margin-bottom: 0.8rem;
+    margin-top: 2rem;
+  }
+
+  p { color: var(--slate); margin-bottom: 1rem; }
+  p:last-child { margin-bottom: 0; }
+
+  strong { color: var(--ink); font-weight: 500; }
+
+  /* ── STAT CARDS ── */
+  .stat-grid {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: 1.5px; margin: 3rem 0;
+    border: 1.5px solid var(--rule); background: var(--rule);
+  }
+
+  .stat-card {
+    background: var(--paper); padding: 2rem 1.5rem;
+    position: relative; overflow: hidden;
+  }
+
+  .stat-card::after {
+    content: '';
+    position: absolute; bottom: 0; left: 0; right: 0; height: 2px;
+    background: linear-gradient(90deg, transparent, var(--gold), transparent);
+    transform: scaleX(0); transition: transform 0.4s ease;
+  }
+  .stat-card:hover::after { transform: scaleX(1); }
+
+  .stat-num {
+    font-family: 'Playfair Display', serif;
+    font-size: 2.4rem; font-weight: 700;
+    color: var(--gold); line-height: 1;
+    display: block; margin-bottom: 0.4rem;
+  }
+
+  .stat-label {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.65rem; letter-spacing: 0.14em;
+    text-transform: uppercase; color: var(--muted);
+    display: block; margin-bottom: 0.5rem;
+  }
+
+  .stat-desc { font-size: 0.82rem; color: var(--muted); line-height: 1.5; }
+
+  /* ── PROBLEM CARDS ── */
+  .problem-grid {
+    display: grid; grid-template-columns: 1fr 1fr;
+    gap: 1.5rem; margin: 2.5rem 0;
+  }
+
+  @media (max-width: 600px) { .problem-grid { grid-template-columns: 1fr; } }
+
+  .problem-card {
+    background: var(--cream); padding: 2rem;
+    border-left: 3px solid var(--gold);
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+  }
+  .problem-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 24px rgba(0,0,0,0.06);
+  }
+
+  .problem-icon {
+    font-size: 1.5rem; margin-bottom: 0.8rem; display: block;
+  }
+  .problem-title {
+    font-family: 'Playfair Display', serif;
+    font-size: 1rem; font-weight: 600;
+    color: var(--ink); margin-bottom: 0.5rem;
+  }
+  .problem-desc { font-size: 0.88rem; color: var(--muted); line-height: 1.6; }
+
+  /* ── SOLUTION TABLE ── */
+  .compare-table {
+    width: 100%; border-collapse: collapse; margin: 2.5rem 0;
+    font-size: 0.88rem;
+  }
+
+  .compare-table th {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.65rem; letter-spacing: 0.14em;
+    text-transform: uppercase; color: var(--muted);
+    text-align: left; padding: 0.8rem 1rem;
+    border-bottom: 2px solid var(--rule); background: var(--cream);
+  }
+  .compare-table th:first-child { border-radius: 0; }
+
+  .compare-table td {
+    padding: 1rem; border-bottom: 1px solid var(--rule);
+    color: var(--slate); vertical-align: top;
+  }
+
+  .compare-table tr:last-child td { border-bottom: none; }
+  .compare-table tr:hover td { background: rgba(184,148,63,0.04); }
+
+  .tag {
+    display: inline-block; padding: 0.15rem 0.6rem;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.65rem; letter-spacing: 0.08em;
+    border-radius: 2px;
+  }
+  .tag-bad  { background: rgba(139,58,42,0.12); color: var(--rust); }
+  .tag-ok   { background: rgba(184,148,63,0.15); color: var(--gold); }
+  .tag-good { background: rgba(60,100,60,0.12); color: #3a6a3a; }
+
+  /* ── FEATURE LIST ── */
+  .feature-list {
+    list-style: none; display: grid;
+    grid-template-columns: 1fr 1fr; gap: 1rem;
+    margin: 2rem 0;
+  }
+  @media (max-width: 600px) { .feature-list { grid-template-columns: 1fr; } }
+
+  .feature-list li {
+    display: flex; gap: 0.8rem; align-items: flex-start;
+    padding: 1.2rem; background: var(--cream);
+    transition: background 0.2s;
+  }
+  .feature-list li:hover { background: #e8e2d4; }
+
+  .feature-list .fi {
+    color: var(--gold); font-size: 1rem; flex-shrink: 0; margin-top: 0.1rem;
+  }
+
+  .feature-list .ft {
+    font-size: 0.9rem; color: var(--slate); line-height: 1.5;
+  }
+  .feature-list .ft strong { display: block; color: var(--ink); margin-bottom: 0.2rem; }
+
+  /* ── MARKET / FINANCIAL ── */
+  .fin-row {
+    display: flex; justify-content: space-between; align-items: baseline;
+    padding: 1rem 0; border-bottom: 1px solid var(--rule);
+    font-size: 0.92rem;
+  }
+  .fin-row:last-child { border-bottom: none; }
+  .fin-label { color: var(--muted); }
+  .fin-value {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.9rem; color: var(--ink); font-weight: 500;
+  }
+  .fin-value.gold { color: var(--gold); }
+
+  .scenario-grid {
+    display: grid; grid-template-columns: repeat(3, 1fr);
+    gap: 1.5px; background: var(--rule);
+    border: 1.5px solid var(--rule); margin: 2.5rem 0;
+  }
+  @media (max-width: 580px) { .scenario-grid { grid-template-columns: 1fr; } }
+
+  .scenario-card {
+    background: var(--paper); padding: 2rem 1.5rem; text-align: center;
+  }
+  .scenario-card.featured { background: var(--ink); }
+  .scenario-card.featured .scenario-name,
+  .scenario-card.featured .scenario-arr,
+  .scenario-card.featured .scenario-detail { color: var(--paper) !important; }
+  .scenario-card.featured .scenario-arr { color: var(--gold-lt) !important; }
+
+  .scenario-name {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.65rem; letter-spacing: 0.18em;
+    text-transform: uppercase; color: var(--muted); margin-bottom: 1rem;
+  }
+  .scenario-arr {
+    font-family: 'Playfair Display', serif;
+    font-size: 2rem; font-weight: 700; color: var(--gold);
+    display: block; margin-bottom: 0.3rem;
+  }
+  .scenario-detail { font-size: 0.8rem; color: var(--muted); }
+
+  /* ── ROADMAP ── */
+  .roadmap { position: relative; padding-left: 2rem; margin: 2.5rem 0; }
+  .roadmap::before {
+    content: ''; position: absolute; left: 0; top: 0.6rem; bottom: 0.6rem;
+    width: 1px; background: var(--rule);
+  }
+
+  .roadmap-item {
+    position: relative; padding: 0 0 2.5rem 2rem;
+  }
+  .roadmap-item:last-child { padding-bottom: 0; }
+
+  .roadmap-dot {
+    position: absolute; left: -2rem; top: 0.35rem;
+    width: 0.75rem; height: 0.75rem;
+    border-radius: 50%; background: var(--cream);
+    border: 2px solid var(--gold);
+    transform: translateX(calc(-0.375rem + 0.5px));
+  }
+  .roadmap-dot.active { background: var(--gold); }
+
+  .roadmap-phase {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.65rem; letter-spacing: 0.14em;
+    text-transform: uppercase; color: var(--gold);
+    margin-bottom: 0.3rem;
+  }
+  .roadmap-title {
+    font-family: 'Playfair Display', serif;
+    font-size: 1.05rem; font-weight: 600;
+    color: var(--ink); margin-bottom: 0.5rem;
+  }
+  .roadmap-desc { font-size: 0.88rem; color: var(--muted); line-height: 1.6; }
+
+  /* ── RISK TABLE ── */
+  .risk-item {
+    padding: 1.5rem 0; border-bottom: 1px solid var(--rule);
+    display: grid; grid-template-columns: 2fr 1fr 3fr;
+    gap: 1.5rem; align-items: start; font-size: 0.88rem;
+  }
+  .risk-item:last-child { border-bottom: none; }
+  .risk-name { color: var(--ink); font-weight: 500; }
+  .risk-level { }
+  .risk-mitigation { color: var(--muted); line-height: 1.6; }
+
+  .risk-header {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.63rem; letter-spacing: 0.15em;
+    text-transform: uppercase; color: var(--muted);
+    padding-bottom: 0.8rem; border-bottom: 2px solid var(--rule);
+    display: grid; grid-template-columns: 2fr 1fr 3fr; gap: 1.5rem;
+    margin-bottom: 0;
+  }
+
+  @media (max-width: 620px) {
+    .risk-item, .risk-header { grid-template-columns: 1fr; }
+  }
+
+  /* ── CONCLUSION ── */
+  .conclusion {
+    background: var(--ink); color: var(--paper);
+    padding: 5rem 0; border-bottom: none;
+  }
+  .conclusion .section-title { color: var(--paper); border-color: var(--gold); }
+  .conclusion p { color: rgba(245,240,232,0.72); }
+  .conclusion strong { color: var(--paper); }
+
+  .conclusion-quote {
+    font-family: 'Playfair Display', serif;
+    font-size: clamp(1.3rem, 3vw, 1.8rem);
+    font-style: italic; line-height: 1.5;
+    color: var(--gold-lt); border-left: 3px solid var(--gold);
+    padding-left: 2rem; margin: 3rem 0;
+  }
+
+  /* ── FOOTER ── */
+  footer {
+    padding: 3rem 0; text-align: center;
+    border-top: 1px solid var(--rule);
+    position: relative; z-index: 1;
+  }
+  .footer-logo {
+    font-family: 'Playfair Display', serif;
+    font-size: 1.4rem; font-weight: 700; color: var(--gold);
+    letter-spacing: -0.01em;
+  }
+  .footer-logo em { font-style: italic; color: var(--ink); }
+  .footer-note {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.65rem; color: var(--muted);
+    letter-spacing: 0.12em; margin-top: 0.8rem;
+  }
+
+  /* ── ANIMATIONS ── */
+  @keyframes fadeUp {
+    from { opacity: 0; transform: translateY(18px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+  .reveal {
+    opacity: 0; transform: translateY(16px);
+    transition: opacity 0.7s ease, transform 0.7s ease;
+  }
+  .reveal.visible { opacity: 1; transform: none; }
+
+  /* ── BLOCKQUOTE CALLOUT ── */
+  .callout {
+    background: var(--cream); border-left: 3px solid var(--gold);
+    padding: 1.5rem 2rem; margin: 2rem 0;
+    font-size: 0.92rem; color: var(--slate);
+    font-style: italic;
+  }
+  .callout cite {
+    display: block; margin-top: 0.6rem;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.65rem; color: var(--muted);
+    letter-spacing: 0.1em; font-style: normal;
+  }
+
+  /* scrollbar */
+  ::-webkit-scrollbar { width: 6px; }
+  ::-webkit-scrollbar-track { background: var(--paper); }
+  ::-webkit-scrollbar-thumb { background: var(--rule); border-radius: 3px; }
+</style>
+<meta name="droploft:fork-origin" content="https://stage-a.droploft.ai/d/l2ls3i">
+</head>
+<body>
+
+<!-- ══ COVER ══════════════════════════════════════════════ -->
+<div class="wrap">
+  <div class="cover">
+    <div class="cover-rule"></div>
+    <div class="cover-year">2025 年商业计划书</div>
+    <div class="cover-eyebrow">Vertical SaaS · 税务合规工具</div>
+    <h1 class="cover-title">DueDate<em>HQ</em></h1>
+    <p class="cover-subtitle">为独立 CPA 和小型会计事务所设计的多客户、多州税务截止日期智能看板——替代过时的桌面软件与零散 Excel。</p>
+    <div class="cover-meta">
+      <div class="cover-meta-item">
+        <span class="cover-meta-label">目标市场</span>
+        <span class="cover-meta-value">40 万+ 美国 CPA</span>
+      </div>
+      <div class="cover-meta-item">
+        <span class="cover-meta-label">目标 ARR（Y3）</span>
+        <span class="cover-meta-value">$360 万</span>
+      </div>
+      <div class="cover-meta-item">
+        <span class="cover-meta-label">定价</span>
+        <span class="cover-meta-value">$49 / 月</span>
+      </div>
+      <div class="cover-meta-item">
+        <span class="cover-meta-label">商业模式</span>
+        <span class="cover-meta-value">SaaS 订阅</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══ 01 · 问题 ═══════════════════════════════════════════ -->
+<div class="wrap">
+<section class="reveal">
+  <div class="section-header">
+    <span class="section-num">01</span>
+    <h2 class="section-title">痛点：一个被长期忽视的真实需求</h2>
+  </div>
+
+  <p>美国税务合规体系极度碎片化。一名独立 CPA 服务 80 位客户，若客户跨越 10 个州经营，理论上需要追踪 <strong>数百个截止日期</strong>——其中包含联邦所得税、各州所得税、季度预估税、工资税、特许经营税（Texas、California、Delaware 规则各异），以及 PTE 税（Pass-Through Entity）的州级选择截止日。</p>
+
+  <blockquote class="callout">
+    "各州要求差异极大，有的州（如纽约）要求 3 月 15 日前做出选举，其他州允许在报税时再决定。一旦错过，整年的节税策略归零。"
+    <cite>—— IRS/PTE 合规实践说明</cite>
+  </blockquote>
+
+  <div class="problem-grid">
+    <div class="problem-card">
+      <span class="problem-icon">📋</span>
+      <div class="problem-title">Excel / Google Sheets</div>
+      <p class="problem-desc">最普遍的方案。手工录入、手工更新。当某州因联邦灾难声明延期时，没有任何自动通知，完全依赖 CPA 自己追新闻。</p>
+    </div>
+    <div class="problem-card">
+      <span class="problem-icon">📅</span>
+      <div class="problem-title">Google Calendar / Outlook</div>
+      <p class="problem-desc">看不到完成状态，只能提醒"到期了"。100 个客户就要手工创建数百条日历条目，且不能互相关联。</p>
+    </div>
+    <div class="problem-card">
+      <span class="problem-icon">💼</span>
+      <div class="problem-title">Karbon / Canopy</div>
+      <p class="problem-desc">功能强大，但对 1-3 人事务所定价过高（$5,000+/年），核心是工作流管理，不是税法日期数据库，州税日期仍需手工录入。</p>
+    </div>
+    <div class="problem-card">
+      <span class="problem-icon">🖥️</span>
+      <div class="problem-title">File In Time（最直接竞品）</div>
+      <p class="problem-desc">内置近 200 种联邦/州税申报日期，功能最接近。但仍是 Windows 桌面安装软件，无云端，无自动更新，界面停留在 2010 年代，起价 $199/月。</p>
+    </div>
+  </div>
+
+  <p>核心缺口不是"没有工具"，而是：<strong>没有一个轻量、云端、自动同步税法变更、价格对独立 CPA 友好的现代化产品。</strong></p>
+</section>
+</div>
+
+<!-- ══ 02 · 市场规模 ════════════════════════════════════════ -->
+<div class="wrap">
+<section class="reveal">
+  <div class="section-header">
+    <span class="section-num">02</span>
+    <h2 class="section-title">市场规模</h2>
+  </div>
+
+  <div class="stat-grid">
+    <div class="stat-card">
+      <span class="stat-num">40 万+</span>
+      <span class="stat-label">美国 CPA 持证人数</span>
+      <p class="stat-desc">AICPA 数据，其中大量在独立执业或小型事务所</p>
+    </div>
+    <div class="stat-card">
+      <span class="stat-num">3,480 万</span>
+      <span class="stat-label">美国小企业数量</span>
+      <p class="stat-desc">占全部企业的 99.9%，大多数需要专业税务服务</p>
+    </div>
+    <div class="stat-card">
+      <span class="stat-num">$157 亿</span>
+      <span class="stat-label">垂直 SaaS 市场规模（2025）</span>
+      <p class="stat-desc">年增速约 23.9%，是整体 SaaS 增速的 2 倍以上</p>
+    </div>
+    <div class="stat-card">
+      <span class="stat-num">43.5%</span>
+      <span class="stat-label">小企业贡献 GDP 比例</span>
+      <p class="stat-desc">服务于小企业的会计师群体体量庞大且稳定</p>
+    </div>
+  </div>
+
+  <h3>可服务市场（SAM）估算</h3>
+  <div class="fin-row"><span class="fin-label">持证 CPA 总数（美国）</span><span class="fin-value">400,000</span></div>
+  <div class="fin-row"><span class="fin-label">独立执业 + 小型所（<5 人），估计占比 40%</span><span class="fin-value">~160,000</span></div>
+  <div class="fin-row"><span class="fin-label">其中有多州客户需求、愿意付费的目标层</span><span class="fin-value">~60,000</span></div>
+  <div class="fin-row"><span class="fin-label">目标年费（$49 × 12）</span><span class="fin-value">$588 / 用户</span></div>
+  <div class="fin-row"><span class="fin-label">SAM 上限</span><span class="fin-value gold">~$3,500 万 ARR</span></div>
+</section>
+</div>
+
+<!-- ══ 03 · 产品 ════════════════════════════════════════════ -->
+<div class="wrap">
+<section class="reveal">
+  <div class="section-header">
+    <span class="section-num">03</span>
+    <h2 class="section-title">产品：DueDateHQ</h2>
+  </div>
+
+  <p>DueDateHQ 是一款云端 SaaS，核心价值主张只有一句话：<strong>让独立 CPA 不再担心遗漏任何一个州税截止日期。</strong></p>
+
+  <ul class="feature-list">
+    <li>
+      <span class="fi">◆</span>
+      <span class="ft"><strong>50 州税务日期数据库</strong>自动维护联邦 + 50 州所有税种截止日，并在官方发布延期通知时 24 小时内推送更新。无需手工录入。</span>
+    </li>
+    <li>
+      <span class="fi">◆</span>
+      <span class="ft"><strong>多客户跨州看板</strong>单一界面显示所有客户的所有截止日期，可按日期、州、税种、紧急程度过滤，支持"本周到期""本月危险"等快速视图。</span>
+    </li>
+    <li>
+      <span class="fi">◆</span>
+      <span class="ft"><strong>智能提前预警</strong>根据申报类型自动设置 30/14/7/1 天阶梯提醒，通过邮件 + 短信 + 应用内通知触达，不漏一个截止日。</span>
+    </li>
+    <li>
+      <span class="fi">◆</span>
+      <span class="ft"><strong>延期申请追踪</strong>记录每个客户的延期申请状态（已提交 / 已批准 / 实际延期截止日），与原始截止日联动显示。</span>
+    </li>
+    <li>
+      <span class="fi">◆</span>
+      <span class="ft"><strong>客户档案绑定</strong>每个客户关联所在州、实体类型（LLC/S-Corp/Partnership）、适用税种，系统自动推算其全年截止日历。</span>
+    </li>
+    <li>
+      <span class="fi">◆</span>
+      <span class="ft"><strong>CSV / PDF 导出</strong>一键导出客户截止日期报告，可作为客户沟通材料或内部审计依据。</span>
+    </li>
+  </ul>
+
+  <h3>与竞品的核心差异</h3>
+  <table class="compare-table">
+    <thead>
+      <tr>
+        <th>维度</th>
+        <th>File In Time</th>
+        <th>Jetpack / Karbon</th>
+        <th>DueDateHQ</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>云端 / 移动端</td>
+        <td><span class="tag tag-bad">桌面安装</span></td>
+        <td><span class="tag tag-good">云端</span></td>
+        <td><span class="tag tag-good">云端</span></td>
+      </tr>
+      <tr>
+        <td>州税日期自动更新</td>
+        <td><span class="tag tag-bad">手工</span></td>
+        <td><span class="tag tag-bad">手工</span></td>
+        <td><span class="tag tag-good">自动</span></td>
+      </tr>
+      <tr>
+        <td>面向独立 CPA 定价</td>
+        <td><span class="tag tag-bad">$199+/月</span></td>
+        <td><span class="tag tag-ok">$30-79/用户</span></td>
+        <td><span class="tag tag-good">$49/月全功能</span></td>
+      </tr>
+      <tr>
+        <td>核心功能专注度</td>
+        <td><span class="tag tag-ok">截止日追踪</span></td>
+        <td><span class="tag tag-bad">工作流为主</span></td>
+        <td><span class="tag tag-good">截止日 + 合规</span></td>
+      </tr>
+      <tr>
+        <td>上手时间</td>
+        <td><span class="tag tag-bad">数天（安装+配置）</span></td>
+        <td><span class="tag tag-ok">数小时</span></td>
+        <td><span class="tag tag-good">&lt; 30 分钟</span></td>
+      </tr>
+    </tbody>
+  </table>
+</section>
+</div>
+
+<!-- ══ 04 · 商业模式 ══════════════════════════════════════ -->
+<div class="wrap">
+<section class="reveal">
+  <div class="section-header">
+    <span class="section-num">04</span>
+    <h2 class="section-title">商业模式与财务预测</h2>
+  </div>
+
+  <h3>定价结构</h3>
+  <div class="fin-row"><span class="fin-label">Solo 版（1 用户，≤50 客户）</span><span class="fin-value">$29 / 月</span></div>
+  <div class="fin-row"><span class="fin-label">Pro 版（1-3 用户，无限客户）</span><span class="fin-value">$49 / 月</span></div>
+  <div class="fin-row"><span class="fin-label">Team 版（≤10 用户 + API）</span><span class="fin-value">$99 / 月</span></div>
+  <div class="fin-row"><span class="fin-label">年付折扣</span><span class="fin-value gold">–20%（相当于 2 个月免费）</span></div>
+
+  <h3 style="margin-top:2.5rem;">三年 ARR 情景预测</h3>
+  <div class="scenario-grid">
+    <div class="scenario-card">
+      <div class="scenario-name">保守</div>
+      <span class="scenario-arr">$72 万</span>
+      <p class="scenario-detail">Year 3<br>1,200 付费客户<br>ARPU $50/月</p>
+    </div>
+    <div class="scenario-card featured">
+      <div class="scenario-name">基准</div>
+      <span class="scenario-arr">$360 万</span>
+      <p class="scenario-detail">Year 3<br>6,000 付费客户<br>ARPU $50/月</p>
+    </div>
+    <div class="scenario-card">
+      <div class="scenario-name">乐观</div>
+      <span class="scenario-arr">$900 万</span>
+      <p class="scenario-detail">Year 3<br>15,000 付费客户<br>ARPU $50/月</p>
+    </div>
+  </div>
+
+  <h3>关键单位经济</h3>
+  <div class="fin-row"><span class="fin-label">CAC（客户获取成本）目标</span><span class="fin-value">$120–180</span></div>
+  <div class="fin-row"><span class="fin-label">月均 MRR / 用户（Pro）</span><span class="fin-value">$49</span></div>
+  <div class="fin-row"><span class="fin-label">预期 Churn（年）</span><span class="fin-value">8–12%（粘性高，税务场景刚需）</span></div>
+  <div class="fin-row"><span class="fin-label">LTV（基于 3 年留存）</span><span class="fin-value gold">$1,320–$1,764</span></div>
+  <div class="fin-row"><span class="fin-label">LTV / CAC 比率</span><span class="fin-value gold">7–12x</span></div>
+
+  <p style="margin-top:1.5rem; font-size:0.88rem; color:var(--muted);">税务软件用户粘性极高——换工具意味着重新录入所有客户数据，且在申报季（1-4 月）几乎不可能切换，形成天然的季节性锁定。</p>
+</section>
+</div>
+
+<!-- ══ 05 · 增长策略 ══════════════════════════════════════ -->
+<div class="wrap">
+<section class="reveal">
+  <div class="section-header">
+    <span class="section-num">05</span>
+    <h2 class="section-title">增长策略</h2>
+  </div>
+
+  <h3>获客渠道</h3>
+  <p><strong>社区驱动（优先）</strong>——目标 CPA 聚集在 Reddit r/taxpros、AICPA 论坛、各州 CPA 协会 LinkedIn 群组。内容策略：发布真正有用的"50 州截止日期变更追踪"公开页面，成为 SEO 自然流量入口，同时建立专业信誉。</p>
+
+  <p><strong>产品主导（PLG）</strong>——免费试用 30 天，无需信用卡。首次登录引导用户导入客户名单（支持从 TaxDome / Drake / QuickBooks 导出的 CSV 格式），在 10 分钟内看到自己的"本季度危险截止日"，建立即时价值感知。</p>
+
+  <p><strong>合作伙伴渠道</strong>——与 CPA 继续教育（CPE）提供商合作，在课程结束后展示产品；与会计师事务所管理顾问合作，作为推荐工具。</p>
+
+  <h3>产品扩展路径</h3>
+  <div class="roadmap">
+    <div class="roadmap-item">
+      <div class="roadmap-dot active"></div>
+      <div class="roadmap-phase">Phase 1 · 0–6 个月</div>
+      <div class="roadmap-title">MVP — 核心截止日看板</div>
+      <p class="roadmap-desc">50 州税务日期数据库 + 多客户绑定 + 邮件提醒。目标：100 个付费用户，验证留存率。</p>
+    </div>
+    <div class="roadmap-item">
+      <div class="roadmap-dot"></div>
+      <div class="roadmap-phase">Phase 2 · 6–18 个月</div>
+      <div class="roadmap-title">增长 — 深化工作流集成</div>
+      <p class="roadmap-desc">与 Drake Tax、UltraTax、ProConnect 集成；增加延期申请追踪；推出 Team 版；目标 1,000 付费用户。</p>
+    </div>
+    <div class="roadmap-item">
+      <div class="roadmap-dot"></div>
+      <div class="roadmap-phase">Phase 3 · 18–36 个月</div>
+      <div class="roadmap-title">扩张 — AI 合规助手</div>
+      <p class="roadmap-desc">AI 自动解读州税局公告并更新数据库；增加 PTE 税选举截止提醒；探索销售税截止日场景；目标 6,000 付费用户。</p>
+    </div>
+    <div class="roadmap-item">
+      <div class="roadmap-dot"></div>
+      <div class="roadmap-phase">Phase 4 · 36 个月+</div>
+      <div class="roadmap-title">平台化 — 合规日历 API</div>
+      <p class="roadmap-desc">向其他会计工具提供税务截止日数据 API，从工具转型为数据基础设施；B2B2C 模式形成第二增长曲线。</p>
+    </div>
+  </div>
+</section>
+</div>
+
+<!-- ══ 06 · 风险 ════════════════════════════════════════════ -->
+<div class="wrap">
+<section class="reveal">
+  <div class="section-header">
+    <span class="section-num">06</span>
+    <h2 class="section-title">风险与应对</h2>
+  </div>
+
+  <div class="risk-header">
+    <span>风险</span><span>等级</span><span>应对策略</span>
+  </div>
+
+  <div class="risk-item">
+    <span class="risk-name">大厂（Intuit / Thomson Reuters）复制功能</span>
+    <span class="risk-level"><span class="tag tag-ok">中</span></span>
+    <span class="risk-mitigation">大厂产品复杂度高，小功能迭代慢；先发优势 + 社区信誉 + 数据质量壁垒是护城河。若被收购，亦是良好退出路径。</span>
+  </div>
+  <div class="risk-item">
+    <span class="risk-name">税法变更频率超出数据库维护能力</span>
+    <span class="risk-level"><span class="tag tag-bad">高</span></span>
+    <span class="risk-mitigation">核心技术投入之一：自动监控 50 州税局官网 RSS/公告，AI 辅助解读并人工审核。建立"数据准确度 SLA"作为产品差异化。</span>
+  </div>
+  <div class="risk-item">
+    <span class="risk-name">独立 CPA 付费意愿低 / 预算有限</span>
+    <span class="risk-level"><span class="tag tag-ok">中</span></span>
+    <span class="risk-mitigation">$49/月 低于行业平均 CAC 的 1/3，并通过"一次漏报的罚款远超年费"的 ROI 叙事提升转化。提供年付折扣降低心理门槛。</span>
+  </div>
+  <div class="risk-item">
+    <span class="risk-name">市场教育成本高（现有习惯难改变）</span>
+    <span class="risk-level"><span class="tag tag-ok">中</span></span>
+    <span class="risk-mitigation">申报季（每年 1-4 月）是天然获客窗口——此时 CPA 对工具痛感最强。集中营销资源在 Q4/Q1，降低教育成本。</span>
+  </div>
+  <div class="risk-item">
+    <span class="risk-name">数据错误导致客户错过真实截止日</span>
+    <span class="risk-level"><span class="tag tag-bad">高</span></span>
+    <span class="risk-mitigation">产品内明确显示"官方来源链接"，用户可一键核验；服务条款明确数据参考性质；购买专业责任险。</span>
+  </div>
+</section>
+</div>
+
+<!-- ══ 07 · 结语 ════════════════════════════════════════════ -->
+<div class="conclusion">
+<div class="wrap">
+<section class="reveal">
+  <div class="section-header">
+    <span class="section-num" style="color:var(--gold-lt);">07</span>
+    <h2 class="section-title">为什么是现在</h2>
+  </div>
+
+  <blockquote class="conclusion-quote">
+    "最直接的竞品 File In Time，是一款仍在销售安装包的桌面软件。这在 2025 年是一个信号，不是威胁，而是邀请。"
+  </blockquote>
+
+  <p>三个结构性因素在此刻同时成熟：</p>
+
+  <p><strong>AI 降低了数据维护成本。</strong>过去，维护一个"准确且实时更新的 50 州税法日期数据库"需要一个专职团队。今天，LLM + 自动化监控可以将这一成本降低 80%，使这个商业模式在小规模下也可盈利。</p>
+
+  <p><strong>小企业数量持续增长。</strong>美国自 2020 年以来每年新增 500 万+ 商业申请，服务于这些企业的 CPA 需求随之增加，且越来越多的小企业涉及多州运营。</p>
+
+  <p><strong>垂直 SaaS 的定价逻辑已被市场验证。</strong>Toast、SimplePractice、Jobber 均证明：深度解决一个细分行业的核心痛点，可以建立极高的用户留存和 LTV。税务合规是 CPA 工作中最不可妥协的部分，这是天然的高粘性锚点。</p>
+
+  <p>DueDateHQ 不是一个新品类的赌注，而是在一个已被验证的需求上，用现代技术做一个更好的替代品。市场已在那里，工具已经老化，时机恰好。</p>
+</section>
+</div>
+</div>
+
+<!-- ══ FOOTER ══════════════════════════════════════════════ -->
+<footer>
+  <div class="footer-logo">DueDate<em>HQ</em></div>
+  <p class="footer-note">CONFIDENTIAL · 2025 · 仅供内部参考</p>
+</footer>
+
+<script>
+  // Intersection Observer for scroll reveals
+  const reveals = document.querySelectorAll('.reveal');
+  const observer = new IntersectionObserver((entries) => {
+    entries.forEach(entry => {
+      if (entry.isIntersecting) {
+        entry.target.classList.add('visible');
+        observer.unobserve(entry.target);
+      }
+    });
+  }, { threshold: 0.08 });
+  reveals.forEach(el => observer.observe(el));
+</script>
+<script defer src="https://static.cloudflareinsights.com/beacon.min.js/v8c78df7c7c0f484497ecbca7046644da1771523124516" integrity="sha512-8DS7rgIrAmghBFwoOTujcf6D9rXvH8xm8JQ1Ja01h9QX8EzXldiszufYa4IFfKdLUKTTrnSFXLDkUEOTrZQ8Qg==" data-cf-beacon='{"version":"2024.11.0","token":"eedff7dfa00c44a9b14b61e67c1ae908","r":1,"server_timing":{"name":{"cfCacheStatus":true,"cfEdge":true,"cfExtPri":true,"cfL4":true,"cfOrigin":true,"cfSpeedBrain":true},"location_startswith":null}}' crossorigin="anonymous"></script>
+</body>
+</html>

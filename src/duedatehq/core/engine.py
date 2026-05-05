@@ -5,9 +5,12 @@ import json
 import re
 from dataclasses import asdict, dataclass, field, is_dataclass
 from datetime import datetime, timedelta, timezone
+from io import StringIO
 from pathlib import Path
+from urllib.parse import urlparse
 from uuid import uuid4
 
+from .ai_assist import AIAssistService
 from .bus import InMemoryEventBus
 from .clock import Clock
 from .events import Event, EventType
@@ -32,6 +35,7 @@ from .models import (
     Reminder,
     ReminderStatus,
     ReminderType,
+    ProposedPlanItem,
     Task,
     TaskStatus,
     FetchRun,
@@ -46,6 +50,14 @@ from ..layers.state_machine import DeadlineStateMachine
 
 
 FEDERAL_JURISDICTION = "FEDERAL"
+GENERIC_BUSINESS_ENTITY_TYPES = ("c-corp", "s-corp", "llc", "partnership")
+STATE_SPECIFIC_ENTITY_TYPES = {
+    "pte_election": ("s-corp", "partnership", "llc"),
+    "ptet": ("s-corp", "partnership", "llc"),
+    "sales_tax": GENERIC_BUSINESS_ENTITY_TYPES,
+    "franchise_tax": GENERIC_BUSINESS_ENTITY_TYPES,
+    "state_income": GENERIC_BUSINESS_ENTITY_TYPES,
+}
 IMPORT_FIELD_SPECS = (
     {
         "key": "client_name",
@@ -131,6 +143,22 @@ class InfrastructureEngine:
             )
         self._publish(EventType.TENANT_CREATED, {"tenant_id": tenant.tenant_id, "name": tenant.name}, "system")
         return tenant
+
+    def get_tenant(self, tenant_id: str) -> Tenant:
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM tenants WHERE tenant_id = ? AND is_deleted = 0",
+                (tenant_id,),
+            ).fetchone()
+        if row is None:
+            raise KeyError(tenant_id)
+        return Tenant(
+            tenant_id=row["tenant_id"],
+            name=row["name"],
+            created_at=self._parse_datetime(row["created_at"]),
+            is_deleted=bool(row["is_deleted"]),
+            deleted_at=self._parse_datetime(row["deleted_at"]) if row["deleted_at"] else None,
+        )
 
     def register_client(
         self,
@@ -350,7 +378,103 @@ class InfrastructureEngine:
         )
         return client
 
-    def parse_rule_text(self, raw_text: str) -> RuleParseResult:
+    def _extract_dates_from_text(self, raw_text: str) -> list[str]:
+        patterns = [
+            r"\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\s+\d{1,2},\s+\d{4}\b",
+            r"\b\d{4}-\d{2}-\d{2}\b",
+        ]
+        matches: list[str] = []
+        for pattern in patterns:
+            matches.extend(re.findall(pattern, raw_text, flags=re.IGNORECASE))
+        return matches
+
+    def _normalize_date_string(self, value: str | None) -> str | None:
+        if not value:
+            return None
+        candidate = value.strip()
+        for fmt in ("%Y-%m-%d", "%b %d, %Y", "%B %d, %Y"):
+            try:
+                return datetime.strptime(candidate, fmt).date().isoformat()
+            except ValueError:
+                continue
+        return None
+
+    def _state_specific_parse_hints(
+        self,
+        *,
+        raw_text: str,
+        source_key: str | None,
+        source_url: str,
+        fetched_at: datetime | None,
+    ) -> str:
+        if re.search(r"\btax[_ ]type\s*:", raw_text, re.IGNORECASE):
+            return raw_text
+
+        normalized = " ".join(raw_text.split())
+        lowered = normalized.lower()
+        jurisdiction = None
+        if source_key and source_key.startswith("state_"):
+            jurisdiction = source_key.removeprefix("state_").upper()
+        elif "ftb.ca.gov" in source_url:
+            jurisdiction = "CA"
+        elif "comptroller.texas.gov" in source_url:
+            jurisdiction = "TX"
+        elif "tax.ny.gov" in source_url:
+            jurisdiction = "NY"
+
+        tax_type = None
+        if jurisdiction == "CA":
+            if "pte election" in lowered or "pass-through entity elective tax" in lowered:
+                tax_type = "pte_election"
+            elif "franchise tax" in lowered:
+                tax_type = "franchise_tax"
+            elif "sales tax" in lowered:
+                tax_type = "sales_tax"
+        elif jurisdiction == "TX":
+            if "economic nexus" in lowered or "remote-seller" in lowered or "remote seller" in lowered or "sales tax" in lowered:
+                tax_type = "sales_tax"
+            elif "franchise tax" in lowered or "margin tax" in lowered:
+                tax_type = "franchise_tax"
+        elif jurisdiction == "NY":
+            if "pass-through entity tax" in lowered or re.search(r"\bptet\b", lowered):
+                tax_type = "ptet"
+            elif "sales tax" in lowered:
+                tax_type = "sales_tax"
+            elif "franchise tax" in lowered or "corporation tax" in lowered:
+                tax_type = "franchise_tax"
+
+        if not jurisdiction and not tax_type:
+            return raw_text
+
+        dates = [value for value in (self._normalize_date_string(token) for token in self._extract_dates_from_text(normalized)) if value]
+        deadline_date = dates[-1] if dates else None
+        effective_from = dates[0] if dates else (fetched_at.date().isoformat() if fetched_at else None)
+        entity_types = STATE_SPECIFIC_ENTITY_TYPES.get(tax_type or "", GENERIC_BUSINESS_ENTITY_TYPES)
+        structured_lines = [
+            normalized,
+            f"jurisdiction: {jurisdiction}" if jurisdiction else None,
+            f"tax_type: {tax_type}" if tax_type else None,
+            f"entity_types: {', '.join(entity_types)}" if entity_types else None,
+            f"deadline_date: {deadline_date}" if deadline_date else None,
+            f"effective_from: {effective_from}" if effective_from else None,
+        ]
+        return "\n".join(line for line in structured_lines if line)
+
+    def parse_rule_text(
+        self,
+        raw_text: str,
+        *,
+        source_key: str | None = None,
+        source_url: str = "",
+        fetched_at: datetime | None = None,
+    ) -> RuleParseResult:
+        raw_text = self._state_specific_parse_hints(
+            raw_text=raw_text,
+            source_key=source_key,
+            source_url=source_url,
+            fetched_at=fetched_at,
+        )
+
         def extract(label: str) -> str | None:
             match = re.search(rf"{label}\s*:\s*(.+)", raw_text, re.IGNORECASE)
             return match.group(1).strip() if match else None
@@ -358,12 +482,14 @@ class InfrastructureEngine:
         tax_type = extract("tax[_ ]type")
         jurisdiction = extract("jurisdiction")
         entity_types_raw = extract("entity[_ ]types")
-        deadline_date = extract("deadline[_ ]date")
-        effective_from = extract("effective[_ ]from")
+        deadline_date = self._normalize_date_string(extract("deadline[_ ]date"))
+        effective_from = self._normalize_date_string(extract("effective[_ ]from"))
         entity_types = [part.strip().lower() for part in entity_types_raw.split(",")] if entity_types_raw else []
         confidence = 0.25 + sum(bool(value) for value in [tax_type, jurisdiction, entity_types, deadline_date, effective_from]) * 0.15
         if re.search(r"\b(irs|ftb|tax|deadline|due date)\b", raw_text, re.IGNORECASE):
             confidence += 0.1
+        if source_key in {"state_ca", "state_tx", "state_ny"} and tax_type and jurisdiction:
+            confidence += 0.05
         return RuleParseResult(
             tax_type=tax_type.lower() if tax_type else None,
             jurisdiction=jurisdiction.upper() if jurisdiction else None,
@@ -385,10 +511,16 @@ class InfrastructureEngine:
         raw_text: str,
         source_url: str,
         fetched_at: datetime,
+        source_key: str | None = None,
         actor: str = "system",
         actor_ip: str = "127.0.0.1",
     ) -> RuleRecord | RuleReviewItem:
-        parsed = self.parse_rule_text(raw_text)
+        parsed = self.parse_rule_text(
+            raw_text,
+            source_key=source_key,
+            source_url=source_url,
+            fetched_at=fetched_at,
+        )
         if parsed.confidence_score < 0.85 or not all(
             [parsed.tax_type, parsed.jurisdiction, parsed.entity_types, parsed.deadline_date, parsed.effective_from]
         ):
@@ -423,6 +555,7 @@ class InfrastructureEngine:
             raw_text=raw_text,
             source_url=source_url,
             fetched_at=fetched_at,
+            source_key=source_definition.source_key,
             actor=actor,
             actor_ip=actor_ip,
         )
@@ -837,6 +970,86 @@ class InfrastructureEngine:
             ).fetchall()
         return [self._notification_route_from_row(dict(row)) for row in rows]
 
+    def update_notification_route(
+        self,
+        tenant_id: str,
+        route_id: str,
+        *,
+        destination: str | None = None,
+        enabled: bool | None = None,
+        actor: str = "system",
+        actor_ip: str = "127.0.0.1",
+    ) -> NotificationRoute:
+        correlation_id = str(uuid4())
+        with self._transaction(tenant_id=tenant_id) as conn:
+            row = conn.execute(
+                "SELECT * FROM notification_routes WHERE tenant_id = ? AND route_id = ?",
+                (tenant_id, route_id),
+            ).fetchone()
+            if row is None:
+                raise KeyError(route_id)
+            existing = self._notification_route_from_row(dict(row))
+            updated = NotificationRoute(
+                route_id=existing.route_id,
+                tenant_id=existing.tenant_id,
+                channel=existing.channel,
+                destination=destination if destination is not None else existing.destination,
+                enabled=enabled if enabled is not None else existing.enabled,
+                created_at=existing.created_at,
+            )
+            conn.execute(
+                """
+                UPDATE notification_routes
+                SET destination = ?, enabled = ?
+                WHERE tenant_id = ? AND route_id = ?
+                """,
+                (
+                    updated.destination,
+                    1 if updated.enabled else 0,
+                    tenant_id,
+                    route_id,
+                ),
+            )
+            self._insert_audit(
+                conn=conn,
+                tenant_id=tenant_id,
+                actor=actor,
+                actor_ip=actor_ip,
+                action_type="notification_route_updated",
+                object_type="notification_route",
+                object_id=route_id,
+                before=self._audit_payload(existing),
+                after=self._audit_payload(updated),
+                correlation_id=correlation_id,
+            )
+        return updated
+
+    def settings_payload(self, tenant_id: str) -> dict[str, object]:
+        tenant = self.get_tenant(tenant_id)
+        routes = self.list_notification_routes(tenant_id)
+        pending_deliveries = self.list_notification_deliveries(tenant_id, pending_only=True)
+        return {
+            "tenant": {
+                "tenant_id": tenant.tenant_id,
+                "name": tenant.name,
+                "created_at": tenant.created_at.isoformat(),
+            },
+            "notification_routes": [
+                {
+                    "route_id": route.route_id,
+                    "channel": route.channel.value,
+                    "destination": route.destination,
+                    "enabled": route.enabled,
+                    "created_at": route.created_at.isoformat(),
+                }
+                for route in routes
+            ],
+            "notification_summary": {
+                "enabled_channels": len([route for route in routes if route.enabled]),
+                "pending_deliveries": len(pending_deliveries),
+            },
+        }
+
     def list_notification_deliveries(
         self,
         tenant_id: str,
@@ -940,6 +1153,157 @@ class InfrastructureEngine:
             if status is NotificationStatus.SENT:
                 sent += 1
         return sent
+
+    def draft_client_email(
+        self,
+        tenant_id: str,
+        client_id: str,
+        *,
+        deadline_id: str | None = None,
+        task_id: str | None = None,
+        extra_context: str | None = None,
+    ) -> dict[str, object]:
+        task = self.get_task(tenant_id, task_id) if task_id else None
+        if task and deadline_id is None and task.source_type in {"deadline", "import_plan"}:
+            deadline_id = task.source_id
+        client = self.get_client(tenant_id, client_id)
+        deadline = self._email_target_deadline(tenant_id, client_id, deadline_id)
+        context = {
+            "tenant_id": tenant_id,
+            "client_id": client.client_id,
+            "client_name": client.name,
+            "contact_name": client.primary_contact_name,
+            "contact_email": self._client_email_destination(tenant_id, client),
+            "deadline_id": deadline.deadline_id,
+            "tax_type": deadline.tax_type,
+            "jurisdiction": deadline.jurisdiction,
+            "due_date": deadline.due_date,
+            "status": deadline.status.value,
+            "task_title": task.title if task else None,
+            "task_description": task.description if task else None,
+            "blocker_reason": self._open_blocker_reason_for_client(tenant_id, client_id),
+            "extra_context": extra_context,
+        }
+        draft = AIAssistService().draft_client_email(context)
+        draft["to"] = context["contact_email"]
+        draft["deadline_id"] = deadline.deadline_id
+        draft["task_id"] = task.task_id if task else None
+        return draft
+
+    def queue_client_email(
+        self,
+        tenant_id: str,
+        client_id: str,
+        *,
+        subject: str,
+        body: str,
+        deadline_id: str | None = None,
+        task_id: str | None = None,
+        actor: str = "system",
+        actor_ip: str = "127.0.0.1",
+    ) -> NotificationDelivery:
+        if task_id:
+            task = self.get_task(tenant_id, task_id)
+            if task.client_id != client_id:
+                raise ValueError("task does not belong to client")
+            if deadline_id is None and task.source_type in {"deadline", "import_plan"}:
+                deadline_id = task.source_id
+        if not deadline_id:
+            raise ValueError("client email must be anchored to a work item deadline")
+        client = self.get_client(tenant_id, client_id)
+        destination = self._client_email_destination(tenant_id, client)
+        if not destination:
+            raise ValueError(f"client {client.name} has no email contact")
+        deadline = self._email_target_deadline(tenant_id, client_id, deadline_id)
+        now = self.clock.now()
+        reminder = Reminder(
+            reminder_id=str(uuid4()),
+            deadline_id=deadline.deadline_id,
+            tenant_id=tenant_id,
+            client_id=client_id,
+            scheduled_at=now,
+            triggered_at=now,
+            status=ReminderStatus.TRIGGERED,
+            reminder_day="manual-email",
+            reminder_type=deadline.reminder_type,
+            responded_at=None,
+            response=None,
+        )
+        delivery = NotificationDelivery(
+            delivery_id=str(uuid4()),
+            tenant_id=tenant_id,
+            client_id=client_id,
+            deadline_id=deadline.deadline_id,
+            reminder_id=reminder.reminder_id,
+            channel=NotificationChannel.EMAIL,
+            destination=destination,
+            subject=subject,
+            body=body,
+            status=NotificationStatus.PENDING,
+            provider_message_id=None,
+            error_message=None,
+            created_at=now,
+            sent_at=None,
+        )
+        with self._transaction(tenant_id=tenant_id) as conn:
+            conn.execute(
+                """
+                INSERT INTO reminders (
+                    reminder_id, deadline_id, tenant_id, client_id, scheduled_at, triggered_at,
+                    status, reminder_day, reminder_type, responded_at, response
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL)
+                """,
+                (
+                    reminder.reminder_id,
+                    reminder.deadline_id,
+                    reminder.tenant_id,
+                    reminder.client_id,
+                    reminder.scheduled_at.isoformat(),
+                    reminder.triggered_at.isoformat() if reminder.triggered_at else None,
+                    reminder.status.value,
+                    reminder.reminder_day,
+                    reminder.reminder_type.value,
+                ),
+            )
+            conn.execute(
+                """
+                INSERT INTO notification_deliveries (
+                    delivery_id, tenant_id, client_id, deadline_id, reminder_id, channel, destination,
+                    subject, body, status, provider_message_id, error_message, created_at, sent_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?, NULL)
+                """,
+                (
+                    delivery.delivery_id,
+                    delivery.tenant_id,
+                    delivery.client_id,
+                    delivery.deadline_id,
+                    delivery.reminder_id,
+                    delivery.channel.value,
+                    delivery.destination,
+                    delivery.subject,
+                    delivery.body,
+                    delivery.status.value,
+                    delivery.created_at.isoformat(),
+                ),
+            )
+            self._insert_audit(
+                conn=conn,
+                tenant_id=tenant_id,
+                actor=actor,
+                actor_ip=actor_ip,
+                action_type="client_email_queued",
+                object_type="notification_delivery",
+                object_id=delivery.delivery_id,
+                before={},
+                after={
+                    "client_id": client_id,
+                    "deadline_id": deadline.deadline_id,
+                    "destination": destination,
+                    "subject": subject,
+                },
+                correlation_id=str(uuid4()),
+            )
+        return delivery
 
     def export_deadlines(
         self,
@@ -1068,6 +1432,28 @@ class InfrastructureEngine:
             rows=data_rows,
         )
 
+    def preview_import_text(
+        self,
+        *,
+        source_name: str,
+        csv_text: str,
+        source_kind: str = "CSV import",
+        mapping_overrides: dict[str, str] | None = None,
+    ) -> dict[str, object]:
+        reader = csv.reader(StringIO(csv_text))
+        rows = [row for row in reader if any(cell.strip() for cell in row)]
+        if not rows:
+            return self.preview_import_table(source_name=source_name, source_kind=source_kind, headers=[], rows=[])
+        headers = rows[0]
+        data_rows = [self._normalize_import_row(headers, row) for row in rows[1:]]
+        return self.preview_import_table(
+            source_name=source_name,
+            source_kind=source_kind,
+            headers=headers,
+            rows=data_rows,
+            mapping_overrides=mapping_overrides,
+        )
+
     def preview_import_table(
         self,
         *,
@@ -1075,8 +1461,16 @@ class InfrastructureEngine:
         source_kind: str,
         headers: list[str],
         rows: list[list[str]],
+        mapping_overrides: dict[str, str] | None = None,
     ) -> dict[str, object]:
         mappings, matched_targets, extra_columns = self._analyze_import_headers(headers)
+        if mapping_overrides:
+            mappings, matched_targets, extra_columns = self._apply_import_mapping_overrides(
+                headers,
+                mappings=mappings,
+                matched_targets=matched_targets,
+                mapping_overrides=mapping_overrides,
+            )
         missing_fields = self._build_import_missing_fields(rows, matched_targets)
         required_mappings = sum(1 for spec in IMPORT_FIELD_SPECS if spec["required"])
         resolved_required_mappings = sum(
@@ -1101,6 +1495,13 @@ class InfrastructureEngine:
             "ready_to_generate": ready_to_generate,
             "required_mappings": required_mappings,
             "resolved_required_mappings": resolved_required_mappings,
+            "ai_assist": self._build_import_ai_assist(
+                headers=headers,
+                rows=rows,
+                mappings=mappings,
+                matched_targets=matched_targets,
+                missing_fields=missing_fields,
+            ),
         }
 
     def apply_import_csv(
@@ -1110,6 +1511,7 @@ class InfrastructureEngine:
         *,
         tax_year: int,
         default_client_type: str = "business",
+        create_initial_tasks: bool = True,
         actor: str = "system",
         actor_ip: str = "127.0.0.1",
     ) -> dict[str, object]:
@@ -1214,19 +1616,101 @@ class InfrastructureEngine:
             )
             created_blockers.extend(row_blockers)
 
-            row_tasks = self._generate_import_tasks_for_client(
-                client=client,
-                actor=actor,
-                actor_ip=actor_ip,
-            )
-            created_tasks.extend(row_tasks)
+            if create_initial_tasks:
+                row_tasks = self._generate_import_tasks_for_client(
+                    client=client,
+                    actor=actor,
+                    actor_ip=actor_ip,
+                )
+                created_tasks.extend(row_tasks)
+
+        proposed_plan = self._build_import_plan_for_clients(tenant_id=tenant_id, clients=created_clients)
 
         return {
             "source_name": path.name,
             "created_clients": created_clients,
             "created_blockers": created_blockers,
             "created_tasks": created_tasks,
+            "proposed_plan": proposed_plan,
+            "initial_task_creation_deferred": not create_initial_tasks,
             "skipped_rows": skipped_rows,
+            "dashboard": self.dashboard_payload(tenant_id),
+        }
+
+    def approve_import_plan(
+        self,
+        tenant_id: str,
+        proposed_plan: list[dict[str, object]] | list[ProposedPlanItem],
+        *,
+        actor: str = "system",
+        actor_ip: str = "127.0.0.1",
+    ) -> dict[str, object]:
+        created_tasks: list[Task] = []
+        skipped_items: list[dict[str, object]] = []
+        summary = {"now": 0, "later": 0, "skip": 0}
+
+        for raw_item in proposed_plan:
+            item = raw_item if isinstance(raw_item, ProposedPlanItem) else self._coerce_proposed_plan_item(raw_item)
+            decision = str((raw_item.get("decision") if isinstance(raw_item, dict) else None) or item.default_action).strip().lower()
+            planned_window = str((raw_item.get("planned_window") if isinstance(raw_item, dict) else None) or item.recommended_window).strip().lower()
+
+            if decision not in {"now", "later", "skip"}:
+                raise ValueError(f"unsupported plan decision: {decision}")
+            summary[decision] += 1
+            if decision == "skip":
+                skipped_items.append(
+                    {
+                        "plan_item_id": item.plan_item_id,
+                        "client_id": item.client_id,
+                        "client_name": item.client_name,
+                        "task_title": item.task_title,
+                        "reason": "Skipped during plan review.",
+                    }
+                )
+                continue
+
+            existing = self._find_open_task_for_source(
+                tenant_id,
+                item.client_id,
+                "import_plan",
+                item.deadline_id,
+            )
+            if existing is not None:
+                skipped_items.append(
+                    {
+                        "plan_item_id": item.plan_item_id,
+                        "client_id": item.client_id,
+                        "client_name": item.client_name,
+                        "task_title": item.task_title,
+                        "reason": "An open plan task already exists for this deadline.",
+                    }
+                )
+                continue
+
+            due_at = self._planned_due_at_for_window(planned_window, related_due_date=item.related_due_date)
+            created_tasks.append(
+                self.create_task(
+                    tenant_id=tenant_id,
+                    client_id=item.client_id,
+                    title=item.task_title,
+                    description=(
+                        f"Approved from import plan review. Related filing due {item.related_due_date}. "
+                        f"Reason: {item.reason}"
+                    ),
+                    task_type="import_plan",
+                    priority="high" if item.urgency == "urgent" else "normal" if item.urgency == "medium" else "low",
+                    source_type="import_plan",
+                    source_id=item.deadline_id,
+                    due_at=due_at,
+                    actor=actor,
+                    actor_ip=actor_ip,
+                )
+            )
+
+        return {
+            "summary": summary,
+            "created_tasks": created_tasks,
+            "skipped_items": skipped_items,
             "dashboard": self.dashboard_payload(tenant_id),
         }
 
@@ -1398,6 +1882,16 @@ class InfrastructureEngine:
             rows = conn.execute(query, tuple(params)).fetchall()
         return [self._task_from_row(dict(row)) for row in rows]
 
+    def get_task(self, tenant_id: str, task_id: str) -> Task:
+        with self._connect(tenant_id=tenant_id) as conn:
+            row = conn.execute(
+                "SELECT * FROM tasks WHERE tenant_id = ? AND task_id = ?",
+                (tenant_id, task_id),
+            ).fetchone()
+        if row is None:
+            raise KeyError(task_id)
+        return self._task_from_row(dict(row))
+
     def update_task_status(
         self,
         tenant_id: str,
@@ -1456,6 +1950,78 @@ class InfrastructureEngine:
                 actor=actor,
                 actor_ip=actor_ip,
                 action_type="task_status_updated",
+                object_type="task",
+                object_id=task_id,
+                before=self._audit_payload(existing),
+                after=self._audit_payload(updated),
+                correlation_id=correlation_id,
+            )
+        return updated
+
+    def update_task(
+        self,
+        tenant_id: str,
+        task_id: str,
+        *,
+        title: str | None = None,
+        description: str | None = None,
+        priority: str | None = None,
+        owner_user_id: str | None = None,
+        due_at: datetime | None = None,
+        actor: str = "system",
+        actor_ip: str = "127.0.0.1",
+    ) -> Task:
+        now = self.clock.now()
+        correlation_id = str(uuid4())
+        with self._transaction(tenant_id=tenant_id) as conn:
+            row = conn.execute(
+                "SELECT * FROM tasks WHERE tenant_id = ? AND task_id = ?",
+                (tenant_id, task_id),
+            ).fetchone()
+            if row is None:
+                raise KeyError(task_id)
+            existing = self._task_from_row(dict(row))
+            updated = Task(
+                task_id=existing.task_id,
+                tenant_id=existing.tenant_id,
+                client_id=existing.client_id,
+                title=title if title is not None else existing.title,
+                description=description if description is not None else existing.description,
+                task_type=existing.task_type,
+                status=existing.status,
+                priority=priority if priority is not None else existing.priority,
+                source_type=existing.source_type,
+                source_id=existing.source_id,
+                owner_user_id=owner_user_id if owner_user_id is not None else existing.owner_user_id,
+                due_at=due_at if due_at is not None else existing.due_at,
+                created_at=existing.created_at,
+                updated_at=now,
+                completed_at=existing.completed_at,
+                dismissed_at=existing.dismissed_at,
+            )
+            conn.execute(
+                """
+                UPDATE tasks
+                SET title = ?, description = ?, priority = ?, owner_user_id = ?, due_at = ?, updated_at = ?
+                WHERE tenant_id = ? AND task_id = ?
+                """,
+                (
+                    updated.title,
+                    updated.description,
+                    updated.priority,
+                    updated.owner_user_id,
+                    updated.due_at.isoformat() if updated.due_at else None,
+                    updated.updated_at.isoformat(),
+                    tenant_id,
+                    task_id,
+                ),
+            )
+            self._insert_audit(
+                conn=conn,
+                tenant_id=tenant_id,
+                actor=actor,
+                actor_ip=actor_ip,
+                action_type="task_updated",
                 object_type="task",
                 object_id=task_id,
                 before=self._audit_payload(existing),
@@ -1940,6 +2506,92 @@ class InfrastructureEngine:
             "blockers": blockers,
         }
 
+    def review_impact_payload(self, tenant_id: str, *, limit: int = 50) -> dict[str, object]:
+        """Return a review-ready view of source interpretation and portfolio impact.
+
+        This is intentionally backend-derived: official source metadata comes
+        from the source registry, low-confidence interpretation comes from the
+        parser payload, and notice outcomes come from generated tasks/blockers.
+        The frontend can still fall back to mock data, but it no longer needs
+        hard-coded source copy to demo the review chain.
+        """
+        clients = self.list_clients(tenant_id)
+        clients_by_id = {client.client_id: client for client in clients}
+        deadlines = self.list_deadlines(tenant_id)
+        deadline_lookup = {deadline.deadline_id: deadline for deadline in deadlines}
+        review_items = self.list_rule_review_queue()[:limit]
+        notices = self.list_notices(tenant_id, limit=limit)
+        rules = self.list_rules()[:limit]
+
+        return {
+            "tenant_id": tenant_id,
+            "source_health": self._review_source_health(),
+            "rule_reviews": [
+                self._review_item_payload(item, clients=clients, deadlines=deadlines)
+                for item in review_items
+            ],
+            "notices": [
+                self._notice_review_payload(notice, clients_by_id=clients_by_id)
+                for notice in notices
+            ],
+            "active_rules": [
+                self._active_rule_payload(rule, deadlines=deadlines, clients_by_id=clients_by_id)
+                for rule in rules
+            ],
+            "totals": {
+                "review_items": len(review_items),
+                "notices": len(notices),
+                "active_rules": len(rules),
+                "affected_clients": len(
+                    {
+                        impact["client_id"]
+                        for notice in notices
+                        for impact in self._notice_client_impacts(notice, clients_by_id=clients_by_id)
+                        if impact.get("client_id")
+                    }
+                ),
+                "visible_deadlines": len(deadline_lookup),
+            },
+        }
+
+    def interpret_policy_change(
+        self,
+        tenant_id: str,
+        *,
+        raw_text: str,
+        source_url: str,
+        source: str | None = None,
+        state: str | None = None,
+        fetched_at: datetime | None = None,
+    ) -> dict[str, object]:
+        fetched_at = fetched_at or self.clock.now()
+        source_definition = source_for_selector(source=source, state=state) if (source or state) else None
+        parsed = self.parse_rule_text(
+            raw_text,
+            source_key=source_definition.source_key if source_definition else None,
+            source_url=source_url,
+            fetched_at=fetched_at,
+        )
+        clients = self.list_clients(tenant_id)
+        deadlines = self.list_deadlines(tenant_id)
+        parse_payload = parsed.extracted_fields
+        missing_fields = self._missing_rule_parse_fields(parse_payload)
+        return {
+            "tenant_id": tenant_id,
+            "provider": AIAssistService().provider_label,
+            "source": self._source_metadata_for_url(source_url),
+            "source_url": source_url,
+            "fetched_at": fetched_at.isoformat(),
+            "interpretation": {
+                "summary": self._review_summary(parse_payload, missing_fields),
+                "confidence_score": parsed.confidence_score,
+                "extracted_fields": parse_payload,
+                "missing_fields": missing_fields,
+            },
+            "affected_clients": self._matched_clients_for_parse_payload(parse_payload, clients=clients, deadlines=deadlines),
+            "ready_to_apply": parsed.confidence_score >= 0.85 and not missing_fields,
+        }
+
     def update_client_tax_profile(
         self,
         tenant_id: str,
@@ -2191,6 +2843,40 @@ class InfrastructureEngine:
             f"Reminder: {reminder.reminder_day}\n"
             "Actions: complete / snooze / waive"
         )
+
+    def _client_email_destination(self, tenant_id: str, client: Client) -> str | None:
+        if client.primary_contact_email:
+            return client.primary_contact_email
+        bundle = self.get_client_bundle(tenant_id, client.client_id)
+        contacts = bundle.get("contacts", [])
+        primary = next((contact for contact in contacts if contact.is_primary and contact.email), None)
+        if primary:
+            return primary.email
+        contact = next((contact for contact in contacts if contact.email), None)
+        return contact.email if contact else None
+
+    def _open_blocker_reason_for_client(self, tenant_id: str, client_id: str) -> str | None:
+        blockers = [item for item in self.list_blockers(tenant_id, client_id) if item.status is BlockerStatus.OPEN]
+        if not blockers:
+            return None
+        blocker = blockers[0]
+        return f"{blocker.title}: {blocker.description}" if blocker.description else blocker.title
+
+    def _email_target_deadline(self, tenant_id: str, client_id: str, deadline_id: str | None) -> Deadline:
+        if deadline_id:
+            deadline = self.get_deadline(tenant_id, deadline_id)
+            if deadline.client_id != client_id:
+                raise ValueError("deadline does not belong to client")
+            return deadline
+        deadlines = [
+            deadline
+            for deadline in self.list_deadlines(tenant_id, client_id=client_id)
+            if deadline.status in {DeadlineStatus.PENDING, DeadlineStatus.SNOOZED, DeadlineStatus.OVERRIDDEN}
+        ]
+        if not deadlines:
+            raise ValueError("client has no active deadline to anchor this email")
+        deadlines.sort(key=lambda item: (item.due_date, item.created_at))
+        return deadlines[0]
 
     def _queue_rule_review(
         self,
@@ -2841,6 +3527,108 @@ class InfrastructureEngine:
         extra_columns = [headers[index] for index in range(len(headers)) if index not in used_indexes]
         return mappings, matched_targets, extra_columns
 
+    def _apply_import_mapping_overrides(
+        self,
+        headers: list[str],
+        *,
+        mappings: list[dict[str, object]],
+        matched_targets: dict[str, int],
+        mapping_overrides: dict[str, str],
+    ) -> tuple[list[dict[str, object]], dict[str, int], list[str]]:
+        target_by_label = {
+            self._normalize_import_header(str(spec["target_field"])): str(spec["key"])
+            for spec in IMPORT_FIELD_SPECS
+        }
+        target_by_key = {str(spec["key"]): str(spec["key"]) for spec in IMPORT_FIELD_SPECS}
+        source_index_by_header = {self._normalize_import_header(header): index for index, header in enumerate(headers)}
+        next_targets = dict(matched_targets)
+        for raw_header, raw_target in mapping_overrides.items():
+            header_key = self._normalize_import_header(raw_header)
+            target_key = self._normalize_import_header(raw_target).replace(" ", "_")
+            header_index = source_index_by_header.get(header_key)
+            if header_index is None:
+                continue
+            for existing_target, existing_index in list(next_targets.items()):
+                if existing_index == header_index:
+                    next_targets.pop(existing_target)
+            if target_key in {"skip", "ignore", "custom"}:
+                continue
+            resolved_target = target_by_key.get(target_key) or target_by_label.get(self._normalize_import_header(raw_target))
+            if resolved_target:
+                next_targets[resolved_target] = header_index
+
+        used_indexes = set(next_targets.values())
+        next_mappings: list[dict[str, object]] = []
+        for spec in IMPORT_FIELD_SPECS:
+            target_key = str(spec["key"])
+            index = next_targets.get(target_key)
+            if index is None:
+                next_mappings.append(
+                    {
+                        "target_field": spec["target_field"],
+                        "source_column": "",
+                        "confidence": 0,
+                        "status": "Needs follow-up",
+                    }
+                )
+                continue
+            next_mappings.append(
+                {
+                    "target_field": spec["target_field"],
+                    "source_column": headers[index],
+                    "confidence": 1.0,
+                    "status": "Mapped",
+                    "override": True,
+                }
+            )
+        extra_columns = [headers[index] for index in range(len(headers)) if index not in used_indexes]
+        return next_mappings, next_targets, extra_columns
+
+    def _build_import_ai_assist(
+        self,
+        *,
+        headers: list[str],
+        rows: list[list[str]],
+        mappings: list[dict[str, object]],
+        matched_targets: dict[str, int],
+        missing_fields: list[str],
+    ) -> dict[str, object]:
+        normalized_clients = []
+        for index, row in enumerate(rows[:5], start=2):
+            client_name = self._extract_import_value(row, matched_targets.get("client_name"))
+            entity_type = self._extract_import_value(row, matched_targets.get("entity_type"))
+            states = self._split_import_states(self._extract_import_value(row, matched_targets.get("operating_states")))
+            normalized_clients.append(
+                {
+                    "row_number": index,
+                    "client_name": client_name or None,
+                    "entity_type": self._normalize_import_entity_type(entity_type) if entity_type else None,
+                    "registered_states": states,
+                    "ready": bool(client_name and entity_type and states),
+                }
+            )
+        suggestions = [
+            {
+                "target_field": item["target_field"],
+                "source_column": item["source_column"],
+                "confidence": item["confidence"],
+                "reason": "Matched from header aliases and row shape.",
+            }
+            for item in mappings
+            if item.get("source_column")
+        ]
+        return {
+            "provider": AIAssistService().provider_label,
+            "summary": (
+                "Import structure is ready for plan generation."
+                if not missing_fields
+                else f"Import needs review: {', '.join(missing_fields[:3])}."
+            ),
+            "mapping_suggestions": suggestions,
+            "normalized_clients": normalized_clients,
+            "supports_manual_overrides": True,
+        }
+
     def _normalize_import_header(self, value: str) -> str:
         return re.sub(r"[^a-z0-9]+", " ", value.strip().lower()).strip()
 
@@ -3005,6 +3793,104 @@ class InfrastructureEngine:
             )
         return tasks
 
+    def _build_import_plan_for_clients(self, *, tenant_id: str, clients: list[Client]) -> list[ProposedPlanItem]:
+        items: list[ProposedPlanItem] = []
+        for client in clients:
+            open_blockers = [blocker for blocker in self.list_blockers(tenant_id, client.client_id) if blocker.status is BlockerStatus.OPEN]
+            blocker_text = " ".join(
+                filter(
+                    None,
+                    [f"{blocker.title} {blocker.description or ''}".strip() for blocker in open_blockers],
+                )
+            ).lower()
+            for deadline in self.list_deadlines(tenant_id, client.client_id):
+                if deadline.status is not DeadlineStatus.PENDING:
+                    continue
+                recommendation = self._recommend_import_plan_step(deadline=deadline, blocker_text=blocker_text)
+                items.append(
+                    ProposedPlanItem(
+                        plan_item_id=str(uuid4()),
+                        tenant_id=tenant_id,
+                        client_id=client.client_id,
+                        deadline_id=deadline.deadline_id,
+                        client_name=client.name,
+                        task_title=recommendation["task_title"],
+                        tax_type=deadline.tax_type,
+                        jurisdiction=deadline.jurisdiction,
+                        related_due_date=deadline.due_date,
+                        recommended_window=recommendation["recommended_window"],
+                        reason=recommendation["reason"],
+                        urgency=recommendation["urgency"],
+                        default_action="now" if recommendation["urgency"] == "urgent" else "later",
+                    )
+                )
+        items.sort(key=lambda item: ({"urgent": 0, "medium": 1, "low": 2}.get(item.urgency, 3), item.related_due_date, item.client_name))
+        return items
+
+    def _recommend_import_plan_step(self, *, deadline: Deadline, blocker_text: str) -> dict[str, str]:
+        due_date = datetime.fromisoformat(deadline.due_date).date()
+        days_remaining = (due_date - self.clock.now().date()).days
+        if blocker_text and any(token in blocker_text for token in ("missing", "pending", "blocking", "confirm")):
+            return {
+                "task_title": f"Collect required info for {deadline.tax_type}",
+                "recommended_window": "do_now" if days_remaining <= 7 else "this_week",
+                "urgency": "urgent" if days_remaining <= 7 else "medium",
+                "reason": "An imported blocker suggests missing or pending information before filing can move.",
+            }
+        if days_remaining <= 3:
+            return {
+                "task_title": f"Complete {deadline.tax_type}",
+                "recommended_window": "do_now",
+                "urgency": "urgent",
+                "reason": "The final filing deadline is close enough that this should be completed immediately.",
+            }
+        if days_remaining <= 14:
+            return {
+                "task_title": f"Prepare {deadline.tax_type}",
+                "recommended_window": "this_week",
+                "urgency": "medium",
+                "reason": "This filing is approaching and should move into preparation this week.",
+            }
+        return {
+            "task_title": f"Confirm filing scope for {deadline.tax_type}",
+            "recommended_window": "next_week",
+            "urgency": "low",
+            "reason": "This filing is far enough out that CPA can confirm scope and schedule the work deliberately.",
+        }
+
+    def _planned_due_at_for_window(self, planned_window: str, *, related_due_date: str) -> datetime:
+        now = self.clock.now()
+        normalized = planned_window.lower()
+        offsets = {
+            "do_now": timedelta(hours=0),
+            "now": timedelta(hours=0),
+            "tomorrow": timedelta(days=1),
+            "this_week": timedelta(days=3),
+            "next_week": timedelta(days=7),
+            "two_weeks": timedelta(days=14),
+            "in_two_weeks": timedelta(days=14),
+        }
+        candidate = now + offsets.get(normalized, timedelta(days=7))
+        related_due = datetime.fromisoformat(related_due_date).replace(tzinfo=timezone.utc)
+        return candidate if candidate <= related_due else related_due
+
+    def _coerce_proposed_plan_item(self, payload: dict[str, object]) -> ProposedPlanItem:
+        return ProposedPlanItem(
+            plan_item_id=str(payload["plan_item_id"]),
+            tenant_id=str(payload["tenant_id"]),
+            client_id=str(payload["client_id"]),
+            deadline_id=str(payload["deadline_id"]),
+            client_name=str(payload["client_name"]),
+            task_title=str(payload["task_title"]),
+            tax_type=str(payload["tax_type"]),
+            jurisdiction=str(payload["jurisdiction"]),
+            related_due_date=str(payload["related_due_date"]),
+            recommended_window=str(payload["recommended_window"]),
+            reason=str(payload["reason"]),
+            urgency=str(payload["urgency"]),
+            default_action=str(payload.get("default_action", "later")),
+        )
+
     def _import_sample_client_names(self, rows: list[list[str]], client_name_index: int | None) -> list[str]:
         if client_name_index is None:
             return []
@@ -3064,6 +3950,268 @@ class InfrastructureEngine:
         if reason:
             parts.append(f"Why this needs attention: {reason}")
         return "\n".join(parts)
+
+    def _review_source_health(self) -> dict[str, object]:
+        sources = official_source_registry()
+        fetch_runs = self.list_fetch_runs()
+        latest_fetch = fetch_runs[0] if fetch_runs else None
+        return {
+            "official_source_count": len(sources),
+            "monitored_jurisdictions": len({item.jurisdiction for item in sources.values()}),
+            "latest_fetch_status": latest_fetch.status if latest_fetch else None,
+            "latest_fetch_source": latest_fetch.source_key if latest_fetch else None,
+            "latest_fetch_at": latest_fetch.fetched_at.isoformat() if latest_fetch else None,
+            "demo_ready_sources": [
+                self._source_metadata_for_url("https://www.ftb.ca.gov/about-ftb/newsroom/index.html"),
+                self._source_metadata_for_url("https://comptroller.texas.gov/about/media-center/news/index.php"),
+                self._source_metadata_for_url("https://www.tax.ny.gov/press/"),
+            ],
+        }
+
+    def _review_item_payload(
+        self,
+        item: RuleReviewItem,
+        *,
+        clients: list[Client],
+        deadlines: list[Deadline],
+    ) -> dict[str, object]:
+        parse_payload = item.parse_payload or {}
+        missing_fields = self._missing_rule_parse_fields(parse_payload)
+        affected_clients = self._matched_clients_for_parse_payload(parse_payload, clients=clients, deadlines=deadlines)
+        extracted = {
+            key: value
+            for key, value in parse_payload.items()
+            if value not in (None, "", [])
+        }
+        extracted_label = ", ".join(sorted(extracted)) if extracted else "no structured fields"
+        return {
+            "review_id": item.review_id,
+            "source": self._source_metadata_for_url(item.source_url),
+            "source_url": item.source_url,
+            "fetched_at": item.fetched_at.isoformat(),
+            "confidence_score": item.confidence_score,
+            "status": "needs_cpa_review",
+            "interpretation": {
+                "summary": self._review_summary(parse_payload, missing_fields),
+                "extracted_fields": parse_payload,
+                "missing_fields": missing_fields,
+                "reason": (
+                    f"Parser extracted {extracted_label}, but needs CPA review before this can change the portfolio."
+                    if missing_fields
+                    else "Parser found the core rule fields, but confidence is still below the auto-apply threshold."
+                ),
+            },
+            "affected_clients": affected_clients,
+            "raw_excerpt": self._truncate_text(item.raw_text, 240),
+        }
+
+    def _notice_review_payload(
+        self,
+        notice: NoticeRecord,
+        *,
+        clients_by_id: dict[str, Client],
+    ) -> dict[str, object]:
+        impacts = self._notice_client_impacts(notice, clients_by_id=clients_by_id)
+        task_count = len([impact for impact in impacts if impact["disposition"] == "task_created"])
+        blocker_count = len([impact for impact in impacts if impact["disposition"] == "blocker_created"])
+        return {
+            "notice_id": notice.notice_id,
+            "title": notice.title,
+            "status": notice.status.value,
+            "source": self._source_metadata_for_url(notice.source_url, fallback_label=notice.source_label),
+            "source_url": notice.source_url,
+            "summary": notice.summary,
+            "updated_at": notice.updated_at.isoformat(),
+            "interpretation": {
+                "summary": notice.summary or "Official notice captured from a monitored source.",
+                "outcome": f"Generated {task_count} review task(s) and {blocker_count} blocker(s).",
+                "requires_cpa_decision": notice.status in {NoticeStatus.QUEUED, NoticeStatus.ESCALATED},
+            },
+            "affected_clients": impacts,
+        }
+
+    def _active_rule_payload(
+        self,
+        rule: RuleRecord,
+        *,
+        deadlines: list[Deadline],
+        clients_by_id: dict[str, Client],
+    ) -> dict[str, object]:
+        matching_deadlines = [deadline for deadline in deadlines if deadline.rule_id == rule.rule_id]
+        return {
+            "rule_id": rule.rule_id,
+            "tax_type": rule.tax_type,
+            "jurisdiction": rule.jurisdiction,
+            "deadline_date": rule.deadline_date,
+            "effective_from": rule.effective_from,
+            "status": rule.status.value,
+            "confidence_score": rule.confidence_score,
+            "source": self._source_metadata_for_url(rule.source_url),
+            "affected_clients": [
+                {
+                    "client_id": deadline.client_id,
+                    "client_name": clients_by_id[deadline.client_id].name if deadline.client_id in clients_by_id else None,
+                    "deadline_id": deadline.deadline_id,
+                    "due_date": deadline.due_date,
+                    "status": deadline.status.value,
+                }
+                for deadline in matching_deadlines
+            ],
+        }
+
+    def _notice_client_impacts(
+        self,
+        notice: NoticeRecord,
+        *,
+        clients_by_id: dict[str, Client],
+    ) -> list[dict[str, object]]:
+        source_prefix = f"{notice.notice_id}:"
+        impacts: list[dict[str, object]] = []
+        for task in self.list_tasks(notice.tenant_id, source_type="notice"):
+            if not task.source_id or not task.source_id.startswith(source_prefix):
+                continue
+            client = clients_by_id.get(task.client_id)
+            impacts.append(
+                {
+                    "client_id": task.client_id,
+                    "client_name": client.name if client else None,
+                    "disposition": "task_created",
+                    "work_item_id": task.task_id,
+                    "status": task.status.value,
+                    "title": task.title,
+                    "reason": self._reason_from_notice_description(task.description),
+                }
+            )
+        for blocker in self.list_blockers(notice.tenant_id, source_type="notice"):
+            if not blocker.source_id or not blocker.source_id.startswith(source_prefix):
+                continue
+            client = clients_by_id.get(blocker.client_id)
+            impacts.append(
+                {
+                    "client_id": blocker.client_id,
+                    "client_name": client.name if client else None,
+                    "disposition": "blocker_created",
+                    "work_item_id": blocker.blocker_id,
+                    "status": blocker.status.value,
+                    "title": blocker.title,
+                    "reason": self._reason_from_notice_description(blocker.description),
+                }
+            )
+        impacts.sort(key=lambda item: (str(item.get("client_name") or ""), str(item.get("disposition") or "")))
+        return impacts
+
+    def _matched_clients_for_parse_payload(
+        self,
+        parse_payload: dict[str, object],
+        *,
+        clients: list[Client],
+        deadlines: list[Deadline],
+    ) -> list[dict[str, object]]:
+        jurisdiction = str(parse_payload.get("jurisdiction") or "").upper()
+        tax_type = str(parse_payload.get("tax_type") or "").lower()
+        matched: dict[str, dict[str, object]] = {}
+        for deadline in deadlines:
+            if jurisdiction:
+                deadline_jurisdiction = deadline.jurisdiction.upper()
+                if jurisdiction == "FEDERAL" and deadline_jurisdiction != "FEDERAL":
+                    continue
+                if jurisdiction != "FEDERAL" and deadline_jurisdiction != jurisdiction:
+                    continue
+            if tax_type and deadline.tax_type.lower() != tax_type:
+                continue
+            client = next((item for item in clients if item.client_id == deadline.client_id), None)
+            matched[deadline.client_id] = {
+                "client_id": deadline.client_id,
+                "client_name": client.name if client else None,
+                "match_reason": self._match_reason(jurisdiction=jurisdiction, tax_type=tax_type, via_deadline=True),
+                "deadline_id": deadline.deadline_id,
+                "due_date": deadline.due_date,
+                "status": deadline.status.value,
+            }
+        for client in clients:
+            if client.client_id in matched:
+                continue
+            if jurisdiction == "FEDERAL" or (jurisdiction and jurisdiction in client.registered_states):
+                matched[client.client_id] = {
+                    "client_id": client.client_id,
+                    "client_name": client.name,
+                    "match_reason": self._match_reason(jurisdiction=jurisdiction, tax_type=tax_type, via_deadline=False),
+                    "deadline_id": None,
+                    "due_date": None,
+                    "status": "profile_match",
+                }
+        return sorted(matched.values(), key=lambda item: str(item.get("client_name") or ""))
+
+    def _missing_rule_parse_fields(self, parse_payload: dict[str, object]) -> list[str]:
+        required = ["tax_type", "jurisdiction", "entity_types", "deadline_date", "effective_from"]
+        return [field for field in required if parse_payload.get(field) in (None, "", [])]
+
+    def _review_summary(self, parse_payload: dict[str, object], missing_fields: list[str]) -> str:
+        jurisdiction = str(parse_payload.get("jurisdiction") or "unknown jurisdiction")
+        tax_type = str(parse_payload.get("tax_type") or "tax rule").replace("_", " ")
+        if missing_fields:
+            return f"Possible {jurisdiction} {tax_type} change; missing {', '.join(missing_fields)} before auto-apply."
+        return f"Possible {jurisdiction} {tax_type} change; parsed fields are complete but confidence still needs review."
+
+    def _match_reason(self, *, jurisdiction: str, tax_type: str, via_deadline: bool) -> str:
+        pieces = []
+        if jurisdiction:
+            pieces.append(f"{jurisdiction} footprint")
+        if tax_type:
+            pieces.append(f"{tax_type.replace('_', ' ')} scope")
+        if via_deadline:
+            pieces.append("matching deadline")
+        else:
+            pieces.append("matching client profile")
+        return " + ".join(pieces)
+
+    def _source_metadata_for_url(self, source_url: str, fallback_label: str | None = None) -> dict[str, object]:
+        source_host = self._normalized_host(source_url)
+        for definition in official_source_registry().values():
+            registry_host = self._normalized_host(definition.default_url)
+            if not source_host or not registry_host:
+                continue
+            if source_host == registry_host or source_host.endswith(f".{registry_host}") or registry_host.endswith(f".{source_host}"):
+                return {
+                    "source_key": definition.source_key,
+                    "display_name": fallback_label or definition.display_name,
+                    "jurisdiction": definition.jurisdiction,
+                    "official": definition.official,
+                    "url": source_url,
+                    "fetch_format": definition.fetch_format,
+                    "poll_frequency_minutes": definition.poll_frequency_minutes,
+                }
+        return {
+            "source_key": None,
+            "display_name": fallback_label or source_host or "External source",
+            "jurisdiction": None,
+            "official": False,
+            "url": source_url,
+            "fetch_format": None,
+            "poll_frequency_minutes": None,
+        }
+
+    def _normalized_host(self, url: str | None) -> str:
+        if not url:
+            return ""
+        parsed = urlparse(url if "://" in url else f"https://{url}")
+        return parsed.netloc.lower().removeprefix("www.")
+
+    def _reason_from_notice_description(self, description: str | None) -> str | None:
+        if not description:
+            return None
+        for line in description.splitlines():
+            if line.startswith("Why this needs attention:"):
+                return line.split(":", 1)[1].strip()
+        return self._truncate_text(description, 180)
+
+    def _truncate_text(self, text: str | None, limit: int) -> str:
+        if not text:
+            return ""
+        normalized = " ".join(text.split())
+        if len(normalized) <= limit:
+            return normalized
+        return f"{normalized[: max(0, limit - 1)].rstrip()}…"
 
     def _find_open_task_for_notice_client(self, tenant_id: str, client_id: str, source_id: str) -> Task | None:
         return self._find_open_task_for_source(tenant_id, client_id, "notice", source_id)

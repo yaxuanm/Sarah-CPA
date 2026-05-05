@@ -87,6 +87,12 @@ def test_source_registry_matches_document_coverage():
     assert registry["fema"].poll_frequency_minutes == 15
     assert registry["state_ca"].poll_frequency_minutes == 60
     assert registry["irs"].default_url.startswith("https://")
+    assert registry["state_ca"].display_name == "California Franchise Tax Board Newsroom"
+    assert registry["state_ca"].default_url == "https://www.ftb.ca.gov/about-ftb/newsroom/index.html"
+    assert registry["state_tx"].display_name == "Texas Comptroller News Releases"
+    assert registry["state_tx"].default_url == "https://comptroller.texas.gov/about/media-center/news/index.php"
+    assert registry["state_ny"].display_name == "New York Tax Department Press Office"
+    assert registry["state_ny"].default_url == "https://www.tax.ny.gov/press/"
 
 
 def test_official_source_fetcher_factory_returns_expected_fetcher():
@@ -116,6 +122,63 @@ def test_fetch_records_run_and_writes_rule(app):
     assert result["result"].source_url == "https://irs.gov/notice-1"
     assert len(app.engine.list_fetch_runs()) == 1
     assert len(app.engine.list_rules()) == 1
+
+
+def test_california_newsroom_notice_parses_into_rule(app):
+    result = app.engine.fetch_from_source(
+        state="CA",
+        raw_text=(
+            "California Franchise Tax Board announced that the 2026 PTE election deadline "
+            "moves from April 30, 2026 to May 30, 2026 for qualifying pass-through entities."
+        ),
+        source_url="https://www.ftb.ca.gov/about-ftb/newsroom/pte-election-update.html",
+        fetched_at=datetime(2026, 4, 25, tzinfo=timezone.utc),
+        actor="cli",
+    )
+
+    assert result["fetch_run"].status == "rule_written"
+    rule = result["result"]
+    assert rule.jurisdiction == "CA"
+    assert rule.tax_type == "pte_election"
+    assert rule.deadline_date == "2026-05-30"
+
+
+def test_new_york_press_notice_parses_into_rule(app):
+    result = app.engine.fetch_from_source(
+        state="NY",
+        raw_text=(
+            "The New York Tax Department confirmed that the PTET election deadline for tax year 2026 "
+            "is March 15, 2026 under updated department guidance."
+        ),
+        source_url="https://www.tax.ny.gov/press/ptet-2026-deadline.htm",
+        fetched_at=datetime(2026, 1, 10, tzinfo=timezone.utc),
+        actor="cli",
+    )
+
+    assert result["fetch_run"].status == "rule_written"
+    rule = result["result"]
+    assert rule.jurisdiction == "NY"
+    assert rule.tax_type == "ptet"
+    assert rule.deadline_date == "2026-03-15"
+
+
+def test_texas_news_release_without_due_date_routes_to_review_queue_with_enriched_parse_payload(app):
+    result = app.engine.fetch_from_source(
+        state="TX",
+        raw_text=(
+            "Texas Comptroller updated economic nexus guidance for remote sellers. "
+            "The economic nexus threshold drops from $500K to $400K of Texas-sourced sales."
+        ),
+        source_url="https://comptroller.texas.gov/about/media-center/news/2026/economic-nexus-update.php",
+        fetched_at=datetime(2026, 4, 24, tzinfo=timezone.utc),
+        actor="cli",
+    )
+
+    assert result["fetch_run"].status == "review_queued"
+    review_item = result["result"]
+    assert review_item.parse_payload["jurisdiction"] == "TX"
+    assert review_item.parse_payload["tax_type"] == "sales_tax"
+    assert review_item.parse_payload["deadline_date"] is None
 
 
 def test_fetch_worker_uses_file_fetcher(app, tmp_path):
@@ -331,6 +394,53 @@ def test_task_lifecycle_and_client_bundle(app):
     assert bundle["tasks"][0].status is TaskStatus.BLOCKED
 
 
+def test_task_update_edits_content(app):
+    tenant = app.engine.create_tenant("Tenant Task Update")
+    client = app.engine.register_client(
+        tenant_id=tenant.tenant_id,
+        name="Aurora Tech Labs",
+        entity_type="c-corp",
+        registered_states=["CA", "NY"],
+        tax_year=2026,
+    )
+
+    task = app.engine.create_task(
+        tenant_id=tenant.tenant_id,
+        client_id=client.client_id,
+        title="Prepare state income filing",
+        description="Initial generated task.",
+        task_type="deadline_action",
+        priority="normal",
+        source_type="deadline",
+        source_id="deadline-001",
+        actor="cli",
+    )
+
+    due_at = datetime.now(timezone.utc) + timedelta(days=3)
+    updated = app.engine.update_task(
+        tenant_id=tenant.tenant_id,
+        task_id=task.task_id,
+        title="Prepare and review state income filing",
+        description="CPA added a review step after the initial task generation.",
+        priority="high",
+        owner_user_id="sarah-johnson",
+        due_at=due_at,
+        actor="cli",
+    )
+
+    assert updated.title == "Prepare and review state income filing"
+    assert updated.description == "CPA added a review step after the initial task generation."
+    assert updated.priority == "high"
+    assert updated.owner_user_id == "sarah-johnson"
+    assert updated.due_at == due_at
+
+    bundle = app.engine.get_client_bundle(tenant.tenant_id, client.client_id)
+    assert bundle["tasks"][0].title == "Prepare and review state income filing"
+    assert bundle["tasks"][0].priority == "high"
+    assert bundle["tasks"][0].owner_user_id == "sarah-johnson"
+    assert bundle["tasks"][0].due_at == due_at
+
+
 def test_import_preview_engine_analysis(app, tmp_path):
     source = tmp_path / "clients.csv"
     source.write_text(
@@ -349,6 +459,76 @@ def test_import_preview_engine_analysis(app, tmp_path):
     assert any(item["target_field"] == "Client name" and item["status"] == "Mapped" for item in preview["mappings"])
     assert any("home jurisdiction" in item.lower() for item in preview["missing_fields"])
     assert preview["sample_rows"][0][0] == "Northwind Services LLC"
+
+
+def test_import_preview_text_supports_mapping_overrides_and_ai_assist(app):
+    preview = app.engine.preview_import_text(
+        source_name="messy.csv",
+        csv_text=(
+            "Account,Return Kind,Markets,Home,Owner Email\n"
+            "Northwind Services LLC,LLC,\"CA,NV\",CA,maya@example.com\n"
+        ),
+        mapping_overrides={"Account": "client_name", "Return Kind": "entity_type", "Markets": "operating_states", "Home": "home_jurisdiction"},
+    )
+
+    assert preview["source_name"] == "messy.csv"
+    assert preview["ready_to_generate"] is True
+    assert preview["ai_assist"]["supports_manual_overrides"] is True
+    assert preview["ai_assist"]["normalized_clients"][0]["client_name"] == "Northwind Services LLC"
+
+
+def test_import_apply_with_plan_review_and_approval(app, tmp_path):
+    tenant = app.engine.create_tenant("Tenant Import Plan Review")
+    due_date = (datetime.now(timezone.utc).date() + timedelta(days=6)).isoformat()
+    app.engine.create_rule(
+        tax_type="franchise_tax",
+        jurisdiction="CA",
+        entity_types=["llc"],
+        deadline_date=due_date,
+        effective_from=datetime.now(timezone.utc).date().isoformat(),
+        source_url="https://ftb.ca.gov/rule",
+        confidence_score=0.99,
+    )
+    source = tmp_path / "plan-review.csv"
+    source.write_text(
+        "Client Name,Entity / Return Type,State Footprint,Home State\n"
+        "Northwind Services LLC,LLC,CA,\n",
+        encoding="utf-8",
+    )
+
+    applied = app.engine.apply_import_csv(
+        tenant.tenant_id,
+        source,
+        tax_year=2026,
+        create_initial_tasks=False,
+        actor="cli",
+    )
+
+    assert len(applied["created_clients"]) == 1
+    assert len(applied["created_blockers"]) == 1
+    assert applied["created_tasks"] == []
+    assert applied["initial_task_creation_deferred"] is True
+    assert len(applied["proposed_plan"]) == 1
+    proposed_item = applied["proposed_plan"][0]
+    assert proposed_item.client_name == "Northwind Services LLC"
+    assert proposed_item.default_action in {"now", "later"}
+
+    approved = app.engine.approve_import_plan(
+        tenant.tenant_id,
+        [
+            {
+                **serialize(proposed_item),
+                "decision": "later",
+                "planned_window": "next_week",
+            }
+        ],
+        actor="cli",
+    )
+
+    assert approved["summary"] == {"now": 0, "later": 1, "skip": 0}
+    assert len(approved["created_tasks"]) == 1
+    assert approved["created_tasks"][0].task_type == "import_plan"
+    assert approved["dashboard"]["open_task_count"] == 1
 
 
 def test_import_apply_writes_clients_and_generates_initial_work(app, tmp_path):
@@ -497,6 +677,67 @@ def test_notice_generate_work_creates_tasks_and_blockers(app):
     assert len(rerun["tasks"]) == 0
     assert len(rerun["blockers"]) == 0
     assert {item["disposition"] for item in rerun["skipped_clients"]} == {"existing_task", "existing_blocker"}
+
+
+def test_review_impact_payload_links_source_interpretation_and_notice_work(app):
+    tenant = app.engine.create_tenant("Tenant Review Impact")
+    client_a = app.engine.register_client(
+        tenant_id=tenant.tenant_id,
+        name="Northwind Services LLC",
+        entity_type="llc",
+        registered_states=["CA"],
+        tax_year=2026,
+    )
+    client_b = app.engine.register_client(
+        tenant_id=tenant.tenant_id,
+        name="Sierra Wholesale Inc.",
+        entity_type="c-corp",
+        registered_states=["TX", "CA"],
+        tax_year=2026,
+    )
+
+    app.engine.fetch_from_source(
+        state="TX",
+        raw_text=(
+            "Texas Comptroller updated economic nexus guidance for remote sellers. "
+            "The economic nexus threshold drops from $500K to $400K of Texas-sourced sales."
+        ),
+        source_url="https://comptroller.texas.gov/about/media-center/news/economic-nexus.html",
+        fetched_at=datetime(2026, 4, 24, tzinfo=timezone.utc),
+        actor="test",
+    )
+    app.engine.generate_notice_work(
+        tenant_id=tenant.tenant_id,
+        notice_id="notice-002",
+        title="Texas nexus threshold clarification",
+        source_url="https://comptroller.texas.gov/about/media-center/news/economic-nexus.html",
+        summary="Threshold change may require a client-level nexus check.",
+        affected_clients=[
+            {
+                "client_id": client_a.client_id,
+                "auto_updated": False,
+                "reason": "Manual CA review is still needed.",
+            },
+            {
+                "client_id": client_b.client_id,
+                "auto_updated": False,
+                "missing_context": True,
+                "reason": "Imported footprint is incomplete.",
+            },
+        ],
+        actor="test",
+    )
+
+    payload = app.engine.review_impact_payload(tenant.tenant_id)
+
+    assert payload["source_health"]["official_source_count"] >= 53
+    review = payload["rule_reviews"][0]
+    assert review["source"]["display_name"] == "Texas Comptroller News Releases"
+    assert "deadline_date" in review["interpretation"]["missing_fields"]
+    assert any(item["client_name"] == "Sierra Wholesale Inc." for item in review["affected_clients"])
+    notice = payload["notices"][0]
+    assert notice["source"]["display_name"] == "Texas Comptroller News Releases"
+    assert {item["disposition"] for item in notice["affected_clients"]} == {"task_created", "blocker_created"}
 
 
 def test_reminder_queue_rebuild_and_completion_cancels_future(app):
@@ -797,6 +1038,62 @@ def test_cli_task_routes(tmp_path, monkeypatch, capsys):
     assert bundle_payload["tasks"][0]["task_id"] == task_id
 
 
+def test_cli_task_update_route(tmp_path, monkeypatch, capsys):
+    db_path = str(tmp_path / "cli-task-update.sqlite3")
+    app = create_app(db_path)
+    tenant = app.engine.create_tenant("Tenant Task Edit")
+    client = app.engine.register_client(
+        tenant_id=tenant.tenant_id,
+        name="Maple Hill Dental Group",
+        entity_type="professional-corp",
+        registered_states=["MN", "WI"],
+        tax_year=2026,
+    )
+    task = app.engine.create_task(
+        tenant_id=tenant.tenant_id,
+        client_id=client.client_id,
+        title="Prepare sales/use filing",
+        description="Generated from import plan.",
+        task_type="import_plan",
+        priority="normal",
+        source_type="import_plan",
+        source_id="plan-001",
+        actor="cli",
+    )
+    due_at = "2026-05-20T17:00:00+00:00"
+
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "duedatehq",
+            "--db",
+            db_path,
+            "task",
+            "update",
+            tenant.tenant_id,
+            task.task_id,
+            "--title",
+            "Prepare sales/use filing and confirm county rates",
+            "--description",
+            "CPA updated the generated task before it entered the work queue.",
+            "--priority",
+            "high",
+            "--owner-user-id",
+            "maya-chen",
+            "--due-at",
+            due_at,
+        ],
+    )
+    assert cli_main() == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["title"] == "Prepare sales/use filing and confirm county rates"
+    assert payload["description"] == "CPA updated the generated task before it entered the work queue."
+    assert payload["priority"] == "high"
+    assert payload["owner_user_id"] == "maya-chen"
+    assert datetime.fromisoformat(payload["due_at"]) == datetime.fromisoformat(due_at)
+
+
 def test_cli_import_preview_route(tmp_path, monkeypatch, capsys):
     db_path = str(tmp_path / "cli-import.sqlite3")
     csv_path = tmp_path / "portfolio.csv"
@@ -864,6 +1161,81 @@ def test_cli_import_apply_route(tmp_path, monkeypatch, capsys):
     assert len(payload["created_tasks"]) == 1
     assert payload["dashboard"]["client_count"] == 1
     assert payload["dashboard"]["open_blocker_count"] == 1
+
+
+def test_cli_import_apply_deferred_and_approve_plan(tmp_path, monkeypatch, capsys):
+    db_path = str(tmp_path / "cli-import-plan.sqlite3")
+    app = create_app(db_path)
+    tenant = app.engine.create_tenant("Tenant CLI Import Plan")
+    due_date = (datetime.now(timezone.utc).date() + timedelta(days=6)).isoformat()
+    app.engine.create_rule(
+        tax_type="franchise_tax",
+        jurisdiction="CA",
+        entity_types=["llc"],
+        deadline_date=due_date,
+        effective_from=datetime.now(timezone.utc).date().isoformat(),
+        source_url="https://ftb.ca.gov/rule",
+        confidence_score=0.99,
+    )
+    csv_path = tmp_path / "apply-plan.csv"
+    csv_path.write_text(
+        "Client Name,Entity / Return Type,State Footprint,Home State\n"
+        "Northwind Services LLC,LLC,CA,\n",
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "duedatehq",
+            "--db",
+            db_path,
+            "import",
+            "apply",
+            tenant.tenant_id,
+            "--csv",
+            str(csv_path),
+            "--tax-year",
+            "2026",
+            "--defer-task-creation",
+        ],
+    )
+    assert cli_main() == 0
+    apply_payload = json.loads(capsys.readouterr().out)
+    assert apply_payload["initial_task_creation_deferred"] is True
+    assert apply_payload["created_tasks"] == []
+    assert len(apply_payload["proposed_plan"]) == 1
+
+    plan_payload = [
+        {
+            **apply_payload["proposed_plan"][0],
+            "decision": "now",
+            "planned_window": "do_now",
+        }
+    ]
+    plan_path = tmp_path / "approved-plan.json"
+    plan_path.write_text(json.dumps(plan_payload), encoding="utf-8")
+
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "duedatehq",
+            "--db",
+            db_path,
+            "import",
+            "approve-plan",
+            tenant.tenant_id,
+            "--plan-file",
+            str(plan_path),
+        ],
+    )
+    assert cli_main() == 0
+    approved_payload = json.loads(capsys.readouterr().out)
+    assert approved_payload["summary"] == {"now": 1, "later": 0, "skip": 0}
+    assert len(approved_payload["created_tasks"]) == 1
+    assert approved_payload["dashboard"]["open_task_count"] == 1
 
 
 def test_cli_blocker_routes(tmp_path, monkeypatch, capsys):
@@ -1035,6 +1407,190 @@ def test_notification_routes_and_deliveries(app):
     assert sent == len(deliveries)
     deliveries = app.engine.list_notification_deliveries(tenant.tenant_id, deadline.deadline_id)
     assert all(item.status == NotificationStatus.SENT for item in deliveries)
+
+
+def test_queue_client_email_uses_client_contact_and_dispatches(app):
+    tenant = app.engine.create_tenant("Tenant Client Email")
+    app.engine.create_rule(
+        tax_type="federal_income",
+        jurisdiction="FEDERAL",
+        entity_types=["s-corp"],
+        deadline_date="2026-05-15",
+        effective_from="2026-01-01",
+        source_url="https://irs.gov/r1",
+        confidence_score=0.99,
+    )
+    client = app.engine.register_client(
+        tenant_id=tenant.tenant_id,
+        name="Acme LLC",
+        entity_type="s-corp",
+        registered_states=["CA"],
+        tax_year=2026,
+        primary_contact_name="Maya Chen",
+        primary_contact_email="maya@example.com",
+    )
+    deadline = app.engine.list_deadlines(tenant.tenant_id, client.client_id)[0]
+
+    delivery = app.engine.queue_client_email(
+        tenant.tenant_id,
+        client.client_id,
+        deadline_id=deadline.deadline_id,
+        subject="Need documents for upcoming filing",
+        body="Please upload the missing support documents.",
+        actor="user-1",
+    )
+
+    assert delivery.destination == "maya@example.com"
+    assert delivery.deadline_id == deadline.deadline_id
+    assert delivery.status == NotificationStatus.PENDING
+
+    registry = NotifierRegistry({NotificationChannel.EMAIL: ConsoleNotifier(NotificationChannel.EMAIL)})
+    sent = app.engine.dispatch_notification_deliveries(tenant.tenant_id, registry, actor="system")
+    assert sent == 1
+    deliveries = app.engine.list_notification_deliveries(tenant.tenant_id, deadline.deadline_id)
+    assert deliveries[-1].status == NotificationStatus.SENT
+
+
+def test_draft_client_email_uses_work_context(app):
+    tenant = app.engine.create_tenant("Tenant Draft Email")
+    app.engine.create_rule(
+        tax_type="federal_income",
+        jurisdiction="FEDERAL",
+        entity_types=["s-corp"],
+        deadline_date="2026-05-15",
+        effective_from="2026-01-01",
+        source_url="https://irs.gov/r1",
+        confidence_score=0.99,
+    )
+    client = app.engine.register_client(
+        tenant_id=tenant.tenant_id,
+        name="Acme LLC",
+        entity_type="s-corp",
+        registered_states=["CA"],
+        tax_year=2026,
+        primary_contact_name="Maya Chen",
+        primary_contact_email="maya@example.com",
+    )
+    deadline = app.engine.list_deadlines(tenant.tenant_id, client.client_id)[0]
+    app.engine.create_blocker(
+        tenant_id=tenant.tenant_id,
+        client_id=client.client_id,
+        title="Missing payroll support",
+        description="Need Q1 payroll register.",
+        blocker_type="missing_info",
+        source_type="deadline",
+        source_id=deadline.deadline_id,
+    )
+
+    draft = app.engine.draft_client_email(tenant.tenant_id, client.client_id, deadline_id=deadline.deadline_id)
+
+    assert draft["to"] == "maya@example.com"
+    assert "Acme LLC" in draft["subject"]
+    assert "Missing payroll support" in draft["body"]
+    assert draft["provider"] in {"anthropic", "deterministic-fallback"}
+
+
+def test_queue_client_email_can_use_task_anchor(app):
+    tenant = app.engine.create_tenant("Tenant Task Email")
+    app.engine.create_rule(
+        tax_type="federal_income",
+        jurisdiction="FEDERAL",
+        entity_types=["s-corp"],
+        deadline_date="2026-05-15",
+        effective_from="2026-01-01",
+        source_url="https://irs.gov/r1",
+        confidence_score=0.99,
+    )
+    client = app.engine.register_client(
+        tenant_id=tenant.tenant_id,
+        name="Acme LLC",
+        entity_type="s-corp",
+        registered_states=["CA"],
+        tax_year=2026,
+        primary_contact_email="maya@example.com",
+    )
+    deadline = app.engine.list_deadlines(tenant.tenant_id, client.client_id)[0]
+    task = app.engine.create_task(
+        tenant_id=tenant.tenant_id,
+        client_id=client.client_id,
+        title="Collect missing support documents",
+        description="Request documents before preparing the filing.",
+        task_type="client_request",
+        priority="high",
+        source_type="deadline",
+        source_id=deadline.deadline_id,
+        actor="user-1",
+    )
+
+    delivery = app.engine.queue_client_email(
+        tenant.tenant_id,
+        client.client_id,
+        task_id=task.task_id,
+        subject="Missing support documents",
+        body="Please send the missing support documents.",
+        actor="user-1",
+    )
+
+    assert delivery.deadline_id == deadline.deadline_id
+    assert delivery.destination == "maya@example.com"
+
+
+def test_queue_client_email_requires_work_anchor(app):
+    tenant = app.engine.create_tenant("Tenant Email Anchor")
+    client = app.engine.register_client(
+        tenant_id=tenant.tenant_id,
+        name="Acme LLC",
+        entity_type="s-corp",
+        registered_states=["CA"],
+        tax_year=2026,
+        primary_contact_email="maya@example.com",
+    )
+
+    with pytest.raises(ValueError, match="anchored"):
+        app.engine.queue_client_email(
+            tenant.tenant_id,
+            client.client_id,
+            subject="Loose email",
+            body="This should not be allowed.",
+            actor="user-1",
+        )
+
+
+def test_settings_payload_and_notification_route_update(app):
+    tenant = app.engine.create_tenant("Tenant Settings")
+    route = app.engine.configure_notification_route(
+        tenant.tenant_id,
+        NotificationChannel.EMAIL,
+        "owner@example.com",
+        actor="user-1",
+    )
+    app.engine.configure_notification_route(
+        tenant.tenant_id,
+        NotificationChannel.WECHAT,
+        "wechat://johnson-cpa",
+        actor="user-1",
+        enabled=False,
+    )
+
+    payload = app.engine.settings_payload(tenant.tenant_id)
+    assert payload["tenant"]["name"] == "Tenant Settings"
+    assert payload["notification_summary"]["enabled_channels"] == 1
+    assert payload["notification_routes"][0]["destination"] == "owner@example.com"
+    assert {route["channel"] for route in payload["notification_routes"]} == {"email", "wechat"}
+
+    updated = app.engine.update_notification_route(
+        tenant.tenant_id,
+        route.route_id,
+        destination="ops@example.com",
+        enabled=False,
+        actor="user-1",
+    )
+
+    assert updated.destination == "ops@example.com"
+    assert updated.enabled is False
+    payload = app.engine.settings_payload(tenant.tenant_id)
+    assert payload["notification_summary"]["enabled_channels"] == 0
+    assert payload["notification_routes"][0]["enabled"] is False
 
 
 def test_trigger_due_reminders_is_tenant_scoped(app):

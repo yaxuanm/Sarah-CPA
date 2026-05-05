@@ -105,6 +105,15 @@ def build_parser() -> argparse.ArgumentParser:
     task_update.add_argument("task_id")
     task_update.add_argument("--status", choices=[item.value for item in TaskStatus], required=True)
     task_update.add_argument("--actor", default="cli")
+    task_edit = task_subparsers.add_parser("update")
+    task_edit.add_argument("tenant_id")
+    task_edit.add_argument("task_id")
+    task_edit.add_argument("--title")
+    task_edit.add_argument("--description")
+    task_edit.add_argument("--priority")
+    task_edit.add_argument("--owner-user-id")
+    task_edit.add_argument("--due-at")
+    task_edit.add_argument("--actor", default="cli")
 
     blocker_parser = subparsers.add_parser("blocker")
     blocker_subparsers = blocker_parser.add_subparsers(dest="blocker_command", required=True)
@@ -149,7 +158,12 @@ def build_parser() -> argparse.ArgumentParser:
     import_apply.add_argument("--csv", required=True)
     import_apply.add_argument("--tax-year", type=int, required=True)
     import_apply.add_argument("--default-client-type", default="business")
+    import_apply.add_argument("--defer-task-creation", action="store_true")
     import_apply.add_argument("--actor", default="cli")
+    import_approve_plan = import_subparsers.add_parser("approve-plan")
+    import_approve_plan.add_argument("tenant_id")
+    import_approve_plan.add_argument("--plan-file", required=True)
+    import_approve_plan.add_argument("--actor", default="cli")
 
     rule_parser = subparsers.add_parser("rule")
     rule_subparsers = rule_parser.add_subparsers(dest="rule_command", required=True)
@@ -254,6 +268,13 @@ def build_parser() -> argparse.ArgumentParser:
     notify_preview.add_argument("--within-days", type=int, default=7)
     notify_history = notify_subparsers.add_parser("history")
     notify_history.add_argument("tenant_id")
+    notify_email = notify_subparsers.add_parser("email-client")
+    notify_email.add_argument("tenant_id")
+    notify_email.add_argument("client_id")
+    notify_email.add_argument("--deadline-id")
+    notify_email.add_argument("--task-id")
+    notify_email.add_argument("--subject", required=True)
+    notify_email.add_argument("--body", required=True)
     notify_send = notify_subparsers.add_parser("send-pending")
     notify_send.add_argument("tenant_id")
     notify_send.add_argument("--smtp-host")
@@ -451,6 +472,30 @@ def main() -> int:
             )
             print_json(serialize(task), default=str)
             return 0
+        if args.task_command == "update":
+            if all(
+                value is None
+                for value in (
+                    args.title,
+                    args.description,
+                    args.priority,
+                    args.owner_user_id,
+                    args.due_at,
+                )
+            ):
+                parser.error("task update requires at least one field change")
+            task = engine.update_task(
+                tenant_id=args.tenant_id,
+                task_id=args.task_id,
+                title=args.title,
+                description=args.description,
+                priority=args.priority,
+                owner_user_id=args.owner_user_id,
+                due_at=parse_ts(args.due_at) if args.due_at else None,
+                actor=args.actor,
+            )
+            print_json(serialize(task), default=str)
+            return 0
 
     if args.command == "import":
         if args.import_command == "preview":
@@ -463,6 +508,7 @@ def main() -> int:
                 csv_path=args.csv,
                 tax_year=args.tax_year,
                 default_client_type=args.default_client_type,
+                create_initial_tasks=not args.defer_task_creation,
                 actor=args.actor,
             )
             print_json(
@@ -471,7 +517,33 @@ def main() -> int:
                     "created_clients": [serialize(client) for client in result["created_clients"]],
                     "created_blockers": [serialize(blocker) for blocker in result["created_blockers"]],
                     "created_tasks": [serialize(task) for task in result["created_tasks"]],
+                    "proposed_plan": [serialize(item) for item in result["proposed_plan"]],
+                    "initial_task_creation_deferred": result["initial_task_creation_deferred"],
                     "skipped_rows": result["skipped_rows"],
+                    "dashboard": {
+                        "today": result["dashboard"]["today"],
+                        "active_work": [serialize(task) for task in result["dashboard"]["active_work"]],
+                        "waiting_on_info": [serialize(blocker) for blocker in result["dashboard"]["waiting_on_info"]],
+                        "client_count": result["dashboard"]["client_count"],
+                        "open_task_count": result["dashboard"]["open_task_count"],
+                        "open_blocker_count": result["dashboard"]["open_blocker_count"],
+                    },
+                },
+                default=str,
+            )
+            return 0
+        if args.import_command == "approve-plan":
+            proposed_plan = json.loads(Path(args.plan_file).read_text(encoding="utf-8"))
+            result = engine.approve_import_plan(
+                tenant_id=args.tenant_id,
+                proposed_plan=proposed_plan,
+                actor=args.actor,
+            )
+            print_json(
+                {
+                    "summary": result["summary"],
+                    "created_tasks": [serialize(task) for task in result["created_tasks"]],
+                    "skipped_items": result["skipped_items"],
                     "dashboard": {
                         "today": result["dashboard"]["today"],
                         "active_work": [serialize(task) for task in result["dashboard"]["active_work"]],
@@ -720,6 +792,20 @@ def main() -> int:
         if args.notify_command == "history":
             print_json([serialize(item) for item in engine.notify_history(args.tenant_id)], default=str)
             return 0
+        if args.notify_command == "email-client":
+            if not args.deadline_id and not args.task_id:
+                parser.error("notify email-client requires --deadline-id or --task-id")
+            delivery = engine.queue_client_email(
+                args.tenant_id,
+                args.client_id,
+                deadline_id=args.deadline_id,
+                task_id=args.task_id,
+                subject=args.subject,
+                body=args.body,
+                actor="cli",
+            )
+            print_json(serialize(delivery), default=str)
+            return 0
         if args.notify_command == "send-pending":
             registry = build_notifier_registry(args)
             sent = engine.dispatch_notification_deliveries(args.tenant_id, registry, actor="cli")
@@ -876,6 +962,7 @@ def build_notifier_registry(args) -> NotifierRegistry:
         NotificationChannel.EMAIL: ConsoleNotifier(NotificationChannel.EMAIL),
         NotificationChannel.SMS: ConsoleNotifier(NotificationChannel.SMS),
         NotificationChannel.SLACK: ConsoleNotifier(NotificationChannel.SLACK),
+        NotificationChannel.WECHAT: ConsoleNotifier(NotificationChannel.WECHAT),
     }
     if args.smtp_host and args.smtp_sender:
         notifiers[NotificationChannel.EMAIL] = SMTPEmailNotifier(args.smtp_host, args.smtp_port, args.smtp_sender)
