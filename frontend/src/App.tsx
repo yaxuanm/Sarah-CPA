@@ -6,7 +6,7 @@
 //   - Section body renders rich, structured UI from mockData (sections.tsx).
 //   - Ask lives as a tool entry, not as a top-level destination.
 //   - When chat resolves to a ViewEnvelope (ClientCard, ConfirmCard, etc.),
-//     App overlays a drilldown card on top of the active section.
+//     Ask keeps it inside the conversation workspace.
 //
 // What this file is NOT:
 //   - It is not where business logic lives — that's in the backend / cards.tsx.
@@ -23,6 +23,7 @@ import {
   streamChat,
   syncOfficialSources,
   type DashboardPayload,
+  type BackendResponse,
   type NotificationPreview,
   type SourceStatusItem,
   type SourceSyncResult
@@ -41,8 +42,9 @@ import {
   appendBreadcrumb,
   buildQuickActions,
   buildWorkspaceSnapshot,
-  humanIntentStatus,
-  summarizeView
+  summarizeView,
+  surfaceSummary,
+  surfaceTitle
 } from "./chatHelpers";
 import {
   SectionId,
@@ -55,23 +57,13 @@ const tenantId = import.meta.env.VITE_DUEDATEHQ_TENANT_ID || "2403c5e1-85ac-4593
 const apiBase = import.meta.env.VITE_DUEDATEHQ_API_BASE || "http://127.0.0.1:8000";
 
 const initialActions: ActionPlan[] = [];
-
-// View types that should NOT pop the drilldown overlay — these either
-// duplicate what the active section already shows, or are low-information
-// fallbacks the user complained about ("Need one more bit of context").
-const SECTION_NATIVE_VIEWS = new Set([
-  "ListCard",
-  "ClientListCard",
-  "ReminderPreviewCard",
-  "ReviewQueueCard",
-  "GuidanceCard"
-]);
+const openingAssistantMessage = "早上好。Aurora 的 federal income 5 月 15 日到期，最紧急。先处理这个？";
 
 export function App() {
   const [currentSection, setCurrentSection] = useState<SectionId>("work");
   const [appMode, setAppMode] = useState<"dashboard" | "chat">("dashboard");
   const [messages, setMessages] = useState<ChatMessage[]>([
-    { id: id(), role: "system", text: "Ask DueDateHQ — try 'Open Northwind Services' or 'Plan workload for next 30 days'." }
+    { id: id(), role: "system", text: openingAssistantMessage }
   ]);
   const [view, setView] = useState<ViewEnvelope | null>(null);
   const [actions, setActions] = useState<ActionPlan[]>(initialActions);
@@ -80,11 +72,12 @@ export function App() {
   const [session, setSession] = useState<Record<string, unknown>>({
     tenant_id: tenantId,
     session_id: "frontend-validation-session",
-    today: "2026-04-26"
+    today: "2026-04-26",
+    history_window: [{ actor: "system", text: openingAssistantMessage }],
+    state_summary: "Sarah Johnson is a Texas independent CPA managing about 60 clients. The current opening recommendation is Aurora Tech Labs federal income, due 2026-05-15."
   });
   const [busy, setBusy] = useState(false);
   const [apiBootstrapped, setApiBootstrapped] = useState(false);
-  const [drilldownOpen, setDrilldownOpen] = useState(false);
   const [backendState, setBackendState] = useState<"connecting" | "ready" | "degraded" | "offline">("connecting");
   const [sourceStatus, setSourceStatus] = useState<SourceStatusItem[]>([]);
   const [sourceSyncResult, setSourceSyncResult] = useState<SourceSyncResult[]>([]);
@@ -157,8 +150,40 @@ export function App() {
     scrollStream();
   }
 
+  function removeMessage(messageId: string) {
+    setMessages((current) => current.filter((message) => message.id !== messageId));
+    scrollStream();
+  }
+
   function showSectionNotice(text: string, tone: "green" | "blue" | "gold" | "red" = "blue") {
     setSectionNotice((current) => [{ id: id(), text, tone }, ...current].slice(0, 8));
+  }
+
+  function applyBackendResponse(response?: BackendResponse) {
+    if (!response) return;
+
+    const workspaceUpdate = response.workspace_update;
+    const nextWorkspace =
+      workspaceUpdate && typeof workspaceUpdate === "object"
+        ? workspaceUpdate.next_workspace
+        : null;
+
+    if (response.view) {
+      setView(response.view);
+    } else if (
+      nextWorkspace &&
+      typeof nextWorkspace === "object" &&
+      "type" in nextWorkspace &&
+      "data" in nextWorkspace
+    ) {
+      setView(nextWorkspace as ViewEnvelope);
+    }
+
+    const nextActions =
+      response.suggested_actions && response.suggested_actions.length
+        ? response.suggested_actions
+        : response.actions;
+    if (nextActions) setActions(nextActions);
   }
 
   function dismissSectionNotice(noticeId: string) {
@@ -199,15 +224,6 @@ export function App() {
     };
   }, [accountOpen]);
 
-  // Pop the drilldown overlay only when the resolved envelope adds
-  // information beyond what the active section already shows.
-  function maybeOpenDrilldown(envelope: ViewEnvelope | null) {
-    if (!envelope) return;
-    if (appMode !== "chat") return;
-    if (SECTION_NATIVE_VIEWS.has(envelope.type)) return;
-    setDrilldownOpen(true);
-  }
-
   // ---------- Backend round-trips ----------
 
   async function loadBackendOverview() {
@@ -218,8 +234,7 @@ export function App() {
         tenantId,
         session: { ...session, current_view: view }
       });
-      if (result.response.view) setView(result.response.view);
-      setActions(result.response.actions || []);
+      applyBackendResponse(result.response);
       setSession(result.session);
       await refreshLiveBackendData();
       setBackendState("ready");
@@ -293,10 +308,10 @@ export function App() {
     if (!cleaned || busy) return;
     setInput("");
     append("user", userEcho?.trim() || cleaned);
+    const thinkingMessageId = append("status", "__thinking__");
 
     setBusy(true);
     let streamedMessageId: string | null = null;
-    let thinkingMessageId: string | null = null;
     try {
       const nextSession = await streamChat({
         apiBase,
@@ -310,28 +325,14 @@ export function App() {
         },
         onUpdate: (update) => {
           if (update.event === "thinking") {
-            if (thinkingMessageId) {
-              replaceMessage(thinkingMessageId, update.message);
-            } else {
-              thinkingMessageId = append("status", update.message);
-            }
             return;
           }
           if (update.event === "intent_confirmed") {
-            const message = humanIntentStatus(update.intentLabel, update.planSource);
-            if (thinkingMessageId) {
-              replaceMessage(thinkingMessageId, message);
-            } else {
-              thinkingMessageId = append("status", message);
-            }
+            return;
           }
-          if (update.event === "view_rendered") {
-            if (thinkingMessageId) {
-              replaceMessage(thinkingMessageId, "The next workspace is ready.");
-            }
+          if (update.event === "workspace_rendered" || update.event === "view_rendered") {
             if (update.view) {
               setView(update.view);
-              maybeOpenDrilldown(update.view);
             }
             setActions(update.actions || []);
           }
@@ -341,11 +342,16 @@ export function App() {
             }
           }
           if (update.event === "message_delta" && update.delta) {
+            if (thinkingMessageId) removeMessage(thinkingMessageId);
             streamedMessageId ??= append("system", "");
             appendToMessage(streamedMessageId, update.delta);
           }
           if (update.event === "done" && update.response?.message && !streamedMessageId) {
+            if (thinkingMessageId) removeMessage(thinkingMessageId);
             append("system", update.response.message);
+          }
+          if (update.event === "done" && update.response) {
+            applyBackendResponse(update.response);
           }
         }
       });
@@ -353,6 +359,7 @@ export function App() {
       setBackendState("ready");
     } catch (error) {
       setBackendState("degraded");
+      if (thinkingMessageId) removeMessage(thinkingMessageId);
       append(
         "system",
         `The AI backend is unavailable. No records were changed. Please confirm FastAPI is running, then try again. ${String(error)}`
@@ -370,6 +377,7 @@ export function App() {
       return;
     }
     if (action.type !== "direct_execute") return;
+    if (appMode === "chat" && userEcho?.trim()) append("user", userEcho.trim());
 
     if (action.view_data && action.expected_view) {
       const nextView = {
@@ -384,7 +392,6 @@ export function App() {
         ? appendBreadcrumb(currentBreadcrumb, String(nextWorkspace.type || nextView.type))
         : currentBreadcrumb;
       setView(nextView);
-      maybeOpenDrilldown(nextView);
       setActions([]);
       setSession((current) => ({
         ...current,
@@ -411,11 +418,7 @@ export function App() {
         },
         action
       });
-      if (result.response.view) {
-        setView(result.response.view);
-        maybeOpenDrilldown(result.response.view);
-      }
-      setActions(result.response.actions || []);
+      applyBackendResponse(result.response);
       setSession(result.session);
       setBackendState("ready");
       if (result.response.message) append("system", result.response.message);
@@ -491,7 +494,6 @@ export function App() {
               setCurrentSection(section);
               if (section !== "review") setReviewFocusRuleId(null);
               setAppMode("dashboard");
-              setDrilldownOpen(false);
             }}
           />
         </div>
@@ -525,7 +527,6 @@ export function App() {
                   onClick={() => {
                     setCurrentSection("settings");
                     setAppMode("dashboard");
-                    setDrilldownOpen(false);
                     setAccountOpen(false);
                   }}
                 >
@@ -616,7 +617,6 @@ export function App() {
                   setReviewFocusRuleId(null);
                 }
                 setAppMode("dashboard");
-                setDrilldownOpen(false);
               }}
               onPrompt={() =>
                 showSectionNotice(
@@ -659,10 +659,10 @@ export function App() {
             <div className="workspace-stage-head">
               <div>
                 <div className="eyebrow">Current workspace</div>
-                <h1>{view ? view.type : "Chat workspace"}</h1>
+                <h1>{view ? surfaceTitle(view) : "Chat workspace"}</h1>
                 <p className="surface-summary">
                   {view
-                    ? "Structured work surfaces generated from the conversation live here."
+                    ? surfaceSummary(view)
                     : "Start a conversation to generate a work surface, client card, or next-step confirmation."}
                 </p>
               </div>
@@ -736,40 +736,6 @@ export function App() {
           </aside>
         </main>
       )}
-
-      {appMode === "chat" && drilldownOpen && view ? (
-        <div
-          className="drilldown-overlay"
-          role="dialog"
-          aria-modal="true"
-          onClick={() => setDrilldownOpen(false)}
-        >
-          <div className="drilldown-panel" onClick={(event) => event.stopPropagation()}>
-            <div className="drilldown-head">
-              <div>
-                <div className="eyebrow">From chat</div>
-                <h2>{view.type}</h2>
-              </div>
-              <button
-                type="button"
-                className="chat-close"
-                aria-label="Close detail"
-                onClick={() => setDrilldownOpen(false)}
-              >
-                ×
-              </button>
-            </div>
-            <div className="drilldown-body">
-              <ViewRenderer
-                view={view}
-                onPrompt={(prompt) => void submit(prompt)}
-                onAction={(action, label) => void runDirectAction(action, label)}
-                tenantId={tenantId}
-              />
-            </div>
-          </div>
-        </div>
-      ) : null}
 
       {docsOpen ? (
         <div

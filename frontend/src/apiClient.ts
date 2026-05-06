@@ -1,12 +1,22 @@
 import type { ActionPlan, DirectAction, ViewEnvelope } from "./types";
 
+export type BackendResponse = {
+  message?: string;
+  view?: ViewEnvelope;
+  actions?: ActionPlan[];
+  workspace_update?: Record<string, unknown>;
+  next_step?: Record<string, unknown>;
+  suggested_actions?: ActionPlan[];
+};
+
 export type StreamUpdate =
   | { event: "thinking"; message: string }
   | { event: "intent_confirmed"; intentLabel?: string; planSource?: string }
+  | { event: "workspace_rendered"; view: ViewEnvelope | null; actions: ActionPlan[] }
   | { event: "view_rendered"; view: ViewEnvelope | null; actions: ActionPlan[] }
   | { event: "feedback_recorded"; signal?: string }
   | { event: "message_delta"; delta: string }
-  | { event: "done"; response?: { message?: string; view?: ViewEnvelope; actions?: ActionPlan[] }; session?: Record<string, unknown> };
+  | { event: "done"; response?: BackendResponse; session?: Record<string, unknown> };
 
 export async function streamChat(params: {
   apiBase: string;
@@ -58,7 +68,7 @@ export async function bootstrapToday(params: {
   tenantId: string;
   session: Record<string, unknown>;
 }): Promise<{
-  response: { message?: string; view?: ViewEnvelope; actions?: ActionPlan[] };
+  response: BackendResponse;
   session: Record<string, unknown>;
 }> {
   const response = await fetch(`${params.apiBase.replace(/\/$/, "")}/bootstrap/today`, {
@@ -83,7 +93,7 @@ export async function executeAction(params: {
   session: Record<string, unknown>;
   action: DirectAction;
 }): Promise<{
-  response: { message?: string; view?: ViewEnvelope; actions?: ActionPlan[] };
+  response: BackendResponse;
   session: Record<string, unknown>;
 }> {
   const response = await fetch(`${params.apiBase.replace(/\/$/, "")}/action`, {
@@ -339,6 +349,7 @@ function parseSseChunk(chunk: string): StreamUpdate | null {
   if (event === "intent_confirmed") {
     return { event, intentLabel: data.intent_label, planSource: data.plan_source };
   }
+  if (event === "workspace_rendered") return { event, view: data.view, actions: data.actions || [] };
   if (event === "view_rendered") return { event, view: data.view, actions: data.actions || [] };
   if (event === "feedback_recorded") return { event, signal: data.signal };
   if (event === "message_delta") return { event, delta: data.delta || "" };

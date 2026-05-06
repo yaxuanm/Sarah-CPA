@@ -27,7 +27,9 @@ export function describeDirectAction(action: DirectAction): string {
 
 export function MessageBubble({ message }: { message: ChatMessage }) {
   const isUser = message.role === "user";
+  const isThinkingMarker = message.role === "status" && message.text === "__thinking__";
   const isThinking =
+    isThinkingMarker ||
     message.role === "status" &&
     (/^opening/i.test(message.text) ||
       /^the next workspace/i.test(message.text) ||
@@ -40,7 +42,15 @@ export function MessageBubble({ message }: { message: ChatMessage }) {
     >
       <div className={`msg-badge ${isUser ? "usr" : "sys"}`}>{isThinking ? "" : isUser ? "SJ" : "DH"}</div>
       <div className="msg-bubble">
-        <MarkdownText text={message.text} />
+        {isThinkingMarker ? (
+          <div className="thinking-dots" aria-label="DueDateHQ is thinking">
+            <span />
+            <span />
+            <span />
+          </div>
+        ) : (
+          <MarkdownText text={message.text} />
+        )}
       </div>
     </div>
   );
