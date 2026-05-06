@@ -287,6 +287,9 @@ Rules:
 - The email should ask for the missing information or confirmation needed to move this work item forward.
 - Keep the tone professional, specific, and easy for a client to answer.
 - If previous_body exists, improve it rather than simply copying it.
+- Do not invent specific document lists unless they are explicitly named in work_item.
+- Do not include placeholders such as [Your Name], [Firm Name], or [Phone Number].
+- Close with "Thank you." only.
 - Do not mention AI.
 
 work_item:
