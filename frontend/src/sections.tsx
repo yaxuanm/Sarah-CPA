@@ -266,16 +266,20 @@ function addDays(dateText: string, days: number) {
   return target.toISOString().slice(0, 10);
 }
 
-function deriveExtensionDueDate(deadline: MockDeadline) {
+function recommendedExtensionDays(deadline: MockDeadline) {
   if (
     deadline.tax_type === "Federal income" ||
     deadline.tax_type === "State income" ||
     deadline.tax_type === "Franchise" ||
     deadline.tax_type === "PTE election"
   ) {
-    return addDays(deadline.due_date, 153);
+    return 153;
   }
-  return addDays(deadline.due_date, 30);
+  return 30;
+}
+
+function deriveExtensionDueDate(deadline: MockDeadline, days = recommendedExtensionDays(deadline)) {
+  return addDays(deadline.due_date, days);
 }
 
 function summarizeRuleImpact(before: MockDeadline, after: MockDeadline) {
@@ -835,6 +839,10 @@ export function WorkSection({
   const [followupLog, setFollowupLog] = useState<
     Record<string, { id: string; to: string; subject: string; sentAt: string; status: "queued" | "sent" }[]>
   >({});
+  const [extensionDraft, setExtensionDraft] = useState<{ days: 30 | 60 | 90 | 153 | "custom"; dueDate: string }>({
+    days: 30,
+    dueDate: ""
+  });
   const [actionMenuOpen, setActionMenuOpen] = useState(false);
   const actionMenuRef = useRef<HTMLDivElement | null>(null);
 
@@ -902,6 +910,11 @@ export function WorkSection({
     });
     setFollowupAiGenerated(false);
     setFollowupOpen(false);
+    const recommendedDays = recommendedExtensionDays(selectedDeadline);
+    setExtensionDraft({
+      days: recommendedDays as 30 | 153,
+      dueDate: deriveExtensionDueDate(selectedDeadline, recommendedDays)
+    });
     setActionMenuOpen(false);
     setEditingDeadlineId(null);
   }, [selectedDeadlineId, selectedDeadline]);
@@ -950,21 +963,65 @@ export function WorkSection({
               </button>
               {actionMenuOpen ? (
                 <div className="filter-popover export-menu action-menu" role="menu">
-                  <button
-                    type="button"
-                    className="export-menu-item"
-                    onClick={() => {
-                      if (!selectedDeadline.extension_status) {
-                        const extensionDate = deriveExtensionDueDate(selectedDeadline);
-                        updateDeadline(selectedDeadline.id, (deadline) => ({
-                          ...deadline,
-                          status: "extension-approved",
-                          extension_status: "approved",
-                          extended_due_date: extensionDate,
-                          blocker_reason: null
-                        }));
-                        onNotify?.(`Filed extension for ${selectedDeadline.client_name}; due date extended through ${dueLabelFromDate(extensionDate)}.`, "blue");
-                      } else {
+                  {!selectedDeadline.extension_status ? (
+                    <div className="extension-menu-panel">
+                      <div className="extension-menu-head">
+                        <span className="menu-item-icon"><ExtensionIcon /></span>
+                        <span>File extension</span>
+                      </div>
+                      <div className="extension-menu-options" aria-label="Choose extension length">
+                        {[30, 60, 90, 153].map((days) => (
+                          <button
+                            key={days}
+                            type="button"
+                            className={`extension-choice ${extensionDraft.days === days ? "active" : ""}`}
+                            onClick={() =>
+                              setExtensionDraft({
+                                days: days as 30 | 60 | 90 | 153,
+                                dueDate: deriveExtensionDueDate(selectedDeadline, days)
+                              })
+                            }
+                          >
+                            {days} days
+                          </button>
+                        ))}
+                      </div>
+                      <label className="extension-date-field">
+                        <span>Extended due date</span>
+                        <input
+                          type="date"
+                          value={extensionDraft.dueDate}
+                          onChange={(event) => setExtensionDraft({ days: "custom", dueDate: event.target.value })}
+                        />
+                      </label>
+                      <button
+                        type="button"
+                        className="extension-submit"
+                        disabled={!extensionDraft.dueDate}
+                        onClick={() => {
+                          const extensionDate = extensionDraft.dueDate;
+                          updateDeadline(selectedDeadline.id, (deadline) => ({
+                            ...deadline,
+                            status: "extension-approved",
+                            extension_status: "approved",
+                            extended_due_date: extensionDate,
+                            blocker_reason: null
+                          }));
+                          onNotify?.(
+                            `Filed extension for ${selectedDeadline.client_name}; due date extended through ${dueLabelFromDate(extensionDate)}.`,
+                            "blue"
+                          );
+                          setActionMenuOpen(false);
+                        }}
+                      >
+                        File extension
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      className="export-menu-item"
+                      onClick={() => {
                         updateDeadline(selectedDeadline.id, (deadline) => ({
                           ...deadline,
                           status: "pending",
@@ -972,13 +1029,13 @@ export function WorkSection({
                           extended_due_date: null
                         }));
                         onNotify?.(`Revoked extension for ${selectedDeadline.client_name}; restored the original due date.`, "gold");
-                      }
-                      setActionMenuOpen(false);
-                    }}
-                  >
-                    <span className="menu-item-icon"><ExtensionIcon /></span>
-                    <span>{!selectedDeadline.extension_status ? "File extension" : "Revoke extension"}</span>
-                  </button>
+                        setActionMenuOpen(false);
+                      }}
+                    >
+                      <span className="menu-item-icon"><ExtensionIcon /></span>
+                      <span>Revoke extension</span>
+                    </button>
+                  )}
                   <button
                     type="button"
                     className="export-menu-item"

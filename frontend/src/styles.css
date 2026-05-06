@@ -2478,7 +2478,7 @@ input {
 }
 
 .action-menu {
-  width: 210px;
+  width: 260px;
 }
 
 .export-menu-item {
@@ -2550,6 +2550,93 @@ input {
 .action-menu .export-menu-item.danger .menu-item-icon,
 .action-menu .export-menu-item.danger span {
   color: #9a2b22;
+}
+
+.extension-menu-panel {
+  display: grid;
+  gap: 10px;
+  padding: 10px;
+  border-bottom: 1px solid var(--paper-3);
+}
+
+.extension-menu-head {
+  display: grid;
+  grid-template-columns: 24px 1fr;
+  align-items: center;
+  gap: 8px;
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.extension-menu-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.extension-choice {
+  appearance: none;
+  border: 1px solid var(--paper-3);
+  border-radius: 999px;
+  padding: 5px 8px;
+  background: var(--white);
+  color: var(--ink-2);
+  font-size: 11.5px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.extension-choice:hover,
+.extension-choice.active {
+  border-color: var(--ink);
+  color: var(--ink);
+}
+
+.extension-choice.active {
+  background: var(--ink);
+  color: var(--white);
+}
+
+.extension-date-field {
+  display: grid;
+  gap: 5px;
+}
+
+.extension-date-field span {
+  color: var(--ink-3);
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.extension-date-field input {
+  width: 100%;
+  border: 1px solid var(--paper-3);
+  border-radius: 8px;
+  padding: 7px 9px;
+  color: var(--ink);
+  font: inherit;
+  font-size: 12px;
+}
+
+.extension-submit {
+  appearance: none;
+  border: 1px solid var(--ink);
+  border-radius: 8px;
+  padding: 8px 10px;
+  background: var(--ink);
+  color: var(--white);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.extension-submit:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 .filter-label {
