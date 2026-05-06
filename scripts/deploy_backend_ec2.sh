@@ -61,7 +61,7 @@ fi
 
 pkill -f "duedatehq.http_api:create_fastapi_app.*--port ${PORT}" >/dev/null 2>&1 || true
 
-nohup uv run --extra api uvicorn duedatehq.http_api:create_fastapi_app \
+nohup uv run --extra api --extra agent uvicorn duedatehq.http_api:create_fastapi_app \
   --factory \
   --host 0.0.0.0 \
   --port "$PORT" \
