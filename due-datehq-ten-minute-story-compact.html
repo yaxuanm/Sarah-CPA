@@ -464,6 +464,40 @@
       text-transform: uppercase;
     }
 
+    .demo-link {
+      color: inherit;
+      text-decoration: underline;
+      text-decoration-thickness: 2px;
+      text-underline-offset: 3px;
+    }
+
+    .live-strip {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 12px;
+      max-width: 1080px;
+    }
+
+    .live-strip div {
+      padding: 14px 16px;
+      border: 1px solid rgba(21, 115, 71, 0.18);
+      border-radius: 16px;
+      background: var(--soft-green);
+    }
+
+    .live-strip strong {
+      display: block;
+      margin-bottom: 4px;
+      color: #0f5132;
+      font-size: 16px;
+    }
+
+    .live-strip span {
+      color: #375344;
+      font-size: 13px;
+      line-height: 1.45;
+    }
+
     .tag-row {
       display: flex;
       flex-wrap: wrap;
@@ -969,232 +1003,165 @@
         <p class="eyebrow">开场</p>
         <div class="split-title">
           <div>
-            <h1>把 CPA 从截止日期里解放出来。</h1>
-            <p class="lead">DueDateHQ 不是更漂亮的日历。它把规则、客户画像、截止日、沟通和下一步动作放进同一个闭环。</p>
+            <h1>把 CPA 从<span class="accent-text">截止日期</span>里解放出来。</h1>
+            <p class="lead">DueDateHQ 不是更漂亮的日历。它把客户画像、官方规则、截止日、沟通和下一步动作连成一个可运行的工作闭环。</p>
           </div>
           <div class="card accent">
-            <h3>一句话</h3>
-            <p>我们保护的是 CPA 的判断力，把不需要她判断的合规追踪工作交给系统。</p>
+            <h3>今天只证明一件事</h3>
+            <p>上传客户表之后，系统能生成工作台；规则变化之后，系统能指出受影响客户；CPA 最后只做判断。</p>
           </div>
         </div>
         <div class="tag-row">
-          <span class="tag gold">规则库</span>
-          <span class="tag gold">优先级</span>
-          <span class="tag gold">操作闭环</span>
-          <span class="tag green">AI 工作流</span>
+          <span class="tag gold">Deadline intelligence</span>
+          <span class="tag gold">CPA workflow</span>
+          <span class="tag green">AI-assisted</span>
+          <span class="tag green">Live backend demo</span>
         </div>
       </article>
 
       <article class="slide">
-        <p class="eyebrow">客户痛点</p>
-        <h2>Sarah 不是在做税务工作。她在维护“什么时候该做什么”。</h2>
+        <p class="eyebrow">目标客户与痛点</p>
+        <h2>Sarah 不是缺工具。她缺的是一个每天告诉她<span class="accent-text">先做什么</span>的系统。</h2>
         <div class="grid-4">
-          <div class="metric"><strong>60</strong><span>个客户，Sarah 和一个兼职助理管理全部事项。</span></div>
-          <div class="metric"><strong>23</strong><span>个跨州经营客户，规则和截止日组合快速膨胀。</span></div>
-          <div class="metric"><strong>400+</strong><span>个联邦和州层面的截止日期需要持续追踪。</span></div>
-          <div class="metric red"><strong>12h</strong><span>每周花在合规追踪和日历维护上。</span></div>
+          <div class="metric"><strong>60</strong><span>个客户，一个 CPA owner 加兼职助理管理全部事项。</span></div>
+          <div class="metric"><strong>23</strong><span>个跨州客户，州、税种、实体类型组合持续膨胀。</span></div>
+          <div class="metric"><strong>400+</strong><span>联邦和州层面的截止日、延期和周期性事项。</span></div>
+          <div class="metric red"><strong>12h</strong><span>每周浪费在追踪、更新、确认和重新排序上。</span></div>
         </div>
-        <p class="lead compact">这 12 小时不是客户建议、税务判断或收入工作，而是维护工作本身。</p>
+        <p class="lead compact">这个市场不是没有 due date 工具，而是现有工具大多停留在“存日期”。真正昂贵的是每天反复判断：这个客户现在到底该推进、等待、审核，还是归档。</p>
       </article>
 
       <article class="slide">
-        <p class="eyebrow">现有工具</p>
-        <h2>她的工作流被拆在四个地方。</h2>
+        <p class="eyebrow">市场空白</p>
+        <h2>File In Time 像数据库，Karbon 像工作流。Sarah 需要的是<span class="accent-text">规则驱动的工作台</span>。</h2>
+        <div class="grid-3">
+          <div class="card"><h3>传统 due date tracker</h3><p>擅长存表、频率和 rollover，但规则变化、客户状态和客户沟通仍然靠人维护。</p></div>
+          <div class="card"><h3>通用 practice management</h3><p>擅长团队协作和 checklist，但不理解 50 州税务规则、延期、公告和客户适用性。</p></div>
+          <div class="card accent"><h3>DueDateHQ</h3><p>以 deadline 为核心对象，把规则变化、客户画像和下一步动作放在同一个分诊面里。</p></div>
+        </div>
+      </article>
+
+      <article class="slide">
+        <p class="eyebrow">AI 差异化</p>
+        <h2>我们的 AI 不是 chatbot layer。它负责把<span class="accent-text">维护成本</span>从 CPA 身上拿走。</h2>
         <div class="grid-4">
-          <div class="card"><h3>Excel</h3><p>手工录入、手工更新，状态和规则变化都靠人记。</p></div>
-          <div class="card"><h3>Calendar</h3><p>能提醒日期，但看不到这件事是否已完成、被阻塞或不适用。</p></div>
-          <div class="card"><h3>Email</h3><p>客户沟通散落在线程里，催过没有、等什么文件，都不进入工作面。</p></div>
-          <div class="card"><h3>同行消息</h3><p>偶尔从同行那里知道 IRS 或州税局发了新公告。</p></div>
+          <div class="card accent"><h3>Parse</h3><p>把 messy CSV 和客户资料解析成结构化 client profile。</p></div>
+          <div class="card accent"><h3>Watch</h3><p>读取 CA / TX / NY 等官方来源，提取规则变化。</p></div>
+          <div class="card accent"><h3>Match</h3><p>把规则变化匹配到真实客户组合和 work item。</p></div>
+          <div class="card accent"><h3>Draft</h3><p>根据 work context 生成客户跟进和下一步动作。</p></div>
         </div>
-      </article>
-
-      <article class="slide">
-        <p class="eyebrow">Demo 场景 · Before</p>
-        <h2>每天早上，她先做 25 分钟分诊，然后才开始工作。</h2>
-        <div class="story-timeline">
-          <div class="time-row"><strong>7:30</strong><div>打开 Excel，看今天有什么截止日期。</div><span>手动开始</span></div>
-          <div class="time-row"><strong>7:35</strong><div>判断 8 条里面哪个最紧急，哪个被客户 blocked，哪个可以推。</div><span>认知负担</span></div>
-          <div class="time-row"><strong>7:55</strong><div>才清楚今天应该先做什么。</div><span>开始执行</span></div>
-          <div class="time-row"><strong>下午</strong><div>回头更新表格状态，偶尔发现漏了一条。</div><span>二次维护</span></div>
-        </div>
-      </article>
-
-      <article class="slide">
-        <p class="eyebrow">Demo 场景 · After</p>
-        <h2>有了 DueDateHQ，Sarah 打开产品时已经有结论。</h2>
-        <div class="quote-card">
-          <p>早上好。Northwind 的 payroll docs 还缺，Riverbend 有两条 overdue，Harbor 的 PTE election 本周需要决定。先处理哪个？</p>
-        </div>
-        <p class="lead compact">用时：0 分钟。系统已经替她排好优先级，她不用先维护工作面再开始工作。</p>
-      </article>
-
-      <article class="slide">
-        <p class="eyebrow">Demo 场景 · Closed loop</p>
-        <h2>第一件事处理完，下一步已经在等她。</h2>
-        <div class="object-flow">
-          <div><strong>Sarah</strong><span>“先看 Northwind。”</span></div>
-          <div><strong>Workspace</strong><span>打开 Northwind payroll item，看到缺 payroll support docs。</span></div>
-          <div><strong>Ask</strong><span>生成 request info follow-up，准备发给 Maya Chen。</span></div>
-          <div><strong>Record</strong><span>Sarah 发出邮件后说“发了”，系统记录操作。</span></div>
-          <div><strong>Next step</strong><span>“Riverbend 有两条逾期，要顺带看吗？”</span></div>
-        </div>
-        <div class="demo-cue">现场产品：打开 Northwind work item -> Draft follow-up -> Send and wait -> 状态回写。</div>
-      </article>
-
-      <article class="slide">
-        <p class="eyebrow">Demo 场景 · Rule-change moment</p>
-        <h2>10:47，Sarah 没有打开产品，系统已经替她盯着规则。</h2>
-        <div class="grid-3">
-          <div class="card accent"><h3>1. 监控</h3><p>IRS 或州税局发布公告。</p></div>
-          <div class="card accent"><h3>2. 解析</h3><p>系统把公告解析成结构化规则变化。</p></div>
-          <div class="card accent"><h3>3. 匹配</h3><p>匹配到 Sarah 的相关客户，并进入审核或自动更新。</p></div>
-        </div>
-        <p class="lead compact">Demo 要点：这不是新闻摘要，而是“哪些客户会变、要不要 apply”的决策入口。</p>
-      </article>
-
-      <article class="slide">
-        <p class="eyebrow">Demo 场景 · End of day</p>
-        <h2>收工前，她问一句：今天还有什么没处理完？</h2>
-        <div class="quote-card">
-          <p>Harbor Studio Partners 的 PTE election 还没有操作记录，本周必须决定。其他都处理完了或进入等待状态。</p>
-        </div>
-        <p class="lead compact">Sarah 点开 Harbor，处理 PTE election，标记完成。系统说：今天的事全部处理完了。</p>
-      </article>
-
-      <article class="slide">
-        <p class="eyebrow">Demo outcome</p>
-        <h2>结果不是多一个工具，而是少一层认知负担。</h2>
-        <table class="comparison">
-          <thead><tr><th>指标</th><th>之前</th><th>之后</th></tr></thead>
-          <tbody>
-            <tr><td>每天合规追踪时间</td><td>2-3 小时</td><td>25 分钟</td></tr>
-            <tr><td>规则变更响应时间</td><td>48 小时以上</td><td>14 分钟</td></tr>
-            <tr><td>漏掉 deadline 风险</td><td>偶发</td><td>接近零</td></tr>
-            <tr><td>每周节省时间</td><td>没有系统性节省</td><td>8-10 小时</td></tr>
-          </tbody>
-        </table>
-      </article>
-
-      <article class="slide">
-        <p class="eyebrow">为什么是 AI</p>
-        <h2>传统软件能存数据和发提醒，但不能接管判断链路。</h2>
-        <div class="grid-3">
-          <div class="card accent"><h3>解析</h3><p>把不规范的客户表、CSV、字段名，变成结构化 客户画像。</p></div>
-          <div class="card accent"><h3>Watch + 匹配</h3><p>解析官方规则变化，并匹配到 Sarah 的实际客户组合。</p></div>
-          <div class="card accent"><h3>Draft + Render</h3><p>根据 工作项 生成客户跟进；用户直接 Ask 时，渲染最小可用工作界面。</p></div>
-        </div>
-        <p class="lead compact">我们的 AI 不是 chatbot layer，而是降低维护规则、解读公告和推进下一步动作的成本。</p>
+        <p class="lead compact">AI 不替代 CPA 的最终判断。它减少规则维护、资料整理、影响分析和文字起草的时间，让 CPA 把注意力留给判断。</p>
       </article>
 
       <article class="slide">
         <p class="eyebrow">Aha Moment</p>
-        <h2>一个客户表格，变成事务所的工作台。</h2>
+        <h2>一个客户表格，变成事务所的<span class="accent-text">工作台</span>。</h2>
         <div class="object-flow">
           <div><strong>导入客户</strong><span>从竞品或 Excel 上传客户表。</span></div>
           <div><strong>生成画像</strong><span>客户、州、实体类型、税种和联系人结构化。</span></div>
-          <div><strong>派生 deadline</strong><span>系统生成年度截止日和初始 工作项s。</span></div>
+          <div><strong>派生工作</strong><span>系统生成 deadline、task、blocker 和 reminder。</span></div>
           <div><strong>每周分诊</strong><span>Work now / Blocked / Needs review / Overdue。</span></div>
-          <div><strong>政策响应</strong><span>官方变化进入 审核，CPA 决定 apply 或 dismiss。</span></div>
+          <div><strong>政策响应</strong><span>官方变化进入 Review，CPA 决定 apply 或 dismiss。</span></div>
         </div>
-        <div class="demo-cue">这里开始进入产品 demo。不要继续讲 slide，直接展示三条用户故事。</div>
+        <div class="demo-cue">体验链接：<a class="demo-link" href="https://naeu-demo.dify.dev/duedatehq/" target="_blank" rel="noopener">naeu-demo.dify.dev/duedatehq</a> · 测试数据：<a class="demo-link" href="https://naeu-demo.dify.dev/duedatehq/demo-data/duedatehq-live-import-demo.csv" target="_blank" rel="noopener">live import CSV</a></div>
       </article>
 
       <article class="slide">
-        <p class="eyebrow">产品演示 1</p>
-        <h2>从竞品导出的客户表，到可工作的客户组合。</h2>
+        <p class="eyebrow">Live Demo 1 · Import</p>
+        <h2>从客户表到工作台：不是静态 mock，而是调用后端 preview / apply。</h2>
         <div class="story-timeline">
-          <div class="time-row"><strong>1. 上传</strong><div>上传 CSV，系统读取真实文件，不是手工造卡片。</div><span>Clients -> Import</span></div>
-          <div class="time-row"><strong>2. 字段映射</strong><div>AI 辅助 mapping，用户可以手动修正字段。</div><span>解析</span></div>
-          <div class="time-row"><strong>3. 审核</strong><div>确认新客户、已有客户更新和计划生成。</div><span>人工确认</span></div>
-          <div class="time-row"><strong>4. 写入</strong><div>新 client card 出现，已有 client 原地更新，deadline/work queue 派生。</div><span>工作台</span></div>
+          <div class="time-row"><strong>1. Upload</strong><div>上传 CSV，后端解析字段、行和潜在缺失信息。</div><span>Clients -> Import</span></div>
+          <div class="time-row"><strong>2. Review</strong><div>用户确认字段映射、新客户、已有客户更新，以及需要人工确认的行。</div><span>CPA control</span></div>
+          <div class="time-row"><strong>3. Apply</strong><div>写入 client profile，并生成初始 work item 和 blocker。</div><span>Backend write</span></div>
+          <div class="time-row"><strong>4. Continue</strong><div>回到 Clients 和 Work，新客户和任务已经可以被打开。</div><span>Next story</span></div>
         </div>
+        <div class="demo-cue">这份测试 CSV 会产生：6 clients / 9 tasks / 1 blocker，用来直接进入第二条 demo。</div>
       </article>
 
       <article class="slide">
-        <p class="eyebrow">产品演示 2</p>
-        <h2>周一早上，Sarah 不再先做 25 分钟分诊。</h2>
+        <p class="eyebrow">Live Demo 2 · Weekly triage</p>
+        <h2>周一早上，Sarah 打开 Work，不再先做 25 分钟分诊。</h2>
         <div class="grid-4">
           <div class="metric"><strong>Work now</strong><span>现在可以推进的事项。</span></div>
           <div class="metric gold"><strong>Blocked</strong><span>缺文件、缺确认、缺 profile 信息。</span></div>
           <div class="metric"><strong>Needs review</strong><span>政策变化或 notice 需要 CPA 判断。</span></div>
           <div class="metric red"><strong>Overdue</strong><span>已经过期但还没有归档。</span></div>
         </div>
-        <p class="lead compact">打开一个 工作项：看 source、reminder、blocker、extension，必要时生成 client follow-up。</p>
+        <p class="lead compact">打开一个 work item，可以看到 source、reminder、blocker、extension 和 client follow-up。需要客户资料时，AI 只在用户点击 draft 时生成邮件草稿。</p>
       </article>
 
       <article class="slide">
-        <p class="eyebrow">产品演示 3</p>
-        <h2>州税政策变化，变成受影响客户的决策。</h2>
+        <p class="eyebrow">Live Demo 3 · Official rule response</p>
+        <h2>州税变化不是新闻摘要，而是<span class="accent-text">受影响客户清单</span>。</h2>
         <div class="object-flow">
-          <div><strong>来源</strong><span>官方来源和原文链接。</span></div>
-          <div><strong>解读</strong><span>AI 提取规则变化和 before/after。</span></div>
-          <div><strong>匹配</strong><span>系统匹配受影响客户。</span></div>
-          <div><strong>审核</strong><span>CPA 查看每个客户会怎么变。</span></div>
-          <div><strong>写入</strong><span>相关 client / work / calendar 状态更新。</span></div>
+          <div><strong>Sync</strong><span>Review 页触发 CA / TX / NY source-specific sync。</span></div>
+          <div><strong>Source</strong><span>打开官方来源链接和检测时间。</span></div>
+          <div><strong>Diff</strong><span>查看 before / after 规则变化。</span></div>
+          <div><strong>Affected</strong><span>看到哪些客户会变、怎么变。</span></div>
+          <div><strong>Apply</strong><span>CPA 决定写入或 dismiss。</span></div>
         </div>
-        <div class="demo-cue">现场产品：审核 -> Official source -> 审核 details -> 写入 -> 打开受影响 client 看变化。</div>
+        <div class="demo-cue">现场产品：Review -> Sync CA/TX/NY -> Official source -> Review details -> Apply -> 打开 client 看变化。</div>
       </article>
 
       <article class="slide">
-        <p class="eyebrow">产品演示 3.1 · AI Chat</p>
-        <h2>如果 Sarah 不知道点哪里，她直接 Ask。</h2>
+        <p class="eyebrow">AI Chat · On-demand UI</p>
+        <h2>Dashboard 是完整工作台；Ask 是用户不知道点哪里时的<span class="accent-text">捷径</span>。</h2>
         <div class="story-timeline">
-          <div class="time-row"><strong>1. 提问</strong><div>Sarah 用自然语言问：“哪些 California 客户因为这条 rule change 被卡住？”</div><span>Ask</span></div>
-          <div class="time-row"><strong>2. 推理</strong><div>后端识别用户意图，拉取 client、work item、source 和状态数据。</div><span>Reason</span></div>
-          <div class="time-row"><strong>3. 渲染</strong><div>前端不跳到一张固定页面，而是渲染最小可用的工作界面。</div><span>Render</span></div>
-          <div class="time-row"><strong>4. 行动</strong><div>CPA 直接看到受影响客户、证据和下一步动作。</div><span>Action</span></div>
+          <div class="time-row"><strong>提问</strong><div>“哪些 California 客户因为这条 rule change 被卡住？”</div><span>Natural language</span></div>
+          <div class="time-row"><strong>推理</strong><div>后端识别 intent，拉取 client、work item、source 和状态数据。</div><span>Context</span></div>
+          <div class="time-row"><strong>渲染</strong><div>前端渲染最小可用工作界面，而不是把所有用户都塞进同一张 dashboard。</div><span>UI on demand</span></div>
+          <div class="time-row"><strong>行动</strong><div>CPA 直接看到证据、受影响对象和下一步动作。</div><span>Workflow</span></div>
         </div>
-        <p class="lead compact">这一段用来衔接队友的按需渲染：Chat 不是替代 Dashboard，而是在用户不知道该进入哪个页面时，把问题转成正确的工作界面。</p>
+        <p class="lead compact">这一页用来衔接队友的按需渲染：Chat 和 Dashboard 是并行入口，不再混在同一个页面里。</p>
       </article>
 
       <article class="slide">
-        <p class="eyebrow">产品演示 3.2 · Runtime staging</p>
-        <h2>长尾需求第一次出现时，系统先当场满足，再决定是否沉淀。</h2>
-        <div class="object-flow">
-          <div><strong>新需求</strong><span>Sarah 提出一个没有命中缓存的复杂问题。</span></div>
-          <div><strong>识别</strong><span>系统判断它不是已有 intent，也不是已有页面骨架。</span></div>
-          <div><strong>临时工作面</strong><span>LLM 用现有组件搭出当场可用的页面。</span></div>
-          <div><strong>当场使用</strong><span>Sarah 可以查看分析、补字段、发起确认动作。</span></div>
-          <div><strong>后台评估</strong><span>系统再判断是否保存为可复用资产。</span></div>
-        </div>
-        <p class="lead compact">Staging 不是让用户等待审核，而是当前会话立即可用、但尚未进入全局组件库的临时工作面。</p>
-      </article>
-
-      <article class="slide">
-        <p class="eyebrow">当前完成度</p>
-        <h2>当前产品进度：核心工作流已成型，底层能力继续补齐。</h2>
+        <p class="eyebrow">当前实现进度</p>
+        <h2>现在不是只有前端。核心 demo 闭环已经有可访问的 live backend。</h2>
         <div class="module-grid">
           <div class="module-card">
             <h3>客户导入与档案</h3>
-            <p><strong>已实现：</strong>CSV 上传、字段映射、行级审核、新增 / 更新客户、客户详情和编辑入口。</p>
-            <p><strong>正在实现：</strong>AI 解析更不规范的客户文档，并把更多 profile 更新写入数据库。</p>
+            <p><strong>已实现：</strong>CSV 上传、后端 preview / apply、字段映射、行级审核、新增 / 更新客户、客户详情和编辑入口。</p>
+            <p><strong>正在实现：</strong>更强的不规范文档解析、duplicate merge 策略和更完整的导入审计记录。</p>
           </div>
           <div class="module-card">
-            <h3>Deadline 与工作看板</h3>
-            <p><strong>已实现：</strong>从客户 profile 派生 deadline，按 Work now、Blocked、Needs review、Overdue、Archive 分诊，并提供 dashboard payload API。</p>
-            <p><strong>正在实现：</strong>继续打磨筛选、状态流转和更细的审计展示。</p>
+            <h3>Deadline 与 Work board</h3>
+            <p><strong>已实现：</strong>从 client profile 派生 work item，支持 Work now、Blocked、Needs review、Overdue、Archive、extension 和 dashboard payload API。</p>
+            <p><strong>正在实现：</strong>把更多状态修改写入稳定 API，并补齐更完整的历史记录。</p>
           </div>
           <div class="module-card">
             <h3>官方规则与影响分析</h3>
-            <p><strong>已实现：</strong>CA / TX / NY source-specific sync、source status、fetch run、rule review、source、diff、affected clients。</p>
-            <p><strong>正在实现：</strong>扩大官方来源覆盖，并把同步任务接入正式调度和异常监控。</p>
+            <p><strong>已实现：</strong>CA / TX / NY source-specific sync、official source、diff、affected clients 和前端 Review 操作。</p>
+            <p><strong>正在实现：</strong>扩大州税来源覆盖，接入正式调度、异常告警和规则版本管理。</p>
           </div>
           <div class="module-card">
             <h3>提醒与客户跟进</h3>
-            <p><strong>已实现：</strong>提醒时间线、client follow-up、AI draft、通知连接入口、preview / send-pending API。</p>
-            <p><strong>正在实现：</strong>正式 Email / Slack OAuth 连接和可配置 reminder cadence。</p>
+            <p><strong>已实现：</strong>reminder timeline、client follow-up、AI draft、notification preview / send-pending API，以及 Settings 里的 live queue。</p>
+            <p><strong>正在实现：</strong>Email / Slack OAuth、可配置 cadence 和真实发送日志。</p>
           </div>
           <div class="module-card">
             <h3>延期、归档与导出</h3>
             <p><strong>已实现：</strong>File / revoke extension、extended due date、archive、CSV export 入口和报告数据结构。</p>
-            <p><strong>正在实现：</strong>延期历史、PDF 报告、view-level export package 和更完整的审计记录。</p>
+            <p><strong>正在实现：</strong>PDF 报告、view-level export package 和更完整的审计证据链。</p>
           </div>
           <div class="module-card">
             <h3>Ask、API 与 CLI</h3>
-            <p><strong>已实现：</strong>Ask backend streaming，API 覆盖 dashboard、source sync、notifications，CLI 覆盖 import、client、deadline、task、notice、source、notify、export。</p>
-            <p><strong>正在实现：</strong>把更多 dashboard write actions 做成稳定的 API / CLI 双入口。</p>
+            <p><strong>已实现：</strong>Ask backend streaming；API 覆盖 import、dashboard、source sync、notifications；CLI 覆盖 import、client、deadline、task、notice、source、notify、export。</p>
+            <p><strong>正在实现：</strong>把前端所有 write action 收敛成 API / CLI 双入口，方便部署和自动化测试。</p>
           </div>
         </div>
+      </article>
+
+      <article class="slide">
+        <p class="eyebrow">为什么这个链接有价值</p>
+        <h2>Demo 后发出去的不是截图，而是一个能处理数据的体验环境。</h2>
+        <div class="live-strip">
+          <div><strong>Product</strong><span>前端已部署到 naeu-demo.dify.dev/duedatehq。</span></div>
+          <div><strong>Import API</strong><span>preview / apply 可以用测试 CSV 真实跑。</span></div>
+          <div><strong>Source API</strong><span>CA / TX / NY 规则同步可重复触发。</span></div>
+          <div><strong>CLI</strong><span>同一套能力可从命令行跑 import、source、notify、export。</span></div>
+        </div>
+        <p class="lead compact">这很适合 Demo Day 后发到群里：非技术的人能点开产品理解价值，技术的人能看到 API / CLI 和数据闭环。</p>
       </article>
 
       <article class="slide gtm-slide">
@@ -1202,10 +1169,10 @@
         <h2>GTM 不是先投广告，而是先手动把 Sarah 服务到离不开。</h2>
         <div class="grid-3">
           <div class="metric-card"><span>目标人群</span><strong>40-150 客户</strong><small>独立 CPA / 小型事务所 owner，跨州客户比例高。</small></div>
-          <div class="metric-card"><span>切入方式</span><strong>Concierge onboarding</strong><small>导入客户表，人工核对第一版 deadline calendar。</small></div>
-          <div class="metric-card"><span>验证标准</span><strong>30 天不想回 Excel</strong><small>她主动问“这个什么时候正式上线”。</small></div>
+          <div class="metric-card"><span>切入方式</span><strong>Concierge onboarding</strong><small>用客户表导入开局，第一周帮她清出 Work queue。</small></div>
+          <div class="metric-card"><span>验证标准</span><strong>30 天不想回 Excel</strong><small>她主动问“下周哪些客户也可以导进来”。</small></div>
         </div>
-        <p class="lead compact">早期卖的不是“AI 税务软件”，而是一个具体结果：把客户 deadline 整理好，每天告诉 Sarah 最该处理哪几件。</p>
+        <p class="lead compact">早期卖的不是“AI 税务软件”，而是一个具体结果：把客户 deadline 整理好，每天告诉 Sarah 最该处理哪几件。定价可以从 onboarding fee + monthly workspace 开始，再按客户数或 source coverage 扩展。</p>
       </article>
 
       <article class="slide">
@@ -1233,7 +1200,7 @@
 
       <article class="slide">
         <p class="eyebrow">收尾</p>
-        <h2>DueDateHQ 保护的，是 CPA 的判断力。</h2>
+        <h2>DueDateHQ 保护的，是 CPA 的<span class="accent-text">判断力</span>。</h2>
         <p class="lead">一个 CPA 最有价值的东西，从来不是她记住了多少截止日期，而是她对客户情况的理解和判断。</p>
         <div class="quote-card">
           <p>规则库更新，不需要她盯着 IRS 官网。优先级排序，不需要她每天早上想 25 分钟。操作记录，不需要她手动更新 Excel。</p>
@@ -1246,7 +1213,7 @@
       <div class="progress" aria-hidden="true"><span id="progress-bar"></span></div>
       <div class="controls">
         <button id="prev" aria-label="上一页">←</button>
-        <div class="slide-count" id="slide-count">1 / 20</div>
+        <div class="slide-count" id="slide-count">1 / 14</div>
         <button id="next" aria-label="下一页">→</button>
       </div>
     </footer>
@@ -1264,6 +1231,19 @@
 
     const translations = {
       "把 CPA 从截止日期里解放出来。": "Free CPAs from deadline tracking.",
+      "今天只证明一件事": "One thing to prove today",
+      "上传客户表之后，系统能生成工作台；规则变化之后，系统能指出受影响客户；CPA 最后只做判断。": "After a client file is uploaded, the system creates the workspace; after rules change, it shows affected clients; the CPA keeps final judgment.",
+      "目标客户与痛点": "Target user and pain",
+      "市场空白": "Market gap",
+      "AI 差异化": "AI differentiation",
+      "Aha Moment": "Aha Moment",
+      "Live Demo 1 · Import": "Live Demo 1 · Import",
+      "Live Demo 2 · Weekly triage": "Live Demo 2 · Weekly triage",
+      "Live Demo 3 · Official rule response": "Live Demo 3 · Official rule response",
+      "AI Chat · On-demand UI": "AI Chat · On-demand UI",
+      "当前实现进度": "Current build status",
+      "为什么这个链接有价值": "Why this link matters",
+      "Go-to-Market": "Go-to-Market",
       "同一个 CPA 用户基础，可以转出三个飞轮。": "One CPA user base can compound into three flywheels.",
       "规则库飞轮": "Rule library flywheel",
       "意图飞轮": "Intent flywheel",
@@ -1272,13 +1252,8 @@
       "收尾": "Close",
       "未来期待": "Future",
       "开场": "Opening",
-      "客户痛点": "Customer pain",
-      "现有工具": "Current tools",
-      "为什么是 AI": "Why AI",
-      "产品演示 1": "Product demo 1",
-      "产品演示 2": "Product demo 2",
-      "产品演示 3": "Product demo 3",
-      "当前完成度": "Current status"
+      "DueDateHQ 保护的，是 CPA 的": "DueDateHQ protects the CPA’s",
+      "判断力": "judgment"
     };
 
     function normalizeText(value) {
