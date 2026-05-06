@@ -1708,7 +1708,7 @@ function buildImportRowsFromUpload(headers: string[], rows: string[][], mapping:
   ]);
 }
 
-export function ClientsSection({ tenantId, apiBase, onExport, onNotify, importLaunchToken = 0, deadlines: deadlineStore, changedDeadlineIds = [] }: SectionContext) {
+export function ClientsSection({ tenantId, apiBase, onExport, onNotify, importLaunchToken = 0, deadlines: deadlineStore, setDeadlines, changedDeadlineIds = [] }: SectionContext) {
   const [importOpen, setImportOpen] = useState(false);
   const [importStep, setImportStep] = useState<ImportStep>(1);
   const [filterOpen, setFilterOpen] = useState(false);
@@ -1794,6 +1794,16 @@ export function ClientsSection({ tenantId, apiBase, onExport, onNotify, importLa
             result.backend = backendResult;
           }
           setRecords(result.records);
+          setDeadlines?.((current) => {
+            const affectedClientIds = new Set([...result.createdClientIds, ...result.mergedClientIds]);
+            const importedDeadlines = result.records
+              .filter((record) => affectedClientIds.has(record.client.id))
+              .flatMap((record) => record.deadlines);
+            return [
+              ...current.filter((deadline) => !affectedClientIds.has(deadline.client_id)),
+              ...importedDeadlines
+            ].sort((a, b) => a.due_date.localeCompare(b.due_date));
+          });
           setRecentImportResult(result);
           setImportFocus("all");
           const backendCreated = backendResult?.created_clients.length ?? 0;
