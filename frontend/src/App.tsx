@@ -13,7 +13,20 @@
 //   - It does not invent new view types, plan types, or design tokens.
 
 import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
-import { bootstrapToday, executeAction, streamChat } from "./apiClient";
+import {
+  bootstrapToday,
+  executeAction,
+  fetchDashboardPayload,
+  fetchSourceStatus,
+  previewNotifications,
+  sendPendingNotifications,
+  streamChat,
+  syncOfficialSources,
+  type DashboardPayload,
+  type NotificationPreview,
+  type SourceStatusItem,
+  type SourceSyncResult
+} from "./apiClient";
 import { mockDeadlines, mockRules } from "./mockData";
 import type {
   ActionPlan,
@@ -73,6 +86,12 @@ export function App() {
   const [apiBootstrapped, setApiBootstrapped] = useState(false);
   const [drilldownOpen, setDrilldownOpen] = useState(false);
   const [backendState, setBackendState] = useState<"connecting" | "ready" | "degraded" | "offline">("connecting");
+  const [sourceStatus, setSourceStatus] = useState<SourceStatusItem[]>([]);
+  const [sourceSyncResult, setSourceSyncResult] = useState<SourceSyncResult[]>([]);
+  const [sourceSyncing, setSourceSyncing] = useState(false);
+  const [dashboardPayload, setDashboardPayload] = useState<DashboardPayload | null>(null);
+  const [notificationPreview, setNotificationPreview] = useState<NotificationPreview | null>(null);
+  const [notificationSending, setNotificationSending] = useState(false);
   const [sectionNotice, setSectionNotice] = useState<{
     id: string;
     text: string;
@@ -202,12 +221,70 @@ export function App() {
       if (result.response.view) setView(result.response.view);
       setActions(result.response.actions || []);
       setSession(result.session);
+      await refreshLiveBackendData();
       setBackendState("ready");
     } catch {
       // Backend not running is fine — sections still render from mockData.
       setBackendState("offline");
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function refreshLiveBackendData() {
+    const [sources, dashboard, notifications] = await Promise.all([
+      fetchSourceStatus({ apiBase }),
+      fetchDashboardPayload({ apiBase, tenantId, limit: 5 }),
+      previewNotifications({ apiBase, tenantId, withinDays: 30 })
+    ]);
+    setSourceStatus(sources.sources || []);
+    setDashboardPayload(dashboard.payload);
+    setNotificationPreview(notifications);
+  }
+
+  async function handleSourceSync() {
+    if (sourceSyncing) return;
+    setSourceSyncing(true);
+    try {
+      const result = await syncOfficialSources({ apiBase, states: ["CA", "TX", "NY"] });
+      setSourceSyncResult(result.results || []);
+      await refreshLiveBackendData();
+      setBackendState("ready");
+      showSectionNotice(`Synced ${result.results.length} official sources and queued review items.`, "green");
+    } catch (error) {
+      setBackendState("degraded");
+      showSectionNotice(`Official source sync failed: ${String(error)}`, "red");
+    } finally {
+      setSourceSyncing(false);
+    }
+  }
+
+  async function handleNotificationPreview() {
+    try {
+      const result = await previewNotifications({ apiBase, tenantId, withinDays: 30 });
+      setNotificationPreview(result);
+      setBackendState("ready");
+      showSectionNotice(`Loaded ${result.reminders.length} scheduled reminders from the backend.`, "blue");
+    } catch (error) {
+      setBackendState("degraded");
+      showSectionNotice(`Notification preview failed: ${String(error)}`, "red");
+    }
+  }
+
+  async function handleSendPendingNotifications() {
+    if (notificationSending) return;
+    setNotificationSending(true);
+    try {
+      const result = await sendPendingNotifications({ apiBase, tenantId, triggerDue: true });
+      const preview = await previewNotifications({ apiBase, tenantId, withinDays: 30 });
+      setNotificationPreview({ ...preview, deliveries: result.deliveries || preview.deliveries });
+      setBackendState("ready");
+      showSectionNotice(`Queued and sent ${result.sent} reminder notification${result.sent === 1 ? "" : "s"}.`, "green");
+    } catch (error) {
+      setBackendState("degraded");
+      showSectionNotice(`Sending reminders failed: ${String(error)}`, "red");
+    } finally {
+      setNotificationSending(false);
     }
   }
 
@@ -563,6 +640,15 @@ export function App() {
               changedDeadlineIds={changedDeadlineIds}
               setChangedDeadlineIds={setChangedDeadlineIds}
               reviewFocusRuleId={reviewFocusRuleId}
+              sourceStatus={sourceStatus}
+              sourceSyncResult={sourceSyncResult}
+              sourceSyncing={sourceSyncing}
+              onSyncSources={handleSourceSync}
+              dashboardPayload={dashboardPayload}
+              notificationPreview={notificationPreview}
+              notificationSending={notificationSending}
+              onPreviewNotifications={handleNotificationPreview}
+              onSendPendingNotifications={handleSendPendingNotifications}
             />
           </section>
         </main>

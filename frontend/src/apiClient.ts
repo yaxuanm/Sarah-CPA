@@ -103,6 +103,157 @@ export async function executeAction(params: {
   return response.json();
 }
 
+export type SourceStatusItem = {
+  source_key: string;
+  label: string;
+  default_url: string;
+  sync_supported: boolean;
+  latest_fetch_run?: {
+    fetch_run_id: string;
+    source_key: string;
+    source_url: string;
+    status: string;
+    fetched_at: string;
+  } | null;
+};
+
+export type SourceSyncResult = {
+  source_key: string;
+  source_url: string;
+  fetched_at: string;
+  fetch_run?: {
+    fetch_run_id: string;
+    source_key: string;
+    status: string;
+    fetched_at: string;
+  };
+  result?: {
+    status: string;
+    review_id?: string;
+  };
+};
+
+export type DashboardPayload = {
+  today: unknown[];
+  active_work: unknown[];
+  waiting_on_info: unknown[];
+  client_count: number;
+  open_task_count: number;
+  open_blocker_count: number;
+};
+
+export type NotificationPreview = {
+  routes: Array<{ channel: string; destination: string; enabled: boolean }>;
+  reminders: Array<{
+    reminder_id: string;
+    client_id: string;
+    deadline_id: string;
+    reminder_day: string;
+    scheduled_at: string;
+    status: string;
+  }>;
+  deliveries: Array<{
+    delivery_id: string;
+    channel: string;
+    destination: string;
+    subject: string;
+    status: string;
+    sent_at?: string | null;
+  }>;
+};
+
+export async function fetchSourceStatus(params: { apiBase: string }): Promise<{ sources: SourceStatusItem[] }> {
+  const response = await fetch(`${params.apiBase.replace(/\/$/, "")}/sources/status`);
+
+  if (!response.ok) {
+    throw new Error(`Source status failed: ${response.status}`);
+  }
+
+  return response.json();
+}
+
+export async function syncOfficialSources(params: {
+  apiBase: string;
+  states?: string[];
+}): Promise<{ results: SourceSyncResult[] }> {
+  const response = await fetch(`${params.apiBase.replace(/\/$/, "")}/sources/sync`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ states: params.states || ["CA", "TX", "NY"] })
+  });
+
+  if (!response.ok) {
+    throw new Error(`Source sync failed: ${response.status}`);
+  }
+
+  return response.json();
+}
+
+export async function fetchDashboardPayload(params: {
+  apiBase: string;
+  tenantId: string;
+  limit?: number;
+}): Promise<{ payload: DashboardPayload }> {
+  const response = await fetch(`${params.apiBase.replace(/\/$/, "")}/dashboard/payload`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      tenant_id: params.tenantId,
+      limit: params.limit || 5
+    })
+  });
+
+  if (!response.ok) {
+    throw new Error(`Dashboard payload failed: ${response.status}`);
+  }
+
+  return response.json();
+}
+
+export async function previewNotifications(params: {
+  apiBase: string;
+  tenantId: string;
+  withinDays?: number;
+}): Promise<NotificationPreview> {
+  const response = await fetch(`${params.apiBase.replace(/\/$/, "")}/notifications/preview`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      tenant_id: params.tenantId,
+      within_days: params.withinDays || 14
+    })
+  });
+
+  if (!response.ok) {
+    throw new Error(`Notification preview failed: ${response.status}`);
+  }
+
+  return response.json();
+}
+
+export async function sendPendingNotifications(params: {
+  apiBase: string;
+  tenantId: string;
+  triggerDue?: boolean;
+}): Promise<{ sent: number; deliveries: NotificationPreview["deliveries"] }> {
+  const response = await fetch(`${params.apiBase.replace(/\/$/, "")}/notifications/send-pending`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      tenant_id: params.tenantId,
+      trigger_due: params.triggerDue ?? true,
+      at: "2100-01-01T00:00:00+00:00",
+      actor: "frontend-demo"
+    })
+  });
+
+  if (!response.ok) {
+    throw new Error(`Notification send failed: ${response.status}`);
+  }
+
+  return response.json();
+}
+
 function parseSseChunk(chunk: string): StreamUpdate | null {
   const event = chunk.match(/^event:\s*(.+)$/m)?.[1]?.trim();
   const rawData = chunk.match(/^data:\s*(.+)$/m)?.[1];

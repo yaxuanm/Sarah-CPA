@@ -1,5 +1,11 @@
 import { ChangeEvent, Dispatch, DragEvent, ReactElement, ReactNode, SetStateAction, useEffect, useMemo, useRef, useState } from "react";
 import type { ViewEnvelope } from "./types";
+import type {
+  DashboardPayload,
+  NotificationPreview,
+  SourceStatusItem,
+  SourceSyncResult
+} from "./apiClient";
 import {
   ArchiveIcon,
   BlockedIcon,
@@ -61,6 +67,15 @@ export type SectionContext = {
   setChangedDeadlineIds?: Dispatch<SetStateAction<string[]>>;
   reviewFocusRuleId?: string | null;
   importLaunchToken?: number;
+  sourceStatus?: SourceStatusItem[];
+  sourceSyncResult?: SourceSyncResult[];
+  sourceSyncing?: boolean;
+  onSyncSources?: () => void;
+  dashboardPayload?: DashboardPayload | null;
+  notificationPreview?: NotificationPreview | null;
+  notificationSending?: boolean;
+  onPreviewNotifications?: () => void;
+  onSendPendingNotifications?: () => void;
 };
 
 export const sectionMeta: Record<SectionId, { eyebrow: string; title: string; subtitle: string }> = {
@@ -397,6 +412,26 @@ function officialSourceSummary(rule: MockRule) {
     return "Oregon rate notice updating the construction excise percentage used on recurring templates.";
   }
   return "Official source detail for this change.";
+}
+
+function sourceLabel(sourceKey: string) {
+  const labels: Record<string, string> = {
+    state_ca: "CA FTB",
+    state_tx: "TX Comptroller",
+    state_ny: "NY Tax"
+  };
+  return labels[sourceKey] || sourceKey;
+}
+
+function formatSyncStamp(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleString("en-US", {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit"
+  });
 }
 
 function applyRuleToDeadline(deadline: MockDeadline, ruleId: string): MockDeadline {
@@ -2883,7 +2918,11 @@ export function ReviewSection({
   setDeadlines,
   setChangedDeadlineIds,
   onNotify,
-  reviewFocusRuleId
+  reviewFocusRuleId,
+  sourceStatus = [],
+  sourceSyncResult = [],
+  sourceSyncing = false,
+  onSyncSources
 }: SectionContext) {
   const rules = ruleStore ?? mockRules;
   const pendingRules = rules.filter((rule) => rule.status === "pending-review");
@@ -2891,6 +2930,13 @@ export function ReviewSection({
   const autoApplied = rules.filter((rule) => rule.status === "auto-applied");
   const dismissedRules = rules.filter((rule) => rule.status === "dismissed");
   const [selectedRuleId, setSelectedRuleId] = useState<string | null>(null);
+  const supportedSourceCount = sourceStatus.filter((source) => source.sync_supported).length || 3;
+  const latestSyncedCount = sourceStatus.filter((source) => source.latest_fetch_run).length;
+  const latestSync = sourceStatus
+    .map((source) => source.latest_fetch_run?.fetched_at)
+    .filter(Boolean)
+    .sort()
+    .at(-1);
 
   useEffect(() => {
     if (!reviewFocusRuleId) return;
@@ -2957,12 +3003,28 @@ export function ReviewSection({
       <div className="ddh-review-info">
         <div>
           <strong>{pendingRules.length} official changes need review</strong>
+          <span>{latestSyncedCount ? `${latestSyncedCount}/${supportedSourceCount} official sources have live fetch runs` : "CA / TX / NY source sync is ready to run"}</span>
         </div>
-        <div>
-          Last full sync <strong>{mockSyncStatus.last_full_sync}</strong> - Next sync <strong>{mockSyncStatus.next_scheduled_sync}</strong>
+        <div className="review-live-actions">
+          <span>
+            Last backend sync <strong>{latestSync ? formatSyncStamp(latestSync) : mockSyncStatus.last_full_sync}</strong>
+          </span>
           <em>Healthy</em>
+          <button type="button" className="ddh-btn ddh-btn-sm" onClick={onSyncSources} disabled={sourceSyncing}>
+            {sourceSyncing ? "Syncing..." : "Sync CA/TX/NY"}
+          </button>
         </div>
       </div>
+      {sourceSyncResult.length ? (
+        <div className="backend-run-strip">
+          <strong>Latest backend run</strong>
+          {sourceSyncResult.map((item) => (
+            <span key={`${item.source_key}-${item.fetched_at}`}>
+              {sourceLabel(item.source_key)} · {item.fetch_run?.status || item.result?.status || "processed"}
+            </span>
+          ))}
+        </div>
+      ) : null}
       <div className="ddh-review-label">
         <strong>Review queue</strong>
         <span>Open a row for source, diff, and affected clients.</span>
@@ -3155,7 +3217,15 @@ function ReviewRule({
   );
 }
 
-export function SettingsSection({ tenantId, onNotify }: SectionContext) {
+export function SettingsSection({
+  tenantId,
+  onNotify,
+  notificationPreview,
+  notificationSending = false,
+  onPreviewNotifications,
+  onSendPendingNotifications,
+  dashboardPayload
+}: SectionContext) {
   const initialDefaults = {
     displayName: "Johnson CPA PLLC",
     timezone: "America/Los_Angeles",
@@ -3265,6 +3335,42 @@ export function SettingsSection({ tenantId, onNotify }: SectionContext) {
             </div>
           ))}
         </div>
+      </SettingsCard>
+      <SettingsCard label="Backend processing" title="Live reminder queue" subtitle="Use the demo backend to preview and send pending CPA reminders.">
+        <div className="backend-processing-row">
+          <div className="backend-processing-facts">
+            <span><strong>{dashboardPayload?.client_count ?? 0}</strong> clients</span>
+            <span><strong>{dashboardPayload?.open_task_count ?? 0}</strong> open tasks</span>
+            <span><strong>{notificationPreview?.reminders.length ?? 0}</strong> scheduled reminders</span>
+            <span><strong>{notificationPreview?.deliveries.filter((item) => item.status === "sent").length ?? 0}</strong> sent deliveries</span>
+          </div>
+          <div className="backend-processing-actions">
+            <button type="button" className="ddh-btn" onClick={onPreviewNotifications}>
+              Refresh queue
+            </button>
+            <button
+              type="button"
+              className="ddh-btn ddh-btn-primary"
+              onClick={onSendPendingNotifications}
+              disabled={notificationSending}
+            >
+              {notificationSending ? "Sending..." : "Send pending"}
+            </button>
+          </div>
+        </div>
+        {notificationPreview?.deliveries.length ? (
+          <div className="backend-delivery-list">
+            {notificationPreview.deliveries.slice(0, 3).map((delivery) => (
+              <div key={delivery.delivery_id} className="backend-delivery-row">
+                <strong>{delivery.subject}</strong>
+                <span>{delivery.channel} · {delivery.destination}</span>
+                <em>{delivery.status}</em>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="settings-muted">No delivery records yet. Send pending reminders to create backend delivery logs.</p>
+        )}
       </SettingsCard>
     </section>
   );

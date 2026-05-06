@@ -5835,6 +5835,39 @@ body {
   font-weight: 600;
 }
 
+.review-live-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.backend-run-strip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: -4px 0 14px;
+  padding: 10px 14px;
+  border: 0.5px solid rgba(30, 122, 62, 0.18);
+  border-radius: 10px;
+  background: #f4fbf5;
+  color: #31513a;
+  font-size: 12px;
+}
+
+.backend-run-strip strong {
+  color: #1e4e1e;
+}
+
+.backend-run-strip span {
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: rgba(30, 122, 62, 0.08);
+  font-weight: 700;
+}
+
 .ddh-review-label {
   display: flex;
   justify-content: space-between;
@@ -6101,6 +6134,79 @@ body {
   align-items: center;
   gap: 10px;
   flex-shrink: 0;
+}
+
+.backend-processing-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid rgba(0, 0, 0, 0.08);
+}
+
+.backend-processing-facts {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.backend-processing-facts span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 9px;
+  border-radius: 999px;
+  background: #f7f6f3;
+  color: #3f4854;
+  font-size: 12px;
+}
+
+.backend-processing-facts strong {
+  color: #111827;
+}
+
+.backend-processing-actions {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.backend-delivery-list {
+  margin-top: 12px;
+  border-top: 1px solid rgba(0, 0, 0, 0.08);
+}
+
+.backend-delivery-row {
+  display: grid;
+  grid-template-columns: minmax(240px, 1fr) minmax(180px, auto) auto;
+  gap: 12px;
+  align-items: center;
+  padding: 10px 0;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+  font-size: 12px;
+}
+
+.backend-delivery-row strong {
+  color: var(--ink);
+}
+
+.backend-delivery-row span {
+  color: var(--ink-3);
+}
+
+.backend-delivery-row em {
+  justify-self: end;
+  font-style: normal;
+  font-weight: 800;
+  color: #1e7a3e;
+}
+
+.settings-muted {
+  margin-top: 12px;
+  color: var(--ink-3);
+  font-size: 12.5px;
 }
 
 @media (max-width: 900px) {
