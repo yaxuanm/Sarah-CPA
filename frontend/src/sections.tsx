@@ -3,12 +3,13 @@ import type { ViewEnvelope } from "./types";
 import type {
   DashboardPayload,
   ImportApplyBackendResult,
+  ImportAiMappingProposal,
   ImportPreview,
   NotificationPreview,
   SourceStatusItem,
   SourceSyncResult
 } from "./apiClient";
-import { applyImportCsv, previewImportCsv } from "./apiClient";
+import { applyImportCsv, draftFollowup, previewImportCsv, proposeImportMapping } from "./apiClient";
 import {
   ArchiveIcon,
   BlockedIcon,
@@ -800,6 +801,7 @@ function applyImportedRowsToRecords(
 }
 
 export function WorkSection({
+  apiBase,
   deadlines: deadlineStore,
   rules: ruleStore,
   onExport,
@@ -832,6 +834,8 @@ export function WorkSection({
     body: ""
   });
   const [followupAiGenerated, setFollowupAiGenerated] = useState(false);
+  const [followupAiLoading, setFollowupAiLoading] = useState(false);
+  const [followupAiError, setFollowupAiError] = useState<string | null>(null);
   const [followupLog, setFollowupLog] = useState<
     Record<string, { id: string; to: string; subject: string; sentAt: string; status: "queued" | "sent" }[]>
   >({});
@@ -901,6 +905,8 @@ export function WorkSection({
       body: ""
     });
     setFollowupAiGenerated(false);
+    setFollowupAiLoading(false);
+    setFollowupAiError(null);
     setFollowupOpen(false);
     setActionMenuOpen(false);
     setEditingDeadlineId(null);
@@ -1164,22 +1170,68 @@ export function WorkSection({
                     <button
                       type="button"
                       className="text-action ai-draft-action"
-                      onClick={() => {
-                        const aiDraft = generateAiClientEmailDraft(selectedDeadline, followupDraft.body);
-                        setFollowupDraft((current) => ({
-                          ...current,
-                          subject: aiDraft.subject,
-                          body: aiDraft.body
-                        }));
-                        setFollowupAiGenerated(true);
-                        onNotify?.("AI generated a client follow-up draft from the work item context.", "blue");
+                      disabled={followupAiLoading}
+                      onClick={async () => {
+                        setFollowupAiLoading(true);
+                        setFollowupAiError(null);
+                        try {
+                          let aiDraft = generateAiClientEmailDraft(selectedDeadline, followupDraft.body);
+                          let usedLiveAi = false;
+                          if (apiBase) {
+                            const response = await draftFollowup({
+                              apiBase,
+                              previousBody: followupDraft.body,
+                              workItem: {
+                                client_name: selectedDeadline.client_name,
+                                contact_name: clientContactName(selectedDeadline),
+                                contact_email: followupDraft.to || clientContactEmail(selectedDeadline),
+                                tax_type: selectedDeadline.tax_type,
+                                jurisdiction: selectedDeadline.jurisdiction,
+                                due_date: selectedDeadline.due_date,
+                                due_label: selectedDeadline.due_label,
+                                days_remaining: selectedDeadline.days_remaining,
+                                status: selectedDeadline.status,
+                                blocker_reason: selectedDeadline.blocker_reason,
+                                source: selectedDeadline.source,
+                                task_title: workTitle(selectedDeadline),
+                                task_note: defaultTaskNote(selectedDeadline)
+                              }
+                            });
+                            aiDraft = response.draft;
+                            usedLiveAi = response.draft.ai_used;
+                          }
+                          setFollowupDraft((current) => ({
+                            ...current,
+                            subject: aiDraft.subject,
+                            body: aiDraft.body
+                          }));
+                          setFollowupAiGenerated(true);
+                          onNotify?.(
+                            usedLiveAi
+                              ? "AI generated a client follow-up draft from the live backend."
+                              : "Generated a client follow-up draft from the work item context.",
+                            "blue"
+                          );
+                        } catch (error) {
+                          const fallbackDraft = generateAiClientEmailDraft(selectedDeadline, followupDraft.body);
+                          setFollowupDraft((current) => ({
+                            ...current,
+                            subject: fallbackDraft.subject,
+                            body: fallbackDraft.body
+                          }));
+                          setFollowupAiGenerated(true);
+                          setFollowupAiError(error instanceof Error ? error.message : "AI draft failed; local fallback used.");
+                        } finally {
+                          setFollowupAiLoading(false);
+                        }
                       }}
                     >
                       <span aria-hidden="true">✦</span>
-                      {followupAiGenerated ? "Regenerate draft" : "AI draft"}
+                      {followupAiLoading ? "Drafting…" : followupAiGenerated ? "Regenerate draft" : "AI draft"}
                     </button>
                     <span>Uses this work item, blocker, due date, and contact to draft the client ask.</span>
                   </div>
+                  {followupAiError ? <p className="ddh-import-error">{followupAiError}</p> : null}
                   <label>
                     <span>To</span>
                     <input
@@ -1689,6 +1741,34 @@ function buildImportAiProposal(
   };
 }
 
+function convertBackendImportAiProposal(proposal: ImportAiMappingProposal): ImportAiProposal {
+  const changes: ImportAiProposal["changes"] = [];
+  proposal.changes.forEach((change) => {
+    const nextValue = change.next_value as ImportMappingValue;
+    if (nextValue !== "skip" && !nextValue.startsWith("custom:") && !IMPORT_TARGET_FIELDS.some((field) => field.key === nextValue)) {
+      return;
+    }
+    changes.push({
+      header: change.header,
+      nextValue,
+      note: change.note,
+      ...(change.custom_field
+        ? {
+            customField: {
+              id: change.custom_field.id,
+              label: change.custom_field.label,
+              type: change.custom_field.type
+            }
+          }
+        : {})
+    });
+  });
+  return {
+    summary: proposal.ai_used ? `${proposal.summary}` : proposal.summary,
+    changes
+  };
+}
+
 function buildImportRowsFromUpload(headers: string[], rows: string[][], mapping: ImportMapping): string[][] {
   const valueFor = (row: string[], fieldKey: ImportFieldKey) => {
     const matchedHeader = headers.find((header) => mapping[header] === fieldKey);
@@ -2151,6 +2231,7 @@ function ImportWizard({
         {step === 1 ? <ImportStepOne onFileSelected={handleCsvFile} error={uploadError} processingState={processingState} /> : null}
         {step === 2 ? (
           <ImportStepTwo
+            apiBase={apiBase}
             fileName={fileName}
             headers={csvHeaders}
             rows={csvRows}
@@ -2307,6 +2388,7 @@ function ImportStepOne({
 }
 
 function ImportStepTwo({
+  apiBase,
   fileName,
   headers,
   rows,
@@ -2319,6 +2401,7 @@ function ImportStepTwo({
   onCreateCustomField,
   onNext
 }: {
+  apiBase?: string;
   fileName: string;
   headers: string[];
   rows: string[][];
@@ -2337,6 +2420,7 @@ function ImportStepTwo({
   const [aiPrompt, setAiPrompt] = useState("");
   const [aiProposal, setAiProposal] = useState<ImportAiProposal | null>(null);
   const [aiError, setAiError] = useState<string | null>(null);
+  const [aiLoading, setAiLoading] = useState(false);
 
   function startCustomField(header: string) {
     setDraftHeader(header);
@@ -2360,15 +2444,40 @@ function ImportStepTwo({
     setDraftType("text");
   }
 
-  function createAiProposal() {
-    const proposal = buildImportAiProposal(aiPrompt, headers, customFields);
-    if (!proposal || proposal.changes.length === 0) {
-      setAiProposal(null);
-      setAiError(proposal?.summary ?? "Try something like: “Map primary_state to Operating states” or “Create custom field onboarding note for misc_notes”.");
-      return;
-    }
-    setAiProposal(proposal);
+  async function createAiProposal() {
+    setAiLoading(true);
     setAiError(null);
+    try {
+      let proposal = buildImportAiProposal(aiPrompt, headers, customFields);
+      if (apiBase) {
+        const response = await proposeImportMapping({
+          apiBase,
+          prompt: aiPrompt,
+          headers,
+          targetFields: IMPORT_TARGET_FIELDS,
+          customFields
+        });
+        proposal = convertBackendImportAiProposal(response.proposal);
+      }
+      if (!proposal || proposal.changes.length === 0) {
+        setAiProposal(null);
+        setAiError(proposal?.summary ?? "Try something like: “Map primary_state to Operating states” or “Create custom field onboarding note for misc_notes”.");
+        return;
+      }
+      setAiProposal(proposal);
+      setAiError(null);
+    } catch (error) {
+      const fallbackProposal = buildImportAiProposal(aiPrompt, headers, customFields);
+      if (fallbackProposal?.changes.length) {
+        setAiProposal(fallbackProposal);
+        setAiError("Live AI suggestion failed; local mapping fallback is shown.");
+      } else {
+        setAiProposal(null);
+        setAiError(error instanceof Error ? error.message : "AI mapping suggestion failed.");
+      }
+    } finally {
+      setAiLoading(false);
+    }
   }
 
   function applyAiProposal() {
@@ -2405,8 +2514,8 @@ function ImportStepTwo({
             onChange={(event) => setAiPrompt(event.target.value)}
             placeholder='Example: "Map primary_state to Operating states"'
           />
-          <button type="button" className="ddh-btn" onClick={createAiProposal} disabled={!aiPrompt.trim()}>
-            Suggest change
+          <button type="button" className="ddh-btn" onClick={() => void createAiProposal()} disabled={!aiPrompt.trim() || aiLoading}>
+            {aiLoading ? "Thinking…" : "Suggest change"}
           </button>
         </div>
         {aiError ? <p className="ddh-import-error">{aiError}</p> : null}

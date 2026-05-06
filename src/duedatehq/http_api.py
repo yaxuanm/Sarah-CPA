@@ -8,6 +8,13 @@ from tempfile import NamedTemporaryFile
 from typing import Any
 
 from .app import create_app
+from .core.ai_assistants import (
+    AIAssistantError,
+    draft_client_followup,
+    fallback_client_followup,
+    fallback_import_mapping,
+    propose_import_mapping,
+)
 from .core.models import NotificationChannel
 from .core.notifiers import ConsoleNotifier, NotifierRegistry
 from .core.system_state import record_operation, remember_response_state
@@ -177,6 +184,33 @@ def create_fastapi_app(db_path: str | None = None):
         finally:
             path.unlink(missing_ok=True)
 
+    @api.post("/ai/import-mapping")
+    def ai_import_mapping(body: dict[str, Any] = Body(...)):
+        prompt = str(body.get("prompt") or "")
+        headers = [str(item) for item in body.get("headers", []) if str(item).strip()]
+        target_fields = _normalize_import_target_fields(body.get("target_fields"))
+        custom_fields = body.get("custom_fields") if isinstance(body.get("custom_fields"), list) else []
+        try:
+            proposal = propose_import_mapping(
+                prompt=prompt,
+                headers=headers,
+                target_fields=target_fields,
+                custom_fields=custom_fields,
+            )
+        except (AIAssistantError, ValueError, json.JSONDecodeError):
+            proposal = fallback_import_mapping(prompt, headers, target_fields)
+        return {"proposal": proposal}
+
+    @api.post("/ai/followup-draft")
+    def ai_followup_draft(body: dict[str, Any] = Body(...)):
+        work_item = body.get("work_item") if isinstance(body.get("work_item"), dict) else {}
+        previous_body = str(body.get("previous_body") or "")
+        try:
+            draft = draft_client_followup(work_item=work_item, previous_body=previous_body)
+        except (AIAssistantError, ValueError, json.JSONDecodeError):
+            draft = fallback_client_followup(work_item, previous_body)
+        return {"draft": draft}
+
     @api.post("/session/{tenant_id}")
     def start_session(tenant_id: str):
         return app_state.interaction_sessions.start(tenant_id)
@@ -290,6 +324,30 @@ def _write_import_csv(body: dict[str, Any]) -> Path:
     with handle:
         handle.write(csv_text)
     return Path(handle.name)
+
+
+def _normalize_import_target_fields(value: Any) -> list[dict[str, Any]]:
+    if not isinstance(value, list):
+        return [
+            {"key": "client_name", "label": "Client name", "aliases": ["client", "name", "business name"]},
+            {"key": "entity_type", "label": "Entity type", "aliases": ["entity", "type"]},
+            {"key": "operating_states", "label": "Operating states", "aliases": ["states", "state footprint", "registered states"]},
+            {"key": "primary_contact_name", "label": "Primary contact", "aliases": ["contact", "owner"]},
+            {"key": "primary_contact_email", "label": "Primary contact email", "aliases": ["email", "contact email"]},
+            {"key": "applicable_taxes", "label": "Tax types", "aliases": ["tax scope", "services", "forms"]},
+            {"key": "notes", "label": "Notes", "aliases": ["memo", "remarks", "comment"]},
+        ]
+    normalized = []
+    for item in value:
+        if not isinstance(item, dict):
+            continue
+        key = str(item.get("key") or "").strip()
+        label = str(item.get("label") or key).strip()
+        if not key or not label:
+            continue
+        aliases = item.get("aliases") if isinstance(item.get("aliases"), list) else []
+        normalized.append({"key": key, "label": label, "aliases": [str(alias) for alias in aliases]})
+    return normalized
 
 
 def _prepare_session(body: dict[str, Any]) -> dict[str, Any]:

@@ -200,6 +200,28 @@ export type ImportApplyBackendResult = {
   dashboard: DashboardPayload;
 };
 
+export type ImportAiMappingProposal = {
+  summary: string;
+  ai_used: boolean;
+  changes: Array<{
+    header: string;
+    next_value: string;
+    note: string;
+    custom_field?: {
+      id: string;
+      label: string;
+      type: "text" | "date" | "single_select";
+    };
+  }>;
+};
+
+export type FollowupDraft = {
+  subject: string;
+  body: string;
+  rationale?: string;
+  ai_used: boolean;
+};
+
 export async function fetchSourceStatus(params: { apiBase: string }): Promise<{ sources: SourceStatusItem[] }> {
   const response = await fetch(`${params.apiBase.replace(/\/$/, "")}/sources/status`);
 
@@ -252,6 +274,52 @@ export async function applyImportCsv(params: {
 
   if (!response.ok) {
     throw new Error(`Import apply failed: ${response.status}`);
+  }
+
+  return response.json();
+}
+
+export async function proposeImportMapping(params: {
+  apiBase: string;
+  prompt: string;
+  headers: string[];
+  targetFields: Array<{ key: string; label: string; required?: boolean; aliases: string[] }>;
+  customFields: Array<{ id: string; label: string; type: string }>;
+}): Promise<{ proposal: ImportAiMappingProposal }> {
+  const response = await fetch(`${params.apiBase.replace(/\/$/, "")}/ai/import-mapping`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      prompt: params.prompt,
+      headers: params.headers,
+      target_fields: params.targetFields,
+      custom_fields: params.customFields
+    })
+  });
+
+  if (!response.ok) {
+    throw new Error(`Import AI mapping failed: ${response.status}`);
+  }
+
+  return response.json();
+}
+
+export async function draftFollowup(params: {
+  apiBase: string;
+  workItem: Record<string, unknown>;
+  previousBody?: string;
+}): Promise<{ draft: FollowupDraft }> {
+  const response = await fetch(`${params.apiBase.replace(/\/$/, "")}/ai/followup-draft`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      work_item: params.workItem,
+      previous_body: params.previousBody || ""
+    })
+  });
+
+  if (!response.ok) {
+    throw new Error(`Follow-up draft failed: ${response.status}`);
   }
 
   return response.json();

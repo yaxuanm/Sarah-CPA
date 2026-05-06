@@ -337,6 +337,68 @@ def test_import_preview_and_apply_endpoints_process_csv(tmp_path):
     assert result["dashboard"]["client_count"] == 1
 
 
+def test_ai_import_mapping_endpoint_returns_safe_fallback_without_key(tmp_path, monkeypatch):
+    pytest.importorskip("fastapi")
+    pytest.importorskip("httpx")
+    from fastapi.testclient import TestClient
+
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.delenv("CLAUDE_API_KEY", raising=False)
+    api = create_fastapi_app(str(tmp_path / "http-ai-import.sqlite3"))
+    client = TestClient(api)
+
+    response = client.post(
+        "/ai/import-mapping",
+        json={
+            "prompt": "Map primary_state to Operating states",
+            "headers": ["Client Name", "primary_state"],
+            "target_fields": [
+                {"key": "client_name", "label": "Client name", "aliases": ["client"]},
+                {"key": "operating_states", "label": "Operating states", "aliases": ["state", "primary state"]},
+            ],
+            "custom_fields": [],
+        },
+    )
+
+    assert response.status_code == 200
+    proposal = response.json()["proposal"]
+    assert proposal["ai_used"] is False
+    assert proposal["changes"][0]["header"] == "primary_state"
+    assert proposal["changes"][0]["next_value"] == "operating_states"
+
+
+def test_ai_followup_draft_endpoint_returns_safe_fallback_without_key(tmp_path, monkeypatch):
+    pytest.importorskip("fastapi")
+    pytest.importorskip("httpx")
+    from fastapi.testclient import TestClient
+
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.delenv("CLAUDE_API_KEY", raising=False)
+    api = create_fastapi_app(str(tmp_path / "http-ai-followup.sqlite3"))
+    client = TestClient(api)
+
+    response = client.post(
+        "/ai/followup-draft",
+        json={
+            "work_item": {
+                "client_name": "Northwind Services LLC",
+                "contact_name": "Maya Chen",
+                "tax_type": "Payroll (941)",
+                "jurisdiction": "Federal",
+                "due_label": "Apr 30",
+                "days_remaining": 4,
+                "blocker_reason": "Payroll support documents missing",
+            }
+        },
+    )
+
+    assert response.status_code == 200
+    draft = response.json()["draft"]
+    assert draft["ai_used"] is False
+    assert "Northwind Services LLC" in draft["subject"]
+    assert "Payroll support documents missing" in draft["body"]
+
+
 def test_latest_new_feedback_event_ignores_stale_events():
     session = {
         "flywheel_feedback_events": [{"signal": "missing_info", "user_input": "old"}],

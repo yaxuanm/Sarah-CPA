@@ -14,6 +14,7 @@ HOST_GATEWAY="${DUEDATEHQ_NGINX_HOST_GATEWAY:-172.22.0.1}"
 
 rsync -avz --delete \
   --exclude ".git" \
+  --exclude ".env" \
   --exclude ".venv" \
   --exclude ".duedatehq" \
   --exclude ".logs" \
@@ -36,6 +37,13 @@ set -euo pipefail
 cd "$REMOTE_APP"
 mkdir -p .logs .duedatehq
 
+if [ -f .env ]; then
+  set -a
+  # shellcheck disable=SC1091
+  . ./.env
+  set +a
+fi
+
 if ! command -v uv >/dev/null 2>&1; then
   echo "uv is required on the server to run the demo backend." >&2
   exit 1
@@ -53,7 +61,7 @@ fi
 
 pkill -f "duedatehq.http_api:create_fastapi_app.*--port ${PORT}" >/dev/null 2>&1 || true
 
-nohup uv run --extra api uvicorn duedatehq.http_api:create_fastapi_app \
+nohup uv run --extra api --extra agent uvicorn duedatehq.http_api:create_fastapi_app \
   --factory \
   --host 0.0.0.0 \
   --port "$PORT" \
