@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
@@ -10,6 +11,7 @@ from duedatehq.core.models import DeadlineAction, NotificationChannel
 
 
 DEMO_TENANT_NAME = "Sarah Demo Tenant"
+DEMO_TENANT_ID = os.environ.get("DUEDATEHQ_DEMO_TENANT_ID", "2403c5e1-85ac-4593-86cc-02f8d97a8d92")
 SARAH_STORY_CLIENTS = [
     {
         "name": "Acme Dental LLC",
@@ -160,6 +162,27 @@ def _find_existing_tenant_id(db_path: str, tenant_name: str) -> str | None:
         conn.close()
 
 
+def _ensure_fixed_demo_tenant(db_path: str, tenant_id: str, tenant_name: str) -> str:
+    conn = sqlite3.connect(db_path)
+    try:
+        row = conn.execute(
+            "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'tenants'"
+        ).fetchone()
+        if row is None:
+            raise RuntimeError("Tenants table has not been initialized.")
+        existing = conn.execute("SELECT tenant_id FROM tenants WHERE tenant_id = ?", (tenant_id,)).fetchone()
+        if existing:
+            return "exists"
+        conn.execute(
+            "INSERT INTO tenants (tenant_id, name, created_at, is_deleted, deleted_at) VALUES (?, ?, ?, 0, NULL)",
+            (tenant_id, tenant_name, datetime.now(timezone.utc).isoformat()),
+        )
+        conn.commit()
+        return "created"
+    finally:
+        conn.close()
+
+
 def _ensure_demo_rules(engine) -> list[dict[str, str]]:
     existing_source_urls = {rule.source_url for rule in engine.list_rules()}
     created = []
@@ -201,6 +224,7 @@ def _ensure_demo_notices(engine, tenant_id: str) -> dict[str, object]:
     missing_clients = []
 
     for scenario in DEMO_NOTICE_SCENARIOS:
+        notice_id = f"{tenant_id}:{scenario['notice_id']}"
         affected_clients = []
         for impact in scenario["client_impacts"]:
             client = clients_by_name.get(impact["name"])
@@ -218,7 +242,7 @@ def _ensure_demo_notices(engine, tenant_id: str) -> dict[str, object]:
             continue
         result = engine.generate_notice_work(
             tenant_id=tenant_id,
-            notice_id=scenario["notice_id"],
+            notice_id=notice_id,
             title=scenario["title"],
             source_url=scenario["source_url"],
             source_label=scenario["source_label"],
@@ -266,15 +290,17 @@ def _seed_tax_demo_data(engine, tenant_id: str) -> dict[str, object]:
 
 def main() -> None:
     db_path = str(Path.cwd() / ".duedatehq" / "duedatehq.sqlite3")
-    existing_tenant_id = _find_existing_tenant_id(db_path, DEMO_TENANT_NAME)
-    if existing_tenant_id:
-        app = create_app(db_path)
-        engine = app.engine
+    app = create_app(db_path)
+    engine = app.engine
+    tenant_status = _ensure_fixed_demo_tenant(db_path, DEMO_TENANT_ID, DEMO_TENANT_NAME)
+    existing_tenant_id = DEMO_TENANT_ID
+
+    if tenant_status == "exists":
         seeded = _seed_tax_demo_data(engine, existing_tenant_id)
         print(
             json.dumps(
                 {
-                    "status": "exists",
+                    "status": tenant_status,
                     "tenant_name": DEMO_TENANT_NAME,
                     "tenant_id": existing_tenant_id,
                     **seeded,
@@ -285,52 +311,47 @@ def main() -> None:
         )
         return
 
-    app = create_app(db_path)
-    engine = app.engine
-
-    tenant = engine.create_tenant(DEMO_TENANT_NAME)
-
     _ensure_demo_rules(engine)
 
     acme = engine.register_client(
-        tenant_id=tenant.tenant_id,
+        tenant_id=existing_tenant_id,
         name="Acme Holdings LLC",
         entity_type="s-corp",
         registered_states=["CA", "DE"],
         tax_year=2026,
     )
     lone_pine = engine.register_client(
-        tenant_id=tenant.tenant_id,
+        tenant_id=existing_tenant_id,
         name="Lone Pine Ventures LLC",
         entity_type="s-corp",
         registered_states=["TX"],
         tax_year=2026,
     )
     pacific = engine.register_client(
-        tenant_id=tenant.tenant_id,
+        tenant_id=existing_tenant_id,
         name="Pacific Studio LLC",
         entity_type="s-corp",
         registered_states=["CA"],
         tax_year=2026,
     )
     story_clients = [
-        engine.register_client(tenant_id=tenant.tenant_id, **client)
+        engine.register_client(tenant_id=existing_tenant_id, **client)
         for client in SARAH_STORY_CLIENTS
     ]
 
-    acme_deadlines = engine.list_deadlines(tenant.tenant_id, acme.client_id)
-    lone_pine_deadlines = engine.list_deadlines(tenant.tenant_id, lone_pine.client_id)
-    pacific_deadlines = engine.list_deadlines(tenant.tenant_id, pacific.client_id)
+    acme_deadlines = engine.list_deadlines(existing_tenant_id, acme.client_id)
+    lone_pine_deadlines = engine.list_deadlines(existing_tenant_id, lone_pine.client_id)
+    pacific_deadlines = engine.list_deadlines(existing_tenant_id, pacific.client_id)
 
     federal_deadline = next(item for item in acme_deadlines if item.jurisdiction == "FEDERAL")
     engine.apply_deadline_action(
-        tenant.tenant_id,
+        existing_tenant_id,
         federal_deadline.deadline_id,
         DeadlineAction.COMPLETE,
         actor="demo-seed",
     )
     engine.apply_deadline_action(
-        tenant.tenant_id,
+        existing_tenant_id,
         federal_deadline.deadline_id,
         DeadlineAction.REOPEN,
         actor="demo-seed",
@@ -338,7 +359,7 @@ def main() -> None:
 
     tx_deadline = next(item for item in lone_pine_deadlines if item.jurisdiction == "TX")
     engine.apply_deadline_action(
-        tenant.tenant_id,
+        existing_tenant_id,
         tx_deadline.deadline_id,
         DeadlineAction.OVERRIDE,
         actor="demo-seed",
@@ -347,7 +368,7 @@ def main() -> None:
 
     ca_deadline = next(item for item in pacific_deadlines if item.jurisdiction == "CA")
     engine.apply_deadline_action(
-        tenant.tenant_id,
+        existing_tenant_id,
         ca_deadline.deadline_id,
         DeadlineAction.SNOOZE,
         actor="demo-seed",
@@ -355,17 +376,17 @@ def main() -> None:
     )
 
     route = engine.configure_notification_route(
-        tenant.tenant_id,
+        existing_tenant_id,
         NotificationChannel.EMAIL,
         "owner@example.com",
         actor="demo-seed",
     )
-    seeded = _seed_tax_demo_data(engine, tenant.tenant_id)
+    seeded = _seed_tax_demo_data(engine, existing_tenant_id)
 
     summary = {
         "status": "created",
-        "tenant_name": tenant.name,
-        "tenant_id": tenant.tenant_id,
+        "tenant_name": DEMO_TENANT_NAME,
+        "tenant_id": existing_tenant_id,
         "clients": [
             {"client_id": acme.client_id, "name": acme.name},
             {"client_id": lone_pine.client_id, "name": lone_pine.name},
@@ -376,7 +397,7 @@ def main() -> None:
             ],
         ],
         "notification_route_id": route.route_id,
-        "today_count": len(engine.today_enriched(tenant.tenant_id, limit=10)),
+        "today_count": len(engine.today_enriched(existing_tenant_id, limit=10)),
         **seeded,
     }
     print(json.dumps(summary, indent=2, sort_keys=True))

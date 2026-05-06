@@ -908,7 +908,7 @@
         <div class="grid-3">
           <div class="card accent"><h3>解析</h3><p>把不规范的客户表、CSV、字段名，变成结构化 客户画像。</p></div>
           <div class="card accent"><h3>Watch + 匹配</h3><p>解析官方规则变化，并匹配到 Sarah 的实际客户组合。</p></div>
-          <div class="card accent"><h3>Draft + Record</h3><p>根据 工作项 生成客户跟进，并把操作结果写回状态。</p></div>
+          <div class="card accent"><h3>Draft + Render</h3><p>根据 工作项 生成客户跟进；用户直接 Ask 时，渲染最小可用工作界面。</p></div>
         </div>
         <p class="lead compact">我们的 AI 不是 chatbot layer，而是降低维护规则、解读公告和推进下一步动作的成本。</p>
       </article>
@@ -960,6 +960,18 @@
           <div><strong>写入</strong><span>相关 client / work / calendar 状态更新。</span></div>
         </div>
         <div class="demo-cue">现场产品：审核 -> Official source -> 审核 details -> 写入 -> 打开受影响 client 看变化。</div>
+      </article>
+
+      <article class="slide">
+        <p class="eyebrow">产品演示 3.1 · AI Chat</p>
+        <h2>如果 Sarah 不知道点哪里，她直接 Ask。</h2>
+        <div class="story-timeline">
+          <div class="time-row"><strong>1. 提问</strong><div>Sarah 用自然语言问：“哪些 California 客户因为这条 rule change 被卡住？”</div><span>Ask</span></div>
+          <div class="time-row"><strong>2. 推理</strong><div>后端识别用户意图，拉取 client、work item、source 和状态数据。</div><span>Reason</span></div>
+          <div class="time-row"><strong>3. 渲染</strong><div>前端不跳到一张固定页面，而是渲染最小可用的工作界面。</div><span>Render</span></div>
+          <div class="time-row"><strong>4. 行动</strong><div>CPA 直接看到受影响客户、证据和下一步动作。</div><span>Action</span></div>
+        </div>
+        <p class="lead compact">这一段用来衔接队友的按需渲染：Chat 不是替代 Dashboard，而是在用户不知道该进入哪个页面时，把问题转成正确的工作界面。</p>
       </article>
 
       <article class="slide">
