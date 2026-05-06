@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 from dataclasses import asdict, dataclass, is_dataclass
 from datetime import datetime
+from pathlib import Path
+from tempfile import NamedTemporaryFile
 from typing import Any
 
 from .app import create_app
@@ -140,6 +142,41 @@ def create_fastapi_app(db_path: str | None = None):
             "deliveries": _jsonable(app_state.engine.list_notification_deliveries(tenant_id)),
         }
 
+    @api.post("/import/preview")
+    def import_preview(body: dict[str, Any] = Body(...)):
+        path = _write_import_csv(body)
+        try:
+            preview = app_state.engine.preview_import_csv(path)
+            preview["source_name"] = str(body.get("source_name") or preview["source_name"])
+            return {"preview": _jsonable(preview)}
+        finally:
+            path.unlink(missing_ok=True)
+
+    @api.post("/import/apply")
+    def import_apply(body: dict[str, Any] = Body(...)):
+        tenant_id = str(body["tenant_id"])
+        path = _write_import_csv(body)
+        try:
+            result = app_state.engine.apply_import_csv(
+                tenant_id=tenant_id,
+                csv_path=path,
+                tax_year=int(body.get("tax_year") or 2026),
+                default_client_type=str(body.get("default_client_type") or "business"),
+                actor=str(body.get("actor") or "api"),
+            )
+            return {
+                "result": {
+                    "source_name": str(body.get("source_name") or result["source_name"]),
+                    "created_clients": _jsonable(result["created_clients"]),
+                    "created_blockers": _jsonable(result["created_blockers"]),
+                    "created_tasks": _jsonable(result["created_tasks"]),
+                    "skipped_rows": _jsonable(result["skipped_rows"]),
+                    "dashboard": _jsonable(result["dashboard"]),
+                }
+            }
+        finally:
+            path.unlink(missing_ok=True)
+
     @api.post("/session/{tenant_id}")
     def start_session(tenant_id: str):
         return app_state.interaction_sessions.start(tenant_id)
@@ -234,6 +271,25 @@ def _console_notifier_registry() -> NotifierRegistry:
             NotificationChannel.SLACK: ConsoleNotifier(NotificationChannel.SLACK),
         }
     )
+
+
+def _write_import_csv(body: dict[str, Any]) -> Path:
+    csv_text = str(body.get("csv_text") or "")
+    if not csv_text.strip():
+        raise ValueError("csv_text is required")
+    source_name = str(body.get("source_name") or "upload.csv")
+    suffix = ".csv" if not source_name.lower().endswith(".csv") else ""
+    handle = NamedTemporaryFile(
+        "w",
+        encoding="utf-8",
+        newline="",
+        suffix=suffix,
+        prefix="duedatehq-import-",
+        delete=False,
+    )
+    with handle:
+        handle.write(csv_text)
+    return Path(handle.name)
 
 
 def _prepare_session(body: dict[str, Any]) -> dict[str, Any]:

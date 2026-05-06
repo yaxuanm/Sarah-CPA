@@ -2,10 +2,13 @@ import { ChangeEvent, Dispatch, DragEvent, ReactElement, ReactNode, SetStateActi
 import type { ViewEnvelope } from "./types";
 import type {
   DashboardPayload,
+  ImportApplyBackendResult,
+  ImportPreview,
   NotificationPreview,
   SourceStatusItem,
   SourceSyncResult
 } from "./apiClient";
+import { applyImportCsv, previewImportCsv } from "./apiClient";
 import {
   ArchiveIcon,
   BlockedIcon,
@@ -48,6 +51,7 @@ export type SectionDispatch = (
 
 export type SectionContext = {
   tenantId: string;
+  apiBase?: string;
   view: ViewEnvelope;
   busy: boolean;
   dispatch: SectionDispatch;
@@ -509,6 +513,7 @@ type ImportApplyResult = {
   mergedClientIds: string[];
   createdClientNames: string[];
   mergedClientNames: string[];
+  backend?: ImportApplyBackendResult;
 };
 
 const ENTITY_TYPE_OPTIONS: EntityType[] = ["LLC", "S-Corp", "C-Corp", "Partnership", "Sole Proprietorship", "Professional Corp"];
@@ -1578,6 +1583,25 @@ function parseCsv(text: string): string[][] {
   return rows;
 }
 
+function csvEscape(value: string) {
+  if (/[",\n\r]/.test(value)) return `"${value.replace(/"/g, "\"\"")}"`;
+  return value;
+}
+
+function buildBackendImportCsv(rows: string[][], decisions: ImportDecision[]) {
+  const headers = [
+    "Client Name",
+    "Entity / Return Type",
+    "State Footprint",
+    "Contact Name",
+    "Contact Email",
+    "Tax Scope",
+    "Notes"
+  ];
+  const selectedRows = rows.filter((_row, index) => decisions[index] !== "skip");
+  return [headers, ...selectedRows].map((row) => row.map((cell) => csvEscape(cell || "")).join(",")).join("\n");
+}
+
 function buildInitialMapping(headers: string[]): ImportMapping {
   return Object.fromEntries(headers.map((header) => [header, guessImportField(header)]));
 }
@@ -1684,7 +1708,7 @@ function buildImportRowsFromUpload(headers: string[], rows: string[][], mapping:
   ]);
 }
 
-export function ClientsSection({ onExport, onNotify, importLaunchToken = 0, deadlines: deadlineStore, changedDeadlineIds = [] }: SectionContext) {
+export function ClientsSection({ tenantId, apiBase, onExport, onNotify, importLaunchToken = 0, deadlines: deadlineStore, changedDeadlineIds = [] }: SectionContext) {
   const [importOpen, setImportOpen] = useState(false);
   const [importStep, setImportStep] = useState<ImportStep>(1);
   const [filterOpen, setFilterOpen] = useState(false);
@@ -1762,12 +1786,24 @@ export function ClientsSection({ onExport, onNotify, importLaunchToken = 0, dead
         onStep={setImportStep}
         onClose={closeImport}
         existingClientNames={records.map((record) => record.client.name)}
-        onApply={(rows, decisions) => {
+        tenantId={tenantId}
+        apiBase={apiBase}
+        onApply={async (rows, decisions, backendResult) => {
           const result = applyImportedRowsToRecords(records, rows, decisions);
+          if (backendResult) {
+            result.backend = backendResult;
+          }
           setRecords(result.records);
           setRecentImportResult(result);
           setImportFocus("all");
-          onNotify?.(`Import complete: ${result.created} new, ${result.merged} updated, ${result.skipped} skipped.`, "green");
+          const backendCreated = backendResult?.created_clients.length ?? 0;
+          const backendTasks = backendResult?.created_tasks.length ?? 0;
+          onNotify?.(
+            backendResult
+              ? `Live import complete: ${backendCreated} clients written and ${backendTasks} backend tasks generated.`
+              : `Import complete: ${result.created} new, ${result.merged} updated, ${result.skipped} skipped.`,
+            "green"
+          );
           return result;
         }}
         onDone={() => {
@@ -1989,6 +2025,8 @@ function ImportWizard({
   onStep,
   onClose,
   existingClientNames,
+  tenantId,
+  apiBase,
   onApply,
   onDone
 }: {
@@ -1996,11 +2034,16 @@ function ImportWizard({
   onStep: (step: ImportStep) => void;
   onClose: () => void;
   existingClientNames: string[];
-  onApply: (rows: string[][], decisions: ImportDecision[]) => ImportApplyResult;
+  tenantId: string;
+  apiBase?: string;
+  onApply: (rows: string[][], decisions: ImportDecision[], backendResult?: ImportApplyBackendResult) => ImportApplyResult | Promise<ImportApplyResult>;
   onDone: () => void;
 }) {
   const [result, setResult] = useState<ImportApplyResult | null>(null);
+  const [backendPreview, setBackendPreview] = useState<ImportPreview | null>(null);
+  const [backendApplyResult, setBackendApplyResult] = useState<ImportApplyBackendResult | null>(null);
   const [fileName, setFileName] = useState("");
+  const [rawCsvText, setRawCsvText] = useState("");
   const [csvHeaders, setCsvHeaders] = useState<string[]>([]);
   const [csvRows, setCsvRows] = useState<string[][]>([]);
   const [mapping, setMapping] = useState<ImportMapping>({});
@@ -2042,8 +2085,17 @@ function ImportWizard({
       setUploadError(null);
       setProcessingState("uploading");
       const text = await file.text();
+      setRawCsvText(text);
       await sleep(300);
       setProcessingState("analyzing");
+      if (apiBase) {
+        const livePreview = await previewImportCsv({
+          apiBase,
+          sourceName: file.name,
+          csvText: text
+        });
+        setBackendPreview(livePreview.preview);
+      }
       const parsed = parseCsv(text);
       if (parsed.length < 2) throw new Error("The file needs a header row and at least one client row.");
       const [headers, ...rows] = parsed;
@@ -2061,6 +2113,7 @@ function ImportWizard({
       onStep(2);
       setProcessingState(null);
     } catch (error) {
+      setBackendPreview(null);
       setProcessingState(null);
       setUploadError(error instanceof Error ? error.message : "Could not read this CSV file.");
     }
@@ -2098,6 +2151,7 @@ function ImportWizard({
             rows={csvRows}
             mapping={mapping}
             customFields={customFields}
+            backendPreview={backendPreview}
             missingRequired={missingRequired}
             onBack={back}
             onChangeMapping={(header, value) => setMapping((current) => ({ ...current, [header]: value }))}
@@ -2113,22 +2167,42 @@ function ImportWizard({
             rows={normalizedRows}
             existingClientNames={existingClientNames}
             decisions={decisions}
+            error={uploadError}
             missingRequired={missingRequired}
             onChangeDecision={(rowIndex, decision) =>
               setDecisions((current) => current.map((item, index) => (index === rowIndex ? decision : item)))
             }
             onBack={back}
             onApply={async () => {
-              setProcessingState("applying");
-              await sleep(450);
-              const applied = onApply(normalizedRows.map((row) => [...row]), decisions);
-              setResult(applied);
-              const nextPlan = buildProposedPlan(normalizedRows, decisions);
-              setProposedPlan(nextPlan);
-              setPlanActions(nextPlan.map((item) => (item.urgency === "urgent" ? "now" : "later")));
-              setPlanWindows(nextPlan.map((item) => (item.urgency === "urgent" ? "this_week" : "next_week")));
-              setProcessingState(null);
-              onStep(4);
+              try {
+                setUploadError(null);
+                setProcessingState("applying");
+                await sleep(450);
+                let liveResult: ImportApplyBackendResult | undefined;
+                if (apiBase) {
+                  const backendCsv = buildBackendImportCsv(normalizedRows, decisions);
+                  const response = await applyImportCsv({
+                    apiBase,
+                    tenantId,
+                    sourceName: fileName || "upload.csv",
+                    csvText: backendCsv || rawCsvText,
+                    taxYear: 2026
+                  });
+                  liveResult = response.result;
+                  setBackendApplyResult(response.result);
+                }
+                const applied = await onApply(normalizedRows.map((row) => [...row]), decisions, liveResult);
+                setResult(applied);
+                const nextPlan = buildProposedPlan(normalizedRows, decisions);
+                setProposedPlan(nextPlan);
+                setPlanActions(nextPlan.map((item) => (item.urgency === "urgent" ? "now" : "later")));
+                setPlanWindows(nextPlan.map((item) => (item.urgency === "urgent" ? "this_week" : "next_week")));
+                setProcessingState(null);
+                onStep(4);
+              } catch (error) {
+                setProcessingState(null);
+                setUploadError(error instanceof Error ? error.message : "Live import failed.");
+              }
             }}
           />
         ) : null}
@@ -2154,7 +2228,7 @@ function ImportWizard({
             }}
           />
         ) : null}
-        {step === 5 ? <ImportStepDone result={result} planSummary={approvedPlanSummary} onDone={onDone} /> : null}
+        {step === 5 ? <ImportStepDone result={result} backendResult={backendApplyResult} planSummary={approvedPlanSummary} onDone={onDone} /> : null}
       </div>
     </section>
   );
@@ -2233,6 +2307,7 @@ function ImportStepTwo({
   rows,
   mapping,
   customFields,
+  backendPreview,
   missingRequired,
   onBack,
   onChangeMapping,
@@ -2244,6 +2319,7 @@ function ImportStepTwo({
   rows: string[][];
   mapping: ImportMapping;
   customFields: CustomImportField[];
+  backendPreview: ImportPreview | null;
   missingRequired: string[];
   onBack: () => void;
   onChangeMapping: (header: string, value: ImportMappingValue) => void;
@@ -2304,6 +2380,13 @@ function ImportStepTwo({
   return (
     <>
       <p className="ddh-import-note">{fileName} · {rows.length} rows detected. Review only the columns that need attention, or use the mapping assistant for a quick suggestion.</p>
+      {backendPreview ? (
+        <div className="live-import-preview">
+          <span>Live backend preview</span>
+          <strong>{backendPreview.imported_rows} rows · {backendPreview.resolved_required_mappings}/{backendPreview.required_mappings} required fields mapped</strong>
+          <p>{backendPreview.summary}</p>
+        </div>
+      ) : null}
       {missingRequired.length ? <p className="ddh-import-warning">Still needed before you can continue: {missingRequired.join(", ")}.</p> : null}
       <div className="ddh-import-ai">
         <div>
@@ -2415,6 +2498,7 @@ function ImportStepThree({
   rows,
   existingClientNames,
   decisions,
+  error,
   missingRequired,
   onChangeDecision,
   onBack,
@@ -2424,6 +2508,7 @@ function ImportStepThree({
   rows: string[][];
   existingClientNames: string[];
   decisions: ImportDecision[];
+  error: string | null;
   missingRequired: string[];
   onChangeDecision: (rowIndex: number, decision: ImportDecision) => void;
   onBack: () => void;
@@ -2444,6 +2529,7 @@ function ImportStepThree({
   return (
     <>
       <p className="ddh-import-note">{fileName} · {rows.length} rows parsed · {mergeCount} update{mergeCount === 1 ? "" : "s"} · {createCount} new card{createCount === 1 ? "" : "s"} · {skipCount} skip{skipCount === 1 ? "" : "s"}.</p>
+      {error ? <p className="ddh-import-error">{error}</p> : null}
       {missingRequired.length ? <p className="ddh-import-warning">This file still has unresolved required fields: {missingRequired.join(", ")}.</p> : null}
       <table className="ddh-review-table">
         <thead><tr><th>Client</th><th>Entity</th><th>States</th><th>Tax types</th><th>Assignee</th><th>Action</th></tr></thead>
@@ -2553,10 +2639,12 @@ function ImportStepPlanReview({
 
 function ImportStepDone({
   result,
+  backendResult,
   planSummary,
   onDone
 }: {
   result: ImportApplyResult | null;
+  backendResult: ImportApplyBackendResult | null;
   planSummary: { now: number; later: number; skipped: number } | null;
   onDone: () => void;
 }) {
@@ -2565,6 +2653,13 @@ function ImportStepDone({
       <div className="ddh-import-done-mark">✓</div>
       <h2>{result ? `${result.created} new · ${result.merged} updated` : "Import complete"}</h2>
       <p>Full-year deadline calendars generated. New clients were added to the directory and existing matches were updated in place.</p>
+      {backendResult ? (
+        <div className="live-import-done">
+          <span>Written through backend</span>
+          <strong>{backendResult.created_clients.length} clients · {backendResult.created_tasks.length} tasks · {backendResult.created_blockers.length} blockers</strong>
+          <p>The same upload was applied through the live API and persisted into the demo database.</p>
+        </div>
+      ) : null}
       {planSummary ? (
         <div className="import-plan-summary import-plan-summary-final">
           <span><strong>{planSummary.now}</strong> start now</span>

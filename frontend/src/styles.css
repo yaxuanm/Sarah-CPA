@@ -5401,6 +5401,38 @@ body {
   font-size: 12px;
 }
 
+.live-import-preview {
+  margin: 12px 0 14px;
+  padding: 12px 14px;
+  border: 0.5px solid rgba(30, 122, 62, 0.18);
+  border-radius: 10px;
+  background: #f4fbf5;
+  text-align: left;
+}
+
+.live-import-preview span,
+.live-import-done span {
+  display: block;
+  margin-bottom: 4px;
+  color: #1e7a3e;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+}
+
+.live-import-preview strong,
+.live-import-done strong {
+  color: #111827;
+  font-size: 13px;
+}
+
+.live-import-preview p {
+  margin: 4px 0 0;
+  color: #50605a;
+  font-size: 12px;
+}
+
 .ddh-stepper {
   display: flex;
   align-items: center;
@@ -5762,6 +5794,22 @@ body {
   margin: 0 auto 18px;
   color: #6b6b66;
   font-size: 13px;
+}
+
+.live-import-done {
+  max-width: 460px;
+  margin: 16px auto 18px;
+  padding: 13px 16px;
+  border: 0.5px solid rgba(30, 122, 62, 0.18);
+  border-radius: 12px;
+  background: #f4fbf5;
+  text-align: left;
+}
+
+.live-import-done p {
+  margin: 5px 0 0;
+  color: #50605a;
+  font-size: 12px;
 }
 
 .import-complete-breakdown {

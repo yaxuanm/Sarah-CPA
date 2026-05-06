@@ -604,6 +604,7 @@ export function App() {
             </div>
             <SectionComponent
               tenantId={tenantId}
+              apiBase={apiBase}
               view={view ?? { type: "GuidanceCard", data: {}, selectable_items: [] }}
               busy={busy}
               dispatch={dispatchSectionPlan}

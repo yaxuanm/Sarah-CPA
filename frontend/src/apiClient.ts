@@ -162,11 +162,86 @@ export type NotificationPreview = {
   }>;
 };
 
+export type ImportPreview = {
+  source_name: string;
+  source_kind: string;
+  imported_rows: number;
+  summary: string;
+  mappings: Array<{
+    target_field: string;
+    source_column: string;
+    confidence: number;
+    status: string;
+  }>;
+  missing_fields: string[];
+  extra_columns: string[];
+  sample_rows: string[][];
+  ready_to_generate: boolean;
+  required_mappings: number;
+  resolved_required_mappings: number;
+};
+
+export type ImportApplyBackendResult = {
+  source_name: string;
+  created_clients: Array<{ client_id: string; name: string }>;
+  created_blockers: Array<{ blocker_id: string; title: string }>;
+  created_tasks: Array<{ task_id: string; title: string }>;
+  skipped_rows: Array<{ row_number: number; client_name?: string | null; reason: string }>;
+  dashboard: DashboardPayload;
+};
+
 export async function fetchSourceStatus(params: { apiBase: string }): Promise<{ sources: SourceStatusItem[] }> {
   const response = await fetch(`${params.apiBase.replace(/\/$/, "")}/sources/status`);
 
   if (!response.ok) {
     throw new Error(`Source status failed: ${response.status}`);
+  }
+
+  return response.json();
+}
+
+export async function previewImportCsv(params: {
+  apiBase: string;
+  sourceName: string;
+  csvText: string;
+}): Promise<{ preview: ImportPreview }> {
+  const response = await fetch(`${params.apiBase.replace(/\/$/, "")}/import/preview`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      source_name: params.sourceName,
+      csv_text: params.csvText
+    })
+  });
+
+  if (!response.ok) {
+    throw new Error(`Import preview failed: ${response.status}`);
+  }
+
+  return response.json();
+}
+
+export async function applyImportCsv(params: {
+  apiBase: string;
+  tenantId: string;
+  sourceName: string;
+  csvText: string;
+  taxYear?: number;
+}): Promise<{ result: ImportApplyBackendResult }> {
+  const response = await fetch(`${params.apiBase.replace(/\/$/, "")}/import/apply`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      tenant_id: params.tenantId,
+      source_name: params.sourceName,
+      csv_text: params.csvText,
+      tax_year: params.taxYear || 2026,
+      actor: "frontend-demo"
+    })
+  });
+
+  if (!response.ok) {
+    throw new Error(`Import apply failed: ${response.status}`);
   }
 
   return response.json();

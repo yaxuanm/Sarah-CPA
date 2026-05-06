@@ -297,6 +297,46 @@ def test_notification_preview_and_send_pending_endpoints(tmp_path):
     assert {item["status"] for item in send.json()["deliveries"]} == {"sent"}
 
 
+def test_import_preview_and_apply_endpoints_process_csv(tmp_path):
+    pytest.importorskip("fastapi")
+    pytest.importorskip("httpx")
+    from fastapi.testclient import TestClient
+
+    api = create_fastapi_app(str(tmp_path / "http-import.sqlite3"))
+    tenant = api.state.app_state.engine.create_tenant("HTTP Import Tenant")
+    api.state.app_state.engine.create_rule(
+        tax_type="franchise_tax",
+        jurisdiction="CA",
+        entity_types=["llc"],
+        deadline_date="2026-05-01",
+        effective_from="2026-04-01",
+        source_url="https://ftb.ca.gov/rule",
+        confidence_score=0.99,
+    )
+    client = TestClient(api)
+    csv_text = (
+        "Client Name,Entity / Return Type,State Footprint,Home State,Contact Email\n"
+        "Live Import LLC,LLC,CA,,owner@example.com\n"
+    )
+
+    preview = client.post("/import/preview", json={"source_name": "live.csv", "csv_text": csv_text})
+
+    assert preview.status_code == 200
+    assert preview.json()["preview"]["imported_rows"] == 1
+    assert preview.json()["preview"]["resolved_required_mappings"] == 3
+
+    apply = client.post(
+        "/import/apply",
+        json={"tenant_id": tenant.tenant_id, "source_name": "live.csv", "csv_text": csv_text, "tax_year": 2026},
+    )
+
+    assert apply.status_code == 200
+    result = apply.json()["result"]
+    assert len(result["created_clients"]) == 1
+    assert len(result["created_blockers"]) == 1
+    assert result["dashboard"]["client_count"] == 1
+
+
 def test_latest_new_feedback_event_ignores_stale_events():
     session = {
         "flywheel_feedback_events": [{"signal": "missing_info", "user_input": "old"}],
