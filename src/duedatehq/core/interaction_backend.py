@@ -11,7 +11,7 @@ from .models import DeadlineStatus
 from .response_generator import ResponseGenerator
 from .surface_composer import SurfaceComposer
 from .system_state import record_operation, remember_response_state
-from .work_surface_planner import WorkSurfacePlanner
+from .work_surface_planner import WorkSurfacePlan, WorkSurfacePlanner
 from .workspace_registry import get_workspace_spec, workspace_allows_edits
 
 
@@ -88,6 +88,20 @@ class InteractionBackend:
             )
             self._append_history(session, "system", workspace_guard_response.get("message", ""))
             return {"status": "ok", **workspace_guard_response, "session_id": session.get("session_id")}
+
+        tax_change_surface_plan = self._tax_change_surface_plan(text, session)
+        if tax_change_surface_plan:
+            response = self.surface_composer.compose_work_surface(tax_change_surface_plan, session, text)
+            self._remember_response(session, response)
+            self._remember_last_turn(
+                session,
+                text,
+                {"intent_label": tax_change_surface_plan.surface_plan.surface_kind, "op_class": "read"},
+                response,
+                plan_source="tax_change_forced_route",
+            )
+            self._append_history(session, "system", response.get("message", ""))
+            return {"status": "ok", **response, "session_id": session.get("session_id")}
 
         kernel_decision = self.agent_kernel.decide(text, session) if self.agent_kernel else None
         kernel_response = self._answer_from_agent_decision(kernel_decision, text, session) if kernel_decision else None
@@ -311,6 +325,15 @@ class InteractionBackend:
         useful surface depends on current context and user intent.
         """
         return self._relative_visible_item_plan(user_input, session)
+
+    def _tax_change_surface_plan(self, user_input: str, session: dict[str, Any]) -> WorkSurfacePlan | None:
+        current_view = session.get("current_view")
+        if isinstance(current_view, dict) and current_view.get("type") == "TaxChangeRadarCard":
+            return None
+        plan = self.work_surface_planner.plan(user_input, session)
+        if not plan or plan.surface_plan.surface_kind != "TaxChangeRadar":
+            return None
+        return plan
 
     def _relative_visible_item_plan(self, user_input: str, session: dict[str, Any]) -> dict[str, Any] | None:
         lowered = user_input.casefold()

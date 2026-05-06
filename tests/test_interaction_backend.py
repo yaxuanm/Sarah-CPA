@@ -455,11 +455,35 @@ def test_interaction_backend_policy_change_uses_agent_surface_not_generic_fallba
     assert "实时外部税务新闻源" in data["data_boundary_notice"]
     assert data["rule_signals"]
     assert data["impacted_deadlines"]
-    assert "政策变化雷达" in response["message"]
+    assert "税务变化雷达" in response["message"]
     assert "current_view" not in rendered_text
     assert response["actions"][0]["action"]["type"] == "direct_execute"
-    assert session["last_turn"]["intent_label"] == "tax_change_monitoring"
-    assert session["last_turn"]["plan_source"] == "agent_kernel"
+    assert session["last_turn"]["intent_label"] == "TaxChangeRadar"
+    assert session["last_turn"]["plan_source"] == "tax_change_forced_route"
+
+
+def test_policy_change_question_overrides_current_list_context(app):
+    _, _, _, session = _seed_interaction_data(app)
+    app.interaction_backend.process_message("今天先做什么", session)
+    app.interaction_backend.agent_kernel = FakeAgentKernel(
+        AgentKernelDecision(
+            route="answer_from_context",
+            need_type="explain_current_view",
+            render_policy="keep_current_view",
+            data_requests=["current_view"],
+            answer_mode="answer_only",
+            answer="The right side is already the matching list workspace, so I will keep it open.",
+            confidence=0.95,
+        )
+    )
+
+    response = app.interaction_backend.process_message("最近有哪些新规会影响客户？", session)
+
+    assert response["view"]["type"] == "TaxChangeRadarCard"
+    assert "规则" in str(response["view"]["data"])
+    assert "matching list" not in response["message"]
+    assert session["last_turn"]["intent_label"] == "TaxChangeRadar"
+    assert session["last_turn"]["plan_source"] == "tax_change_forced_route"
 
 
 def test_interaction_backend_answers_impact_question_from_tax_change_radar_context(app):
