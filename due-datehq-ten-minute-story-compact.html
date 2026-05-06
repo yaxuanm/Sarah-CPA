@@ -1042,18 +1042,18 @@
           <div><strong>Official rules</strong><span>联邦 + 州级 deadline 与政策变化。</span></div>
           <div><strong>Work item</strong><span>client、tax type、due、status、assignee、blocker。</span></div>
           <div><strong>CPA action</strong><span>完成、阻塞、延期、归档、客户跟进。</span></div>
-          <div><strong>Ask</strong><span>在工作队列里陪 CPA 做判断、记录和下一步。</span></div>
+          <div><strong>Ask</strong><span>用自然语言问待办、问政策变化影响谁。</span></div>
         </div>
-        <p class="lead compact">用户看到的不是一堆日期，而是 Work now、Blocked、Needs review 和 Archive 组成的行动工作台。</p>
+        <p class="lead compact">Dashboard 是结构化主入口；Ask 是快捷入口。两者背后用的是同一套客户、规则和 deadline 数据。</p>
       </article>
 
       <article class="slide">
         <p class="eyebrow">Demo 结构 · 30 秒</p>
-        <h2>今天只讲三个用户故事；Ask 主要出现在周一分诊里，像一个工作队列秘书。</h2>
+        <h2>今天只讲三个用户故事；Ask 作为第二入口，展示同一个问题也可以直接问。</h2>
         <div class="grid-3">
           <div class="card accent"><h3>1. Import</h3><p>AI mapping 帮用户修正字段，上传客户表后生成工作台。</p></div>
-          <div class="card accent"><h3>2. Weekly triage</h3><p>Ask 主动排优先级，准备 request，记录操作，再给下一步。</p></div>
-          <div class="card accent"><h3>3. Rule change</h3><p>系统解析官方规则，展示 source、diff 和 affected clients。</p></div>
+          <div class="card accent"><h3>2. Weekly triage</h3><p>先看 Work board，再用 Ask 问“今天先做什么”。</p></div>
+          <div class="card accent"><h3>3. Rule change</h3><p>先看官方监控和 apply，再用 Ask 问“影响哪些客户”。</p></div>
         </div>
         <div class="demo-cue">现场产品：<a class="demo-link" href="https://naeu-demo.dify.dev/duedatehq/" target="_blank" rel="noopener">naeu-demo.dify.dev/duedatehq</a> · 测试 CSV：<a class="demo-link" href="https://naeu-demo.dify.dev/duedatehq/demo-data/duedatehq-live-import-demo.csv" target="_blank" rel="noopener">live import demo</a></div>
       </article>
@@ -1072,16 +1072,16 @@
 
       <article class="slide">
         <p class="eyebrow">User Story 2 · Weekly triage · 120 秒</p>
-        <h2>周一早上，Ask 不是闲聊，而是陪 Sarah 把第一件事处理完。</h2>
+        <h2>周一早上，Sarah 不需要先整理任务；系统已经把工作分好层。</h2>
         <div class="object-flow">
-          <div><strong>Prioritize</strong><span>“Aurora 的 federal income 5 月 15 日到期，最紧急。”</span></div>
-          <div><strong>Prepare</strong><span>Sarah 点 “Prepare request”，系统生成客户消息草稿。</span></div>
-          <div><strong>Record</strong><span>Sarah 说“记录为已发送”，系统写入操作记录。</span></div>
-          <div><strong>Confirm</strong><span>Sarah 确认完成，work item 状态更新。</span></div>
-          <div><strong>Next</strong><span>系统继续提示还有 5 件待处理，最早 2026-04-25 到期。</span></div>
+          <div><strong>Work now</strong><span>现在能推进的事项。</span></div>
+          <div><strong>Blocked</strong><span>缺文件、缺确认、缺 profile 信息。</span></div>
+          <div><strong>Overdue</strong><span>已经过期但还没有归档。</span></div>
+          <div><strong>Ask</strong><span>直接问“今天先做什么？”</span></div>
+          <div><strong>Draft</strong><span>需要客户资料时，AI 生成 follow-up 草稿。</span></div>
         </div>
         <div class="quote-card">
-          <p>这是 Ask 最适合 demo 的场景：它不是替 CPA filing，而是把“优先级判断 → 客户沟通 → 操作记录 → 下一步”串起来。</p>
+          <p>Dashboard 负责把状态分清楚；Ask 负责让用户不用找按钮，也能快速进入最该处理的事项。</p>
         </div>
         <p class="lead compact">Aha moment：系统不是提醒“有一个 deadline”，而是告诉 CPA“现在该处理哪件事，以及下一步怎么做”。</p>
       </article>
@@ -1093,10 +1093,10 @@
           <div><strong>Fetch</strong><span>CA / TX / NY 官方来源同步。</span></div>
           <div><strong>Parse</strong><span>提取 source、before / after、适用规则。</span></div>
           <div><strong>Match</strong><span>匹配当前客户画像和相关 deadline。</span></div>
-          <div><strong>Review</strong><span>展示每个受影响客户会怎么变化。</span></div>
-          <div><strong>Apply</strong><span>CPA 确认后更新 client、work 和 calendar。</span></div>
+          <div><strong>Review + Apply</strong><span>CPA 先在官方监控界面确认影响。</span></div>
+          <div><strong>Ask</strong><span>再追问“这条变化会影响哪些客户？”</span></div>
         </div>
-        <p class="lead compact">Aha moment：系统先找出影响范围，CPA 最后只做专业判断。AI 做解析、总结和匹配，不替 CPA 做最终决定。</p>
+        <p class="lead compact">Aha moment：Dashboard 是结构化入口，Ask 是快捷入口；两者都围绕同一套客户、规则和 deadline 数据。</p>
       </article>
 
       <article class="slide">
@@ -1108,7 +1108,7 @@
           <div class="card"><h3>Match</h3><p>把规则变化匹配到真实客户组合和 work item。</p></div>
           <div class="card"><h3>Draft</h3><p>基于当前 work item 生成客户 follow-up 草稿。</p></div>
         </div>
-        <p class="lead compact">Ask 的主要 demo 场景是工作队列：用户不用学习所有按钮，也能通过对话完成优先级判断、客户请求、记录和下一步。</p>
+        <p class="lead compact">Ask 的价值不是“聊天”，而是让用户不用学习所有按钮，也能快速进入正确的工作面。</p>
       </article>
 
       <article class="slide gtm-slide">
@@ -1182,11 +1182,12 @@
       "真实代价 · 45 秒": "The real cost · 45 sec",
       "产品定位 · 60 秒": "Product position · 60 sec",
       "Demo 结构 · 30 秒": "Demo structure · 30 sec",
-      "今天只讲三个用户故事；Ask 主要出现在周一分诊里，像一个工作队列秘书。": "Today we will tell three user stories; Ask mainly appears in weekly triage as a work-queue secretary.",
+      "今天只讲三个用户故事；Ask 作为第二入口，展示同一个问题也可以直接问。": "Today we will tell three user stories; Ask is a second entry point that lets the user ask the same operational question directly.",
       "User Story 1 · Import · 90 秒": "User Story 1 · Import · 90 sec",
       "User Story 2 · Weekly triage · 120 秒": "User Story 2 · Weekly triage · 120 sec",
       "User Story 3 · Rule change · 120 秒": "User Story 3 · Rule change · 120 sec",
       "AI 差异化 · 60 秒": "AI differentiation · 60 sec",
+      "Ask 的价值不是“聊天”，而是让用户不用学习所有按钮，也能快速进入正确的工作面。": "Ask is not chat for its own sake. It lets users reach the right work surface without learning every button.",
       "市场与 GTM · 75 秒": "Market and GTM · 75 sec",
       "当前完成度 · 60 秒": "Current build status · 60 sec",
       "同一个 CPA 用户基础，可以转出两个互相增强的飞轮。": "One CPA user base can compound into two reinforcing flywheels.",

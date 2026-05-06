@@ -1890,7 +1890,7 @@ export function ClientsSection({ tenantId, apiBase, onExport, onNotify, importLa
             ].sort((a, b) => a.due_date.localeCompare(b.due_date));
           });
           setRecentImportResult(result);
-          setImportFocus("updated");
+          setImportFocus("all");
           const backendCreated = backendResult?.created_clients.length ?? 0;
           const backendTasks = backendResult?.created_tasks.length ?? 0;
           onNotify?.(
@@ -1984,8 +1984,12 @@ export function ClientsSection({ tenantId, apiBase, onExport, onNotify, importLa
             <strong>{recentImportResult.created} new · {recentImportResult.merged} updated</strong>
             <p>{recentImportResult.skipped} skipped. Client cards below now reflect the imported portfolio changes.</p>
             <div className="ddh-inline-actions">
-              <button type="button" className={`ddh-btn ${importFocus === "updated" ? "ddh-btn-primary" : ""}`} onClick={() => setImportFocus("updated")}>
-                Show updated
+              <button
+                type="button"
+                className={`ddh-btn ${importFocus === "updated" ? "ddh-btn-primary" : ""}`}
+                onClick={() => setImportFocus((current) => (current === "updated" ? "all" : "updated"))}
+              >
+                {importFocus === "updated" ? "Show all" : "Show updated"}
               </button>
             </div>
           </div>

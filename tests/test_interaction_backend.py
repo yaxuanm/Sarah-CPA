@@ -476,6 +476,46 @@ def test_interaction_backend_answers_impact_question_from_tax_change_radar_conte
     assert "Review detail" in followup["message"]
 
 
+def test_tax_change_radar_does_not_count_unrelated_deadlines(app):
+    tenant, _, _, session = _seed_interaction_data(app)
+    app.engine.create_rule(
+        tax_type="sales_use",
+        jurisdiction="TX",
+        entity_types=["c-corp"],
+        deadline_date=(datetime.now(timezone.utc).date() + timedelta(days=5)).isoformat(),
+        effective_from=datetime.now(timezone.utc).date().isoformat(),
+        source_url="https://comptroller.texas.gov/r1",
+        confidence_score=0.99,
+    )
+    app.engine.register_client(
+        tenant_id=tenant.tenant_id,
+        name="Unrelated TX Co.",
+        entity_type="c-corp",
+        registered_states=["TX"],
+        tax_year=datetime.now(timezone.utc).year,
+    )
+    app.interaction_backend.agent_kernel = FakeAgentKernel(
+        AgentKernelDecision(
+            route="render_strategy_surface",
+            need_type="tax_change_monitoring",
+            render_policy="render_new_view",
+            data_requests=["rules", "rule_review_queue", "notices", "all_clients", "all_deadlines"],
+            answer_mode="answer_and_render",
+            view_goal="查看 CA franchise tax changes",
+            surface_kind="TaxChangeRadar",
+            answer=None,
+            confidence=0.9,
+        )
+    )
+
+    response = app.interaction_backend.process_message("最近 CA franchise tax 的变化影响谁？", session)
+
+    data = response["view"]["data"]
+    assert response["view"]["type"] == "TaxChangeRadarCard"
+    assert "Acme LLC" in str(data["impacted_deadlines"])
+    assert "Unrelated TX Co." not in str(data["impacted_deadlines"])
+
+
 class FakeAgentKernel:
     def __init__(self, decision: AgentKernelDecision):
         self.decision = decision

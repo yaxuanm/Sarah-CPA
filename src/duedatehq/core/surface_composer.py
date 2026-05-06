@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import asdict, is_dataclass
+import re
 from typing import Any
 
 from .agent_kernel import AgentKernelDecision
@@ -108,36 +109,60 @@ class SurfaceComposer:
         rules = gathered.get("rules", [])
         review_queue = gathered.get("review_queue", [])
         notices = gathered.get("notices", [])
-        deadlines = sorted(
+        raw_deadlines = sorted(
             gathered.get("deadline_pool", []),
             key=lambda item: (item.get("due_date") or "", item.get("client_name") or ""),
         )
+        active_rules = [] if (review_queue or notices) else rules
+        signal_keys = self._tax_change_signal_keys(
+            active_rules,
+            review_queue,
+            notices,
+            semantic_text=f"{decision.need_type} {decision.view_goal} {decision.answer}",
+        )
+        deadlines = self._filter_deadlines_for_signals(raw_deadlines, signal_keys)
         affected_client_ids = {item.get("client_id") for item in deadlines if item.get("client_id")}
 
         rule_signals: list[dict[str, str]] = []
-        for rule in rules[:4]:
-            rule_signals.append(
+        seen_signals: set[tuple[str, str, str]] = set()
+        for rule in active_rules:
+            if not self._record_matches_signal_keys(rule, signal_keys):
+                continue
+            self._append_unique_rule_signal(
+                rule_signals,
+                seen_signals,
                 {
                     "title": f"{rule.get('jurisdiction') or '未知辖区'} · {rule.get('tax_type') or '规则'}",
                     "detail": f"当前截止日 {rule.get('deadline_date') or '未知'}",
                     "source": rule.get("source_url") or "未记录来源",
-                }
+                },
             )
-        for review in review_queue[:3]:
-            rule_signals.append(
+        for review in review_queue:
+            payload = review.get("parse_payload") if isinstance(review.get("parse_payload"), dict) else {}
+            if not self._record_matches_signal_keys(payload, signal_keys):
+                continue
+            self._append_unique_rule_signal(
+                rule_signals,
+                seen_signals,
                 {
-                    "title": f"待审核规则 {review.get('review_id') or ''}".strip(),
+                    "title": (
+                        f"{payload.get('jurisdiction') or '待审核规则'} · {payload.get('tax_type') or review.get('review_id') or '规则'}"
+                    ),
                     "detail": f"置信度 {review.get('confidence_score', '未知')}",
                     "source": review.get("source_url") or "未记录来源",
-                }
+                },
             )
-        for notice in notices[:3]:
-            rule_signals.append(
+        for notice in notices:
+            if not self._record_matches_signal_keys(notice, signal_keys):
+                continue
+            self._append_unique_rule_signal(
+                rule_signals,
+                seen_signals,
                 {
                     "title": notice.get("title") or notice.get("notice_id") or "Notice",
                     "detail": notice.get("summary") or "无摘要",
                     "source": notice.get("source_url") or "未记录来源",
-                }
+                },
             )
         if not rule_signals:
             rule_signals.append(
@@ -153,11 +178,11 @@ class SurfaceComposer:
             "primary_question": decision.view_goal or "有哪些政策、规则或 notice 可能影响当前客户？",
             "data_boundary_notice": "当前没有实时外部税务新闻源；以下结果仅来自内部规则库、规则审核队列、notice 记录和客户 deadline。",
             "metrics": [
-                {"label": "规则信号", "value": f"{len(rules)} 条", "tone": "blue"},
+                {"label": "规则信号", "value": f"{len(rule_signals)} 条", "tone": "blue"},
                 {"label": "待审核", "value": f"{len(review_queue)} 条", "tone": "gold"},
                 {"label": "可能影响", "value": f"{len(affected_client_ids)} 个客户", "tone": "red" if affected_client_ids else "green"},
             ],
-            "rule_signals": rule_signals,
+            "rule_signals": rule_signals[:6],
             "impacted_deadlines": [
                 {
                     "client_name": item.get("client_name") or item.get("client_id") or f"客户 {index}",
@@ -172,7 +197,7 @@ class SurfaceComposer:
             ],
         }
         message = decision.answer or (
-            f"我按税务变化雷达整理了当前可用数据：内部规则库 {len(rules)} 条、"
+            f"我按税务变化雷达整理了当前可用数据：内部规则库 {len(rule_signals)} 条、"
             f"待审核规则 {len(review_queue)} 条、notice {len(notices)} 条，"
             f"关联到 {len(affected_client_ids)} 个有近期 pending deadline 的客户。"
             "当前没有实时外部税务新闻源。"
@@ -240,36 +265,60 @@ class SurfaceComposer:
         rules = evidence.get("rules", [])
         review_queue = evidence.get("review_queue", [])
         notices = evidence.get("notices", [])
-        deadlines = sorted(
+        raw_deadlines = sorted(
             evidence.get("deadlines", []),
             key=lambda item: (item.get("due_date") or "", item.get("client_id") or ""),
         )
+        active_rules = [] if (review_queue or notices) else rules
+        signal_keys = self._tax_change_signal_keys(
+            active_rules,
+            review_queue,
+            notices,
+            semantic_text=f"{plan.need.goal} {plan.surface_plan.primary_question}",
+        )
+        deadlines = self._filter_deadlines_for_signals(raw_deadlines, signal_keys)
         affected_client_ids = {item.get("client_id") for item in deadlines if item.get("client_id")}
 
         rule_signals: list[dict[str, str]] = []
-        for rule in rules[:4]:
-            rule_signals.append(
+        seen_signals: set[tuple[str, str, str]] = set()
+        for rule in active_rules:
+            if not self._record_matches_signal_keys(rule, signal_keys):
+                continue
+            self._append_unique_rule_signal(
+                rule_signals,
+                seen_signals,
                 {
                     "title": f"{rule.get('jurisdiction') or '未知辖区'} · {rule.get('tax_type') or '规则'}",
                     "detail": f"当前截止日 {rule.get('deadline_date') or '未知'}",
                     "source": rule.get("source_url") or "未记录来源",
-                }
+                },
             )
-        for review in review_queue[:3]:
-            rule_signals.append(
+        for review in review_queue:
+            payload = review.get("parse_payload") if isinstance(review.get("parse_payload"), dict) else {}
+            if not self._record_matches_signal_keys(payload, signal_keys):
+                continue
+            self._append_unique_rule_signal(
+                rule_signals,
+                seen_signals,
                 {
-                    "title": f"待审核规则 {review.get('review_id') or ''}".strip(),
+                    "title": (
+                        f"{payload.get('jurisdiction') or '待审核规则'} · {payload.get('tax_type') or review.get('review_id') or '规则'}"
+                    ),
                     "detail": f"置信度 {review.get('confidence_score', '未知')}",
                     "source": review.get("source_url") or "未记录来源",
-                }
+                },
             )
-        for notice in notices[:3]:
-            rule_signals.append(
+        for notice in notices:
+            if not self._record_matches_signal_keys(notice, signal_keys):
+                continue
+            self._append_unique_rule_signal(
+                rule_signals,
+                seen_signals,
                 {
                     "title": notice.get("title") or notice.get("notice_id") or "Notice",
                     "detail": notice.get("summary") or "无摘要",
                     "source": notice.get("source_url") or "未记录来源",
-                }
+                },
             )
         if not rule_signals:
             rule_signals.append(
@@ -298,11 +347,11 @@ class SurfaceComposer:
             "primary_question": plan.surface_plan.primary_question,
             "data_boundary_notice": plan.surface_plan.data_boundary_notice,
             "metrics": [
-                {"label": "规则信号", "value": f"{len(rules)} 条", "tone": "blue"},
+                {"label": "规则信号", "value": f"{len(rule_signals)} 条", "tone": "blue"},
                 {"label": "待审核", "value": f"{len(review_queue)} 条", "tone": "gold"},
                 {"label": "可能影响", "value": f"{len(affected_client_ids)} 个客户", "tone": "red" if affected_client_ids else "green"},
             ],
-            "rule_signals": rule_signals,
+            "rule_signals": rule_signals[:6],
             "impacted_deadlines": impacted_deadlines,
         }
         actions = [
@@ -348,7 +397,7 @@ class SurfaceComposer:
             },
         ]
         message = (
-            f"我按税务变化雷达整理了当前可用数据：内部规则库 {len(rules)} 条、"
+            f"我按税务变化雷达整理了当前可用数据：内部规则库 {len(rule_signals)} 条、"
             f"待审核规则 {len(review_queue)} 条、notice {len(notices)} 条，"
             f"关联到 {len(affected_client_ids)} 个有近期 pending deadline 的客户。"
             "当前没有实时外部税务新闻源。"
@@ -367,6 +416,148 @@ class SurfaceComposer:
             "actions": actions,
             "state_summary": f"{plan.surface_plan.surface_kind}: {plan.need.goal}",
         }
+
+    def _tax_change_signal_keys(
+        self,
+        rules: list[dict[str, Any]],
+        review_queue: list[dict[str, Any]],
+        notices: list[dict[str, Any]],
+        semantic_text: str = "",
+    ) -> set[tuple[str | None, str | None]]:
+        keys: set[tuple[str | None, str | None]] = set()
+        for rule in rules:
+            keys.add((self._normalize_jurisdiction(rule.get("jurisdiction")), self._normalize_tax_type(rule.get("tax_type"))))
+        for review in review_queue:
+            payload = review.get("parse_payload") if isinstance(review.get("parse_payload"), dict) else {}
+            keys.add((self._normalize_jurisdiction(payload.get("jurisdiction")), self._normalize_tax_type(payload.get("tax_type"))))
+        for notice in notices:
+            jurisdiction = notice.get("jurisdiction") or notice.get("state")
+            tax_type = notice.get("tax_type")
+            keys.add((self._normalize_jurisdiction(jurisdiction), self._normalize_tax_type(tax_type)))
+        keys = {(jurisdiction, tax_type) for jurisdiction, tax_type in keys if jurisdiction or tax_type}
+        focus_jurisdictions, focus_tax_types = self._tax_change_focus(semantic_text)
+        if focus_jurisdictions or focus_tax_types:
+            focused = {
+                (jurisdiction, tax_type)
+                for jurisdiction, tax_type in keys
+                if (not focus_jurisdictions or jurisdiction in focus_jurisdictions)
+                and (not focus_tax_types or tax_type in focus_tax_types)
+            }
+            return focused or keys
+        return keys
+
+    def _filter_deadlines_for_signals(
+        self,
+        deadlines: list[dict[str, Any]],
+        signal_keys: set[tuple[str | None, str | None]],
+    ) -> list[dict[str, Any]]:
+        if not signal_keys:
+            return []
+        matched: list[dict[str, Any]] = []
+        seen: set[str] = set()
+        for deadline in deadlines:
+            jurisdiction = self._normalize_jurisdiction(deadline.get("jurisdiction"))
+            tax_type = self._normalize_tax_type(deadline.get("tax_type"))
+            if not any(
+                (not signal_jurisdiction or signal_jurisdiction == jurisdiction)
+                and (not signal_tax_type or signal_tax_type == tax_type)
+                for signal_jurisdiction, signal_tax_type in signal_keys
+            ):
+                continue
+            identity = str(
+                deadline.get("deadline_id")
+                or "|".join(
+                    [
+                        str(deadline.get("client_id") or ""),
+                        str(deadline.get("tax_type") or ""),
+                        str(deadline.get("jurisdiction") or ""),
+                        str(deadline.get("due_date") or ""),
+                    ]
+                )
+            )
+            if identity in seen:
+                continue
+            seen.add(identity)
+            matched.append(deadline)
+        return matched
+
+    def _record_matches_signal_keys(self, record: dict[str, Any], signal_keys: set[tuple[str | None, str | None]]) -> bool:
+        if not signal_keys:
+            return True
+        jurisdiction = self._normalize_jurisdiction(record.get("jurisdiction") or record.get("state"))
+        tax_type = self._normalize_tax_type(record.get("tax_type"))
+        return any(
+            (not signal_jurisdiction or signal_jurisdiction == jurisdiction)
+            and (not signal_tax_type or signal_tax_type == tax_type)
+            for signal_jurisdiction, signal_tax_type in signal_keys
+        )
+
+    def _append_unique_rule_signal(
+        self,
+        signals: list[dict[str, str]],
+        seen: set[tuple[str, str, str]],
+        signal: dict[str, Any],
+    ) -> None:
+        title = str(signal.get("title") or "").strip()
+        detail = str(signal.get("detail") or "").strip()
+        source = str(signal.get("source") or "").strip()
+        identity = (self._normalize_signal_text(title), self._normalize_signal_text(detail), source)
+        if not title or identity in seen:
+            return
+        seen.add(identity)
+        signals.append({"title": title, "detail": detail, "source": source})
+
+    @staticmethod
+    def _normalize_jurisdiction(value: Any) -> str | None:
+        text = str(value or "").strip().upper()
+        return text or None
+
+    @staticmethod
+    def _normalize_tax_type(value: Any) -> str | None:
+        text = re.sub(r"[^a-z0-9]+", "_", str(value or "").casefold()).strip("_")
+        aliases = {
+            "sales_use": "sales_use",
+            "sales": "sales_use",
+            "sales_tax": "sales_use",
+            "payroll_941": "payroll",
+            "941": "payroll",
+            "pte": "pte_election",
+            "pte_election": "pte_election",
+            "franchise": "franchise_tax",
+            "franchise_tax": "franchise_tax",
+            "federal_income": "federal_income",
+            "state_income": "state_income",
+        }
+        return aliases.get(text, text or None)
+
+    @staticmethod
+    def _normalize_signal_text(value: str) -> str:
+        return re.sub(r"\b[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}\b", "<id>", value.casefold()).strip()
+
+    def _tax_change_focus(self, semantic_text: str) -> tuple[set[str], set[str]]:
+        text = semantic_text.casefold()
+        jurisdictions = {
+            code
+            for code, terms in {
+                "CA": [" ca ", "california", "加州"],
+                "TX": [" tx ", "texas", "德州"],
+                "NY": [" ny ", "new york", "纽约"],
+            }.items()
+            if any(term in f" {text} " for term in terms)
+        }
+        tax_types = {
+            normalized
+            for normalized, terms in {
+                "franchise_tax": ["franchise", "特许"],
+                "sales_use": ["sales", "sales/use", "sales tax", "销售税"],
+                "pte_election": ["pte", "pass-through", "pass through"],
+                "federal_income": ["federal income"],
+                "state_income": ["state income"],
+                "payroll": ["payroll", "941"],
+            }.items()
+            if any(term in text for term in terms)
+        }
+        return jurisdictions, tax_types
 
     def _compose_planned_render_spec(
         self,
