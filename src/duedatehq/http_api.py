@@ -6,6 +6,8 @@ from datetime import datetime
 from typing import Any
 
 from .app import create_app
+from .core.models import NotificationChannel
+from .core.notifiers import ConsoleNotifier, NotifierRegistry
 from .core.system_state import record_operation, remember_response_state
 
 
@@ -88,6 +90,56 @@ def create_fastapi_app(db_path: str | None = None):
         )
         return {"results": _jsonable(results)}
 
+    @api.get("/sources/status")
+    def source_status():
+        fetch_runs = app_state.engine.list_fetch_runs()
+        supported_keys = {"state_ca", "state_tx", "state_ny"}
+        latest_by_source: dict[str, Any] = {}
+        for run in fetch_runs:
+            if run.source_key not in latest_by_source:
+                latest_by_source[run.source_key] = run
+        sources = [
+            {
+                **source,
+                "sync_supported": source["source_key"] in supported_keys,
+                "latest_fetch_run": _jsonable(latest_by_source.get(source["source_key"])),
+            }
+            for source in app_state.engine.list_sources()
+            if source["source_key"] in supported_keys
+        ]
+        return {"sources": sources}
+
+    @api.post("/dashboard/payload")
+    def dashboard_payload(body: dict[str, Any] = Body(...)):
+        tenant_id = str(body["tenant_id"])
+        limit = int(body.get("limit") or 5)
+        return {"payload": _jsonable(app_state.engine.dashboard_payload(tenant_id, limit=limit))}
+
+    @api.post("/notifications/preview")
+    def notification_preview(body: dict[str, Any] = Body(...)):
+        tenant_id = str(body["tenant_id"])
+        within_days = int(body.get("within_days") or 7)
+        return {
+            "routes": _jsonable(app_state.engine.list_notification_routes(tenant_id)),
+            "reminders": _jsonable(app_state.engine.notify_preview(tenant_id, within_days=within_days)),
+            "deliveries": _jsonable(app_state.engine.list_notification_deliveries(tenant_id)),
+        }
+
+    @api.post("/notifications/send-pending")
+    def notification_send_pending(body: dict[str, Any] = Body(...)):
+        tenant_id = str(body["tenant_id"])
+        if body.get("trigger_due"):
+            app_state.engine.trigger_due_reminders(now=_parse_datetime(body.get("at")), tenant_id=tenant_id)
+        sent = app_state.engine.dispatch_notification_deliveries(
+            tenant_id,
+            _console_notifier_registry(),
+            actor=str(body.get("actor") or "api"),
+        )
+        return {
+            "sent": sent,
+            "deliveries": _jsonable(app_state.engine.list_notification_deliveries(tenant_id)),
+        }
+
     @api.post("/session/{tenant_id}")
     def start_session(tenant_id: str):
         return app_state.interaction_sessions.start(tenant_id)
@@ -161,6 +213,8 @@ def _parse_datetime(value: Any) -> datetime | None:
 
 
 def _jsonable(value: Any) -> Any:
+    if value is None:
+        return None
     if is_dataclass(value):
         return _jsonable(asdict(value))
     if isinstance(value, datetime):
@@ -170,6 +224,16 @@ def _jsonable(value: Any) -> Any:
     if isinstance(value, list):
         return [_jsonable(item) for item in value]
     return value
+
+
+def _console_notifier_registry() -> NotifierRegistry:
+    return NotifierRegistry(
+        {
+            NotificationChannel.EMAIL: ConsoleNotifier(NotificationChannel.EMAIL),
+            NotificationChannel.SMS: ConsoleNotifier(NotificationChannel.SMS),
+            NotificationChannel.SLACK: ConsoleNotifier(NotificationChannel.SLACK),
+        }
+    )
 
 
 def _prepare_session(body: dict[str, Any]) -> dict[str, Any]:

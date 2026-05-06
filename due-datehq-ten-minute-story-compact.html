@@ -1171,18 +1171,18 @@
           </div>
           <div class="module-card">
             <h3>Deadline 与工作看板</h3>
-            <p><strong>已实现：</strong>从客户 profile 派生 deadline，按 Work now、Blocked、Needs review、Overdue、Archive 分诊。</p>
-            <p><strong>正在实现：</strong>筛选、状态流转、审计记录和 dashboard payload 的后端闭环。</p>
+            <p><strong>已实现：</strong>从客户 profile 派生 deadline，按 Work now、Blocked、Needs review、Overdue、Archive 分诊，并提供 dashboard payload API。</p>
+            <p><strong>正在实现：</strong>继续打磨筛选、状态流转和更细的审计展示。</p>
           </div>
           <div class="module-card">
             <h3>官方规则与影响分析</h3>
-            <p><strong>已实现：</strong>CA / TX / NY source-specific sync、fetch run、rule review、source、diff、affected clients。</p>
+            <p><strong>已实现：</strong>CA / TX / NY source-specific sync、source status、fetch run、rule review、source、diff、affected clients。</p>
             <p><strong>正在实现：</strong>扩大官方来源覆盖，并把同步任务接入正式调度和异常监控。</p>
           </div>
           <div class="module-card">
             <h3>提醒与客户跟进</h3>
-            <p><strong>已实现：</strong>提醒时间线、client follow-up、AI draft、通知连接入口。</p>
-            <p><strong>正在实现：</strong>Email / Slack 发送队列、发送历史和可配置 reminder cadence。</p>
+            <p><strong>已实现：</strong>提醒时间线、client follow-up、AI draft、通知连接入口、preview / send-pending API。</p>
+            <p><strong>正在实现：</strong>正式 Email / Slack OAuth 连接和可配置 reminder cadence。</p>
           </div>
           <div class="module-card">
             <h3>延期、归档与导出</h3>
@@ -1191,8 +1191,8 @@
           </div>
           <div class="module-card">
             <h3>Ask、API 与 CLI</h3>
-            <p><strong>已实现：</strong>Ask backend streaming，API source sync，CLI 支持 import、client、deadline、task、notice、source、notify、export。</p>
-            <p><strong>正在实现：</strong>把 notification delivery、dashboard actions 做成更稳定的 API / CLI 双入口。</p>
+            <p><strong>已实现：</strong>Ask backend streaming，API 覆盖 dashboard、source sync、notifications，CLI 覆盖 import、client、deadline、task、notice、source、notify、export。</p>
+            <p><strong>正在实现：</strong>把更多 dashboard write actions 做成稳定的 API / CLI 双入口。</p>
           </div>
         </div>
       </article>

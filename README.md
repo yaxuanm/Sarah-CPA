@@ -58,11 +58,12 @@ Implemented:
   Extension states.
 - Work detail with source, reminders, blocker state, extension state, edit task,
   actions, and client follow-up.
+- HTTP dashboard payload endpoint for today, active work, waiting-on-info, and
+  portfolio counts.
 
 In progress:
-- Full API-backed board payloads and persistent state transitions across every
-  front-end interaction.
 - More complete filter, archive, and audit-history workflows.
+- More persistent write-action coverage across every dashboard interaction.
 
 ### Official-source review and impact analysis
 
@@ -72,6 +73,7 @@ Implemented:
 - Backend models for rules, notices, deadlines, review state, and audit events.
 - Repeatable CA/TX/NY source-specific sync that creates fetch runs and routes
   parsed official-rule payloads into the review queue.
+- Source status endpoint for the latest supported sync runs.
 - CA/TX/NY source configuration and rule-change scenarios.
 
 In progress:
@@ -84,10 +86,10 @@ Implemented:
 - Reminder timeline tied to deadline urgency.
 - Client follow-up draft generation from the selected work item and blocker.
 - Notification settings entry points for email and Slack-style reminders.
+- Notification preview and send-pending API backed by the delivery queue.
 
 In progress:
-- Email and Slack delivery queue, preview, send history, and connection
-  settings.
+- Production Email/Slack OAuth-style connection settings.
 - Configurable reminder cadence.
 
 ### Extension, archive, and export
@@ -109,15 +111,13 @@ In progress:
 
 Implemented:
 - Ask streams through the backend and can return structured work surfaces.
-- HTTP API exposes bootstrap, action, chat streaming, session, and flywheel
-  endpoints for the demo runtime.
+- HTTP API exposes bootstrap, action, dashboard payload, chat streaming,
+  notifications, session, and flywheel endpoints for the demo runtime.
 - HTTP API exposes `/sources/sync` for supported official-rule sync.
 - CLI supports tenant, client, import, task, blocker, notice, deadline, export,
   source, notify, worker, celery, and log flows.
 
 In progress:
-- Turning notification delivery into stable API and CLI flows that can be used
-  interchangeably.
 - More complete backend action coverage for dashboard interactions.
 
 ## AI Boundaries
@@ -157,6 +157,14 @@ curl -N -X POST http://127.0.0.1:8000/chat/stream \
 curl -X POST http://127.0.0.1:8000/sources/sync \
   -H "Content-Type: application/json" \
   -d '{"states":["CA","TX","NY"]}'
+
+curl -X POST http://127.0.0.1:8000/dashboard/payload \
+  -H "Content-Type: application/json" \
+  -d '{"tenant_id":"2403c5e1-85ac-4593-86cc-02f8d97a8d92","limit":5}'
+
+curl -X POST http://127.0.0.1:8000/notifications/preview \
+  -H "Content-Type: application/json" \
+  -d '{"tenant_id":"2403c5e1-85ac-4593-86cc-02f8d97a8d92","within_days":14}'
 ```
 
 CLI source sync:

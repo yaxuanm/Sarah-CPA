@@ -4,6 +4,7 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
+from duedatehq.core.models import NotificationChannel
 from duedatehq.http_api import _instant_response_prefix, _latest_new_feedback_event, _message_chunks, _sse, _thinking_status, create_fastapi_app
 
 
@@ -230,6 +231,70 @@ def test_sources_sync_endpoint_routes_supported_states_to_review_queue(tmp_path)
     payload = response.json()
     assert [item["fetch_run"]["source_key"] for item in payload["results"]] == ["state_ca", "state_tx", "state_ny"]
     assert all(item["fetch_run"]["status"] == "review_queued" for item in payload["results"])
+
+
+def test_sources_status_endpoint_reports_latest_run(tmp_path):
+    pytest.importorskip("fastapi")
+    pytest.importorskip("httpx")
+    from fastapi.testclient import TestClient
+
+    api = create_fastapi_app(str(tmp_path / "http-source-status.sqlite3"))
+    client = TestClient(api)
+    client.post("/sources/sync", json={"states": ["CA"]})
+
+    response = client.get("/sources/status")
+
+    assert response.status_code == 200
+    ca_source = next(item for item in response.json()["sources"] if item["source_key"] == "state_ca")
+    assert ca_source["sync_supported"] is True
+    assert ca_source["latest_fetch_run"]["status"] == "review_queued"
+
+
+def test_dashboard_payload_endpoint_returns_board_data(tmp_path):
+    pytest.importorskip("fastapi")
+    pytest.importorskip("httpx")
+    from fastapi.testclient import TestClient
+
+    api = create_fastapi_app(str(tmp_path / "http-dashboard.sqlite3"))
+    tenant = _seed_api_deadline(api)
+    client = TestClient(api)
+
+    response = client.post("/dashboard/payload", json={"tenant_id": tenant.tenant_id, "limit": 3})
+
+    assert response.status_code == 200
+    payload = response.json()["payload"]
+    assert payload["client_count"] == 1
+    assert payload["today"][0]["client_name"] == "Acme LLC"
+
+
+def test_notification_preview_and_send_pending_endpoints(tmp_path):
+    pytest.importorskip("fastapi")
+    pytest.importorskip("httpx")
+    from fastapi.testclient import TestClient
+
+    api = create_fastapi_app(str(tmp_path / "http-notifications.sqlite3"))
+    tenant = _seed_api_deadline(api)
+    api.state.app_state.engine.configure_notification_route(
+        tenant.tenant_id,
+        NotificationChannel.EMAIL,
+        "sarah@example.com",
+    )
+    client = TestClient(api)
+
+    preview = client.post("/notifications/preview", json={"tenant_id": tenant.tenant_id, "within_days": 30})
+
+    assert preview.status_code == 200
+    assert len(preview.json()["routes"]) == 1
+    assert preview.json()["reminders"]
+
+    send = client.post(
+        "/notifications/send-pending",
+        json={"tenant_id": tenant.tenant_id, "trigger_due": True, "at": "2100-01-01T00:00:00+00:00"},
+    )
+
+    assert send.status_code == 200
+    assert send.json()["sent"] >= 1
+    assert {item["status"] for item in send.json()["deliveries"]} == {"sent"}
 
 
 def test_latest_new_feedback_event_ignores_stale_events():
