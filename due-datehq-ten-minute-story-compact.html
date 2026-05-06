@@ -903,6 +903,73 @@
       </article>
 
       <article class="slide">
+        <p class="eyebrow">Demo 场景 · Before</p>
+        <h2>每天早上，她先做 25 分钟分诊，然后才开始工作。</h2>
+        <div class="story-timeline">
+          <div class="time-row"><strong>7:30</strong><div>打开 Excel，看今天有什么截止日期。</div><span>手动开始</span></div>
+          <div class="time-row"><strong>7:35</strong><div>判断 8 条里面哪个最紧急，哪个被客户 blocked，哪个可以推。</div><span>认知负担</span></div>
+          <div class="time-row"><strong>7:55</strong><div>才清楚今天应该先做什么。</div><span>开始执行</span></div>
+          <div class="time-row"><strong>下午</strong><div>回头更新表格状态，偶尔发现漏了一条。</div><span>二次维护</span></div>
+        </div>
+      </article>
+
+      <article class="slide">
+        <p class="eyebrow">Demo 场景 · After</p>
+        <h2>有了 DueDateHQ，Sarah 打开产品时已经有结论。</h2>
+        <div class="quote-card">
+          <p>早上好。Northwind 的 payroll docs 还缺，Riverbend 有两条 overdue，Harbor 的 PTE election 本周需要决定。先处理哪个？</p>
+        </div>
+        <p class="lead compact">用时：0 分钟。系统已经替她排好优先级，她不用先维护工作面再开始工作。</p>
+      </article>
+
+      <article class="slide">
+        <p class="eyebrow">Demo 场景 · Closed loop</p>
+        <h2>第一件事处理完，下一步已经在等她。</h2>
+        <div class="object-flow">
+          <div><strong>Sarah</strong><span>“先看 Northwind。”</span></div>
+          <div><strong>Workspace</strong><span>打开 Northwind payroll item，看到缺 payroll support docs。</span></div>
+          <div><strong>Ask</strong><span>生成 request info follow-up，准备发给 Maya Chen。</span></div>
+          <div><strong>Record</strong><span>Sarah 发出邮件后说“发了”，系统记录操作。</span></div>
+          <div><strong>Next step</strong><span>“Riverbend 有两条逾期，要顺带看吗？”</span></div>
+        </div>
+        <div class="demo-cue">现场产品：打开 Northwind work item -> Draft follow-up -> Send and wait -> 状态回写。</div>
+      </article>
+
+      <article class="slide">
+        <p class="eyebrow">Demo 场景 · Rule-change moment</p>
+        <h2>10:47，Sarah 没有打开产品，系统已经替她盯着规则。</h2>
+        <div class="grid-3">
+          <div class="card accent"><h3>1. 监控</h3><p>IRS 或州税局发布公告。</p></div>
+          <div class="card accent"><h3>2. 解析</h3><p>系统把公告解析成结构化规则变化。</p></div>
+          <div class="card accent"><h3>3. 匹配</h3><p>匹配到 Sarah 的相关客户，并进入审核或自动更新。</p></div>
+        </div>
+        <p class="lead compact">Demo 要点：这不是新闻摘要，而是“哪些客户会变、要不要 apply”的决策入口。</p>
+      </article>
+
+      <article class="slide">
+        <p class="eyebrow">Demo 场景 · End of day</p>
+        <h2>收工前，她问一句：今天还有什么没处理完？</h2>
+        <div class="quote-card">
+          <p>Harbor Studio Partners 的 PTE election 还没有操作记录，本周必须决定。其他都处理完了或进入等待状态。</p>
+        </div>
+        <p class="lead compact">Sarah 点开 Harbor，处理 PTE election，标记完成。系统说：今天的事全部处理完了。</p>
+      </article>
+
+      <article class="slide">
+        <p class="eyebrow">Demo outcome</p>
+        <h2>结果不是多一个工具，而是少一层认知负担。</h2>
+        <table class="comparison">
+          <thead><tr><th>指标</th><th>之前</th><th>之后</th></tr></thead>
+          <tbody>
+            <tr><td>每天合规追踪时间</td><td>2-3 小时</td><td>25 分钟</td></tr>
+            <tr><td>规则变更响应时间</td><td>48 小时以上</td><td>14 分钟</td></tr>
+            <tr><td>漏掉 deadline 风险</td><td>偶发</td><td>接近零</td></tr>
+            <tr><td>每周节省时间</td><td>没有系统性节省</td><td>8-10 小时</td></tr>
+          </tbody>
+        </table>
+      </article>
+
+      <article class="slide">
         <p class="eyebrow">为什么是 AI</p>
         <h2>传统软件能存数据和发提醒，但不能接管判断链路。</h2>
         <div class="grid-3">
@@ -975,14 +1042,27 @@
       </article>
 
       <article class="slide">
-        <p class="eyebrow">当前完成度</p>
-        <h2>现在的原型已经覆盖 baseline，并展示核心闭环。</h2>
-        <div class="grid-3">
-          <div class="card"><h3>产品方案</h3><p>目标客户、痛点、边界、GTM、AI 差异化都已整理进 demo deck。</p></div>
-          <div class="card"><h3>可演示前端</h3><p>Import、Work、Clients、审核、Settings、Docs 都能走完整 demo flow。</p></div>
-          <div class="card"><h3>部署</h3><p>前端已部署到线上路径，后端 API 是下一步加分项。</p></div>
+        <p class="eyebrow">产品演示 3.2 · Runtime staging</p>
+        <h2>长尾需求第一次出现时，系统先当场满足，再决定是否沉淀。</h2>
+        <div class="object-flow">
+          <div><strong>新需求</strong><span>Sarah 提出一个没有命中缓存的复杂问题。</span></div>
+          <div><strong>识别</strong><span>系统判断它不是已有 intent，也不是已有页面骨架。</span></div>
+          <div><strong>临时工作面</strong><span>LLM 用现有组件搭出当场可用的页面。</span></div>
+          <div><strong>当场使用</strong><span>Sarah 可以查看分析、补字段、发起确认动作。</span></div>
+          <div><strong>后台评估</strong><span>系统再判断是否保存为可复用资产。</span></div>
         </div>
-        <p class="lead compact">这意味着我们稳过 baseline；如果继续补 live backend，可以冲后端部署加分。</p>
+        <p class="lead compact">Staging 不是让用户等待审核，而是当前会话立即可用、但尚未进入全局组件库的临时工作面。</p>
+      </article>
+
+      <article class="slide">
+        <p class="eyebrow">当前完成度</p>
+        <h2>现在的产品：三个系统已经在同一个原型里合流。</h2>
+        <div class="grid-3">
+          <div class="card"><h3>传统 SaaS</h3><p>规则录入、客户管理、deadline 调度、提醒推送、状态机和审计日志已经跑通。</p></div>
+          <div class="card"><h3>规则库引擎</h3><p>官方规则和客户组合可以生成受影响 deadline，支持人工验证和后续自动化。</p></div>
+          <div class="card"><h3>对话引擎</h3><p>Intent Cache 验证完成，Ask 已接入 live backend。</p></div>
+        </div>
+        <p class="lead compact">现场产品：Work 是全局掌控，Ask 是深度执行，两边共享状态。</p>
       </article>
 
       <article class="slide gtm-slide">
@@ -1034,7 +1114,7 @@
       <div class="progress" aria-hidden="true"><span id="progress-bar"></span></div>
       <div class="controls">
         <button id="prev" aria-label="上一页">←</button>
-        <div class="slide-count" id="slide-count">1 / 12</div>
+        <div class="slide-count" id="slide-count">1 / 20</div>
         <button id="next" aria-label="下一页">→</button>
       </div>
     </footer>
