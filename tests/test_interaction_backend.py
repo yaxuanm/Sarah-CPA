@@ -462,6 +462,20 @@ def test_interaction_backend_policy_change_uses_agent_surface_not_generic_fallba
     assert session["last_turn"]["plan_source"] == "agent_kernel"
 
 
+def test_interaction_backend_answers_impact_question_from_tax_change_radar_context(app):
+    _, _, _, session = _seed_interaction_data(app)
+    response = app.interaction_backend.process_message("最近有什么新规会影响客户吗", session)
+
+    assert response["view"]["type"] == "TaxChangeRadarCard"
+
+    followup = app.interaction_backend.process_message("这条变化会影响哪些客户？", session)
+
+    assert followup["view"]["type"] == "TaxChangeRadarCard"
+    assert "受影响" in followup["message"]
+    assert "Acme LLC" in followup["message"]
+    assert "Review detail" in followup["message"]
+
+
 class FakeAgentKernel:
     def __init__(self, decision: AgentKernelDecision):
         self.decision = decision
