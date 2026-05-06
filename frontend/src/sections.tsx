@@ -318,6 +318,7 @@ function ruleDiffLabels(rule: MockRule) {
 function ruleClientScore(rule: MockRule, client: MockClient, clientDeadlines: MockDeadline[]) {
   const text = `${client.entity_type} ${client.states.join(" ")} ${client.applicable_taxes.join(" ")} ${client.notes}`.toLowerCase();
   if (rule.id === "rule-001") {
+    if (!client.states.includes("CA")) return 0;
     let score = 0;
     if (client.applicable_taxes.includes("PTE election")) score += 6;
     if (client.states.includes("CA")) score += 5;
@@ -333,6 +334,17 @@ function ruleClientScore(rule: MockRule, client: MockClient, clientDeadlines: Mo
     return client.states.includes("OR") && text.includes("construction") ? 10 : client.states.includes("OR") ? 4 : 0;
   }
   return clientDeadlines.some((deadline) => deadline.notice_rule_id === rule.id) ? 10 : 0;
+}
+
+function ruleShouldApplyToDeadline(ruleId: string, deadline: MockDeadline, affectedClientNames: Set<string>) {
+  if (deadline.notice_rule_id === ruleId) return true;
+  if (!affectedClientNames.has(deadline.client_name)) return false;
+
+  if (ruleId === "rule-001") {
+    return deadline.jurisdiction === "CA" && ["PTE election", "Franchise", "State income"].includes(deadline.tax_type);
+  }
+
+  return false;
 }
 
 function buildRuleImpactRows(rule: MockRule, deadlines: MockDeadline[], applied: boolean): RuleImpactRow[] {
@@ -439,8 +451,8 @@ function formatSyncStamp(value: string) {
   });
 }
 
-function applyRuleToDeadline(deadline: MockDeadline, ruleId: string): MockDeadline {
-  if (deadline.notice_rule_id !== ruleId) return deadline;
+function applyRuleToDeadline(deadline: MockDeadline, ruleId: string, force = false): MockDeadline {
+  if (!force && deadline.notice_rule_id !== ruleId) return deadline;
 
   if (ruleId === "rule-001") {
     return {
@@ -3158,22 +3170,28 @@ export function ReviewSection({
 
   function applyRule(ruleId: string) {
     const changedIds: string[] = [];
-    setRules?.((current) => current.map((rule) => rule.id === ruleId ? { ...rule, status: "applied" } : rule));
-    setDeadlines?.((current) =>
-      current.map((deadline) => {
-        if (deadline.notice_rule_id !== ruleId) return deadline;
-        const next = applyRuleToDeadline(deadline, ruleId);
-        if (
-          next.due_date !== deadline.due_date ||
-          next.status !== deadline.status ||
-          next.source !== deadline.source ||
-          next.notice_rule_id !== deadline.notice_rule_id
-        ) {
-          changedIds.push(deadline.id);
-        }
-        return next;
-      })
+    const rule = rules.find((item) => item.id === ruleId);
+    const currentDeadlines = deadlineStore ?? mockDeadlines;
+    const affectedClientNames = new Set(
+      rule ? buildRuleImpactRows(rule, currentDeadlines, false).map((impact) => impact.clientName) : []
     );
+    const nextDeadlines = currentDeadlines.map((deadline) => {
+      const shouldApply = ruleShouldApplyToDeadline(ruleId, deadline, affectedClientNames);
+      if (!shouldApply) return deadline;
+      const next = applyRuleToDeadline(deadline, ruleId, true);
+      if (
+        next.due_date !== deadline.due_date ||
+        next.status !== deadline.status ||
+        next.source !== deadline.source ||
+        next.notice_rule_id !== deadline.notice_rule_id
+      ) {
+        changedIds.push(deadline.id);
+      }
+      return next;
+    });
+
+    setRules?.((current) => current.map((rule) => rule.id === ruleId ? { ...rule, status: "applied" } : rule));
+    setDeadlines?.(nextDeadlines);
     setResolvedRuleIds?.((current) => current.includes(ruleId) ? current : [...current, ruleId]);
     setChangedDeadlineIds?.((current) => [...new Set([...current, ...changedIds])]);
     onNotify?.("Rule applied to affected clients.", "green");

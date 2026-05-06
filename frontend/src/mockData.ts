@@ -899,10 +899,10 @@ export const mockRules: MockRule[] = [
     jurisdiction: "CA",
     source: "FTB Notice 2026-04",
     detected_at: "2026-04-25T11:42:00",
-    affected_count: 8,
+    affected_count: 3,
     status: "pending-review",
     summary:
-      "California Franchise Tax Board pushed the 2026 PTE election deadline by 30 days. Eight clients with active PTE elections are affected.",
+      "California Franchise Tax Board pushed the 2026 PTE election deadline by 30 days. Three clients in the current portfolio need their California filing calendar reviewed.",
     diff_before: "PTE election due Apr 30, 2026",
     diff_after: "PTE election due May 30, 2026"
   },
