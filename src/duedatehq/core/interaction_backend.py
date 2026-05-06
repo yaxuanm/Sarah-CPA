@@ -1147,12 +1147,14 @@ class InteractionBackend:
 
     def _answer_tax_change_radar_context_question(self, user_input: str, data: dict[str, Any]) -> str:
         impacted = [item for item in data.get("impacted_deadlines", []) if isinstance(item, dict)]
+        review_impacts = [item for item in data.get("review_impacts", []) if isinstance(item, dict)]
         signals = [item for item in data.get("rule_signals", []) if isinstance(item, dict)]
-        if not impacted:
+        impact_rows = review_impacts or impacted
+        if not impact_rows:
             return "这条变化目前没有匹配到当前客户组合里的待处理 deadline。右侧我会保留规则变化雷达，方便你继续核对 source 和 rule signals。"
 
         rows = []
-        for item in impacted[:6]:
+        for item in impact_rows[:6]:
             client_name = item.get("client_name") or "未知客户"
             tax_type = item.get("tax_type") or "未知税种"
             jurisdiction = item.get("jurisdiction") or "未知辖区"
@@ -1166,7 +1168,8 @@ class InteractionBackend:
             title = first.get("title") or "当前规则信号"
             source = first.get("source") or "未记录来源"
             signal_hint = f" 我是基于当前规则信号“{title}”和来源 {source} 做匹配。"
-        return f"这条变化当前匹配到 {len(impacted)} 个受影响的客户事项：" + "；".join(rows) + f"。{signal_hint}你可以继续点 Review detail 看每个 client 会怎么变，或 apply 后去 client/work 里看更新结果。"
+        source_label = "待审核规则的客户画像" if review_impacts else "待处理 deadline"
+        return f"这条变化当前基于{source_label}匹配到 {len(impact_rows)} 个受影响的客户事项：" + "；".join(rows) + f"。{signal_hint}你可以继续点 Review detail 看每个 client 会怎么变，或 apply 后去 client/work 里看更新结果。"
 
     def _asks_for_urgency(self, user_input: str) -> bool:
         text = user_input.casefold()

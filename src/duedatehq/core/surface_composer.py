@@ -114,6 +114,7 @@ class SurfaceComposer:
             key=lambda item: (item.get("due_date") or "", item.get("client_name") or ""),
         )
         active_rules = [] if (review_queue or notices) else rules
+        review_impacts = self._review_impacts(review_queue, gathered.get("all_clients", []))
         signal_keys = self._tax_change_signal_keys(
             active_rules,
             review_queue,
@@ -122,6 +123,7 @@ class SurfaceComposer:
         )
         deadlines = self._filter_deadlines_for_signals(raw_deadlines, signal_keys)
         affected_client_ids = {item.get("client_id") for item in deadlines if item.get("client_id")}
+        affected_client_ids.update(item.get("client_name") or item.get("client_id") for item in review_impacts if item.get("client_name") or item.get("client_id"))
 
         rule_signals: list[dict[str, str]] = []
         seen_signals: set[tuple[str, str, str]] = set()
@@ -183,6 +185,7 @@ class SurfaceComposer:
                 {"label": "可能影响", "value": f"{len(affected_client_ids)} 个客户", "tone": "red" if affected_client_ids else "green"},
             ],
             "rule_signals": rule_signals[:6],
+            "review_impacts": review_impacts[:8],
             "impacted_deadlines": [
                 {
                     "client_name": item.get("client_name") or item.get("client_id") or f"客户 {index}",
@@ -199,7 +202,7 @@ class SurfaceComposer:
         message = decision.answer or (
             f"我按税务变化雷达整理了当前可用数据：内部规则库 {len(rule_signals)} 条、"
             f"待审核规则 {len(review_queue)} 条、notice {len(notices)} 条，"
-            f"关联到 {len(affected_client_ids)} 个有近期 pending deadline 的客户。"
+            f"关联到 {len(affected_client_ids)} 个需要关注的客户。"
             "当前没有实时外部税务新闻源。"
         )
         return {
@@ -270,6 +273,7 @@ class SurfaceComposer:
             key=lambda item: (item.get("due_date") or "", item.get("client_id") or ""),
         )
         active_rules = [] if (review_queue or notices) else rules
+        review_impacts = self._review_impacts(review_queue, clients)
         signal_keys = self._tax_change_signal_keys(
             active_rules,
             review_queue,
@@ -278,6 +282,7 @@ class SurfaceComposer:
         )
         deadlines = self._filter_deadlines_for_signals(raw_deadlines, signal_keys)
         affected_client_ids = {item.get("client_id") for item in deadlines if item.get("client_id")}
+        affected_client_ids.update(item.get("client_name") or item.get("client_id") for item in review_impacts if item.get("client_name") or item.get("client_id"))
 
         rule_signals: list[dict[str, str]] = []
         seen_signals: set[tuple[str, str, str]] = set()
@@ -352,6 +357,7 @@ class SurfaceComposer:
                 {"label": "可能影响", "value": f"{len(affected_client_ids)} 个客户", "tone": "red" if affected_client_ids else "green"},
             ],
             "rule_signals": rule_signals[:6],
+            "review_impacts": review_impacts[:8],
             "impacted_deadlines": impacted_deadlines,
         }
         actions = [
@@ -399,7 +405,7 @@ class SurfaceComposer:
         message = (
             f"我按税务变化雷达整理了当前可用数据：内部规则库 {len(rule_signals)} 条、"
             f"待审核规则 {len(review_queue)} 条、notice {len(notices)} 条，"
-            f"关联到 {len(affected_client_ids)} 个有近期 pending deadline 的客户。"
+            f"关联到 {len(affected_client_ids)} 个需要关注的客户。"
             "当前没有实时外部税务新闻源。"
         )
         return {
@@ -445,6 +451,52 @@ class SurfaceComposer:
             }
             return focused or keys
         return keys
+
+    def _review_impacts(self, review_queue: list[dict[str, Any]], clients: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        impacts: list[dict[str, Any]] = []
+        seen: set[tuple[str, str]] = set()
+        for review in review_queue:
+            payload = review.get("parse_payload") if isinstance(review.get("parse_payload"), dict) else {}
+            jurisdiction = self._normalize_jurisdiction(payload.get("jurisdiction"))
+            tax_type = payload.get("tax_type") or "rule change"
+            entity_types = {
+                self._normalize_entity_type(entity_type)
+                for entity_type in (payload.get("entity_types") or [])
+                if entity_type
+            }
+            for client in clients:
+                client_id = client.get("client_id") or client.get("id")
+                client_name = client.get("name") or client_id
+                client_entity = self._normalize_entity_type(client.get("entity_type"))
+                states = [
+                    self._normalize_jurisdiction(state)
+                    for state in (client.get("registered_states") or client.get("states") or [])
+                ]
+                if jurisdiction and jurisdiction not in states:
+                    continue
+                if entity_types and client_entity not in entity_types:
+                    continue
+                key = (str(review.get("review_id") or tax_type), str(client_name or client_id))
+                if key in seen:
+                    continue
+                seen.add(key)
+                impacts.append(
+                    {
+                        "client_id": client_id,
+                        "client_name": client_name or "未知客户",
+                        "tax_type": tax_type,
+                        "jurisdiction": payload.get("jurisdiction") or "未知辖区",
+                        "due_date": payload.get("deadline_date") or "待确认",
+                        "status": "needs review",
+                        "source": review.get("source_url") or "未记录来源",
+                    }
+                )
+        return impacts
+
+    def _normalize_entity_type(self, value: Any) -> str | None:
+        if value is None:
+            return None
+        return re.sub(r"[^a-z0-9]+", "-", str(value).strip().casefold()).strip("-")
 
     def _filter_deadlines_for_signals(
         self,
