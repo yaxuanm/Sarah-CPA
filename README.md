@@ -1,167 +1,165 @@
-# Sarah-CPA
+# DueDateHQ
 
-DueDateHQ first-phase infrastructure plus a React validation shell for the
-conversation-driven, on-demand rendering experience.
+DueDateHQ is a deadline-intelligence workspace for CPA firms that manage
+recurring tax and compliance work across many clients and jurisdictions.
 
-## What Works
+It is not a tax-preparation product and it is not a client portal. The product
+focuses on the layer before execution: keeping client profiles, deadlines,
+blockers, extensions, reminders, and official rule changes organized enough for
+the CPA to decide what should happen next.
 
-- Rule ingestion into an append-preserving rule table with supersession tracking
-- Low-confidence rule routing into a manual review queue
-- Client-to-rule mapping into concrete deadlines
-- Task model for active work items, blocker follow-up, and notice-driven review work
-- Blocker model for the Waiting on info lane and missing-information tracking
-- CSV import preview with column mapping, missing-field detection, and sample-row inspection
-- Notice-driven work generation that escalates impacted clients into tasks or blockers
-- Reminder queue generation and rebuild on deadline changes
-- Tenant-scoped reminder triggering for PostgreSQL RLS compatibility
-- Deadline state machine with transition history
-- Append-only audit log enforced by database triggers
-- Official-source fetchers for HTML, RSS, and PDF inputs
-- Notification delivery routing for email, SMS, and Slack
-- Celery dispatch hooks for fetch, reminder scheduling, and notification delivery
-- Interactive chat mode with text-first realtime view rendering and a voice-ready input mode
-- React/Vite frontend validation shell for left-side conversation and right-side `view.type` rendering
-- CLI commands for create/list/update/export/worker flows
+## Product Scope
 
-## Database
+DueDateHQ helps a CPA answer three daily questions:
 
-By default the CLI writes to `.duedatehq/duedatehq.sqlite3` in the repo root.
+- What should I work on first?
+- Which clients are blocked because I am missing information?
+- Which official rule or deadline changes need my review before they affect the
+  client portfolio?
 
-You can also set `DUEDATEHQ_DATABASE_URL` instead of passing `--db`.
+The product combines a structured dashboard with an Ask interface. The dashboard
+is the primary operating surface. Ask is used when a CPA has a natural-language
+question and needs the system to render the right work surface.
 
-Use another database file with:
+## Core Workflows
 
-```bash
-python -m duedatehq.cli --db C:\path\to\test.sqlite3 ...
-```
+1. Import clients from an existing spreadsheet or competitor export.
+2. Review mapped fields and confirm which rows create or update clients.
+3. Generate deadline work from client profile, state footprint, tax type, and
+   extension status.
+4. Triage work across active, blocked, review, overdue, extended, and archived
+   states.
+5. Review official rule changes, inspect source evidence, and apply or dismiss
+   the downstream impact.
+6. Draft client follow-ups when a work item needs missing information.
 
-For a PostgreSQL-backed app, pass a DSN instead:
+## Implementation Progress
 
-```bash
-python -m duedatehq.cli --db postgresql://user:pass@localhost:5432/duedatehq tenant add "Acme Tenant"
-python -m duedatehq.cli --db postgresql://user:pass@localhost:5432/duedatehq db init
-python -m duedatehq.cli --db postgresql://user:pass@localhost:5432/duedatehq db status
-python -m duedatehq.cli --db postgresql://user:pass@localhost:5432/duedatehq db rls-check
-```
+### Client intake and profile binding
 
-The PostgreSQL schema and RLS policies live in:
+Implemented:
+- CSV import with upload, column mapping, row review, new-client creation, and
+  existing-client update paths.
+- Client profile fields for entity type, jurisdictions, tax types, contacts,
+  notes, blockers, and derived deadlines.
+- Editable client detail surface.
 
-```bash
-db/postgres_schema.sql
-```
+In progress:
+- AI parsing for less-structured client documents beyond clean CSV exports.
+- Wider database write-through for profile updates, derived work, and import
+  audit logs.
 
-That schema includes:
+### Deadline generation and work board
 
-- tenant-scoped tables with `tenant_id`
-- row-level security policies for tenant-bound tables
-- append-only audit log triggers
-- helper SQL functions to require `app.tenant_id`
+Implemented:
+- Deadline work generated from client profile, jurisdiction footprint, tax type,
+  and extension status.
+- Work board with Work now, Blocked, Needs review, Archive, Overdue, and
+  Extension states.
+- Work detail with source, reminders, blocker state, extension state, edit task,
+  actions, and client follow-up.
 
-## CLI
+In progress:
+- Full API-backed board payloads and persistent state transitions across every
+  front-end interaction.
+- More complete filter, archive, and audit-history workflows.
 
-```bash
-python -m duedatehq.cli tenant add "Acme Tenant"
-python -m duedatehq.cli fetch --list-sources --all
-python -m duedatehq.cli fetch --source irs --text-file notice.txt --source-url https://irs.gov/example
-python -m duedatehq.cli worker fetch --source irs --text-file notice.txt --source-url https://irs.gov/example
-python -m duedatehq.cli worker fetch --source irs --url https://irs.gov/newsroom/example --format html
-python -m duedatehq.cli worker fetch --source irs --url https://irs.gov/pub/irs-drop/n-26-01.pdf --format pdf
-python -m duedatehq.cli worker fetch --source federal_register --rss-url https://example.com/feed.xml --entry-title-contains deadline
-python -m duedatehq.cli rule add --tax-type franchise_tax --jurisdiction CA --entity-types s-corp --deadline-date 2026-04-20 --effective-from 2026-01-01 --source-url https://ftb.ca.gov/rule
-python -m duedatehq.cli client add <tenant_id> "Acme LLC" --entity s-corp --states TX,CA,DE --tax-year 2026
-python -m duedatehq.cli client show <tenant_id> <client_id>
-python -m duedatehq.cli import preview --csv client-portfolio.csv
-python -m duedatehq.cli import apply <tenant_id> --csv client-portfolio.csv --tax-year 2026
-python -m duedatehq.cli task add <tenant_id> <client_id> --title "Review PTE election decision" --task-type review --priority high --source-type deadline --source-id dl-002
-python -m duedatehq.cli task list <tenant_id> --client <client_id>
-python -m duedatehq.cli task update-status <tenant_id> <task_id> --status done
-python -m duedatehq.cli blocker add <tenant_id> <client_id> --title "Need payroll support docs" --blocker-type missing_info --source-type import
-python -m duedatehq.cli blocker list <tenant_id> --client <client_id>
-python -m duedatehq.cli blocker update-status <tenant_id> <blocker_id> --status resolved
-python -m duedatehq.cli notice generate-work <tenant_id> --notice-id notice-002 --title "Texas nexus threshold clarification" --source-url https://comptroller.texas.gov/ --impacts-file notice-impacts.json
-python -m duedatehq.cli deadline list <tenant_id> --client <client_id> --show-reminders
-python -m duedatehq.cli deadline action <tenant_id> <deadline_id> complete --actor user-1
-python -m duedatehq.cli deadline trigger-reminders --tenant-id <tenant_id> --at 2026-04-19T09:00:00+00:00
-python -m duedatehq.cli today <tenant_id>
-python -m duedatehq.cli export <tenant_id> --client <client_id> --format csv
-python -m duedatehq.cli chat --tenant-id <tenant_id> --prompt "show me today"
-python -m duedatehq.cli chat --tenant-id <tenant_id> --mode voice --transcript-file sample_transcript.txt
-python -m duedatehq.cli notify config add <tenant_id> --channel email --destination owner@example.com
-python -m duedatehq.cli notify config add <tenant_id> --channel slack --destination https://hooks.slack.com/services/...
-python -m duedatehq.cli notify preview <tenant_id> --within-days 14
-python -m duedatehq.cli notify history <tenant_id>
-python -m duedatehq.cli notify send-pending <tenant_id> --smtp-host localhost --smtp-sender noreply@example.com
-python -m duedatehq.cli worker schedule-reminders <tenant_id> --hours 24
-python -m duedatehq.cli worker jobs --tenant-id <tenant_id>
-python -m duedatehq.cli celery ping
-python -m duedatehq.cli celery dispatch-fetch --source irs
-python -m duedatehq.cli celery dispatch-reminders <tenant_id>
-python -m duedatehq.cli celery dispatch-notifications <tenant_id>
-python -m duedatehq.cli log --tenant-id <tenant_id>
-```
+### Official-source review and impact analysis
 
-For raw text ingestion:
+Implemented:
+- Source-linked rule review surface with before/after diff and affected-client
+  summary.
+- Backend models for rules, notices, deadlines, review state, and audit events.
+- CA/TX/NY source configuration and rule-change scenarios.
 
-```bash
-python -m duedatehq.cli rule ingest-text --source-url https://irs.gov/example --text-file notice.txt
-python -m duedatehq.cli rule review-queue
-```
+In progress:
+- Repeatable source-specific fetch/parse jobs for CA, TX, and NY.
+- Broader official-source coverage and production scheduling for 24-hour update
+  monitoring.
 
-## Worker Boundaries
+### Reminder, notification, and client follow-up
 
-- `FetchWorker`: wraps a fetcher and pushes documents through rule ingestion
-- `ReminderScheduler`: batches the next time window of reminder jobs into a queue
-- `ReminderWorker`: drains queued reminder jobs and triggers reminders per tenant, which keeps PostgreSQL RLS intact
-- `PersistentJobQueue`: stores worker jobs in the database instead of process memory
+Implemented:
+- Reminder timeline tied to deadline urgency.
+- Client follow-up draft generation from the selected work item and blocker.
+- Notification settings entry points for email and Slack-style reminders.
 
-## Notifications
+In progress:
+- Email and Slack delivery queue, preview, send history, and connection
+  settings.
+- Configurable reminder cadence.
 
-- `notify config add`: persist an enabled route for `email`, `sms`, or `slack`
-- `notify send-pending`: deliver pending notifications using SMTP, JSON webhooks, or console notifiers
-- notification deliveries are written to the database before send, then marked `sent` or `failed`
+### Extension, archive, and export
 
-## Celery
+Implemented:
+- File extension and revoke extension actions.
+- Extended due date and extension status shown in Work and Client surfaces.
+- Archive path for handled work.
+- Export entry points and CSV-oriented data structures for client/deadline
+  reporting.
+- Backend export commands for tenant-scoped deadline data.
 
-Set `DUEDATEHQ_BROKER_URL` or pass `--broker-url` to the `celery` commands:
+In progress:
+- Extension application records, revocation audit trail, and original-vs-extended
+  due date history.
+- Client-facing PDF report template and view-level export packages.
 
-```bash
-$env:DUEDATEHQ_BROKER_URL="redis://localhost:6379/0"
-python -m duedatehq.cli celery ping
-```
+### Ask, API, and CLI
 
-Reminder reads now default to the current active queue. Historical cancelled reminders remain in the database and surface through history-oriented views such as `notify history`.
+Implemented:
+- Ask streams through the backend and can return structured work surfaces.
+- HTTP API exposes bootstrap, action, chat streaming, session, and flywheel
+  endpoints for the demo runtime.
+- CLI supports tenant, client, import, task, blocker, notice, deadline, export,
+  notify, worker, celery, and log flows.
 
-## Conversational Mode
+In progress:
+- Turning source sync and notification delivery into stable API and CLI flows
+  that can be used interchangeably.
+- More complete backend action coverage for dashboard interactions.
 
-- `chat --prompt "...":` one-shot interaction that returns a language reply and one or more rendered blocks
-- `chat` with no `--prompt`: interactive text loop
-- `chat --mode voice`: voice-equivalent path for transcript input; this currently accepts transcript text and routes it through the same intent/render pipeline as typed input
+## AI Boundaries
 
-The current render contract is:
+AI is used where CPA workflows are messy:
 
-- one short language conclusion
-- one or more structured render blocks such as `Today`, `Deadlines`, `Rule Review Queue`, or `Pending Notifications`
+- mapping inconsistent import fields;
+- interpreting official-source language;
+- summarizing affected clients;
+- drafting client follow-up messages;
+- rendering a useful work surface from natural-language questions.
 
-## Frontend Validation
+AI does not silently change tax records or perform professional filing work.
+Material changes are routed through CPA review and source-visible actions.
 
-The browser validation shell lives in:
+## Running Locally
+
+### Backend
 
 ```bash
-frontend/
+uv sync --extra api
+uv run python scripts/seed_small_demo.py
+uv run uvicorn duedatehq.http_api:app --host 127.0.0.1 --port 8000
 ```
 
-Run it with:
+API smoke checks:
+
+```bash
+curl -X POST http://127.0.0.1:8000/bootstrap/today \
+  -H "Content-Type: application/json" \
+  -d '{"tenant_id":"2403c5e1-85ac-4593-86cc-02f8d97a8d92","today":"2026-04-26"}'
+
+curl -N -X POST http://127.0.0.1:8000/chat/stream \
+  -H "Content-Type: application/json" \
+  -d '{"tenant_id":"2403c5e1-85ac-4593-86cc-02f8d97a8d92","session_id":"demo","message":"show California rule changes"}'
+```
+
+### Frontend
 
 ```bash
 cd frontend
 npm install
-npm run dev
+VITE_DUEDATEHQ_API_BASE=http://127.0.0.1:8000 npm run dev
 ```
-
-It has one runtime path: user input streams to the AI backend through
-`/chat/stream`, and the right-side work surface is fed back as context for the
-next turn. Assistant text streams via `message_delta` and renders lightweight
-markdown in the conversation. There is no local validation mode.
 
 Frontend checks:
 
@@ -171,15 +169,30 @@ npm run build
 npm run test:render-spec
 ```
 
-## Verification
+Backend checks:
 
 ```bash
-python -m pytest -q
+uv run --extra api --with pytest --with httpx pytest tests/test_http_api.py -q
 ```
 
-For PostgreSQL integration verification:
+## Deployment
 
 ```bash
-$env:DUEDATEHQ_TEST_POSTGRES_DSN="postgresql://user:pass@localhost:5432/duedatehq_test"
-python -m pytest -q tests/test_postgres_integration.py
+./scripts/deploy_frontend_ec2.sh
+./scripts/deploy_backend_ec2.sh
 ```
+
+Current hosted paths:
+
+- Frontend: https://naeu-demo.dify.dev/duedatehq/
+- API base: https://naeu-demo.dify.dev/demo-api/duedatehq/
+- Compact deck: https://naeu-demo.dify.dev/duedatehq/due-datehq-ten-minute-story-compact.html
+
+## Repository Map
+
+- `frontend/`: React/Vite product UI.
+- `src/duedatehq/`: domain engine, API, interaction backend, source monitoring,
+  notification, and workflow infrastructure.
+- `scripts/`: seed data, simulation, and deployment scripts.
+- `docs/`: PRD, design notes, CLI reference, and operator guide.
+- `due-datehq-ten-minute-story-compact.html`: compact product story deck.

@@ -573,6 +573,38 @@
       line-height: 1.45;
     }
 
+    .module-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 14px;
+      max-width: 1180px;
+    }
+
+    .module-card {
+      min-height: 215px;
+      padding: 18px;
+      border: 1px solid var(--line);
+      border-radius: 20px;
+      background: #fff;
+    }
+
+    .module-card h3 {
+      margin-bottom: 12px;
+      font-size: 22px;
+      line-height: 1.05;
+    }
+
+    .module-card p {
+      margin: 8px 0 0;
+      color: #3d4858;
+      font-size: 14px;
+      line-height: 1.42;
+    }
+
+    .module-card strong {
+      color: var(--navy);
+    }
+
     .flywheel {
       display: grid;
       grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -901,7 +933,8 @@
       .split-title,
       .object-flow,
       .flywheel,
-      .build-status {
+      .build-status,
+      .module-grid {
         grid-template-columns: 1fr;
       }
 
@@ -1129,56 +1162,37 @@
 
       <article class="slide">
         <p class="eyebrow">当前完成度</p>
-        <h2>当前产品进度：已实现核心体验，正在补齐真实闭环。</h2>
-        <div class="build-status">
-          <div class="status-card accent">
-            <h3>功能详单</h3>
-            <div class="status-section-label">已实现</div>
-            <ul class="status-list">
-              <li>客户 CSV 导入：上传、字段映射、行级审核、新客户创建、已有客户更新。</li>
-              <li>每周分诊 Work board：Work now、Blocked、Needs review、Archive、Overdue、Extension 状态。</li>
-              <li>客户档案：实体类型、州足迹、税种、联系人、派生 deadline、blocker 和 recent activity。</li>
-              <li>官方规则 Review：source、diff、affected clients、apply / dismiss、变化追踪。</li>
-              <li>AI assist：导入字段理解、规则变化总结、客户 follow-up draft、Ask 按需渲染。</li>
-            </ul>
-            <div class="status-section-label">正在实现中</div>
-            <ul class="status-list">
-              <li>把更多页面从稳定示例数据切到真实 API 数据，减少 demo 与生产逻辑之间的距离。</li>
-              <li>把邮件 / Slack 提醒、source sync 调度、设置页连接能力做成完整可配置闭环。</li>
-            </ul>
+        <h2>当前产品进度：核心工作流已成型，底层能力继续补齐。</h2>
+        <div class="module-grid">
+          <div class="module-card">
+            <h3>客户导入与档案</h3>
+            <p><strong>已实现：</strong>CSV 上传、字段映射、行级审核、新增 / 更新客户、客户详情和编辑入口。</p>
+            <p><strong>正在实现：</strong>AI 解析更不规范的客户文档，并把更多 profile 更新写入数据库。</p>
           </div>
-          <div class="status-card">
-            <h3>前端工作内容</h3>
-            <div class="status-section-label">已实现</div>
-            <ul class="status-list">
-              <li>完成全屏 DueDateHQ 产品 UI：Work、Clients、Review、Settings、Docs、Ask。</li>
-              <li>把 Chat 与 Dashboard 分离，Dashboard 内部动作不再跳进聊天路径。</li>
-              <li>补齐 demo 关键交互：import wizard、work detail、client detail、rule detail、follow-up drawer。</li>
-              <li>统一视觉规范：顶部导航、状态标签、按钮尺寸、轻量 icon、减少卡片堆叠。</li>
-              <li>准备 10 分钟双语 demo deck，并和产品三条用户故事对齐。</li>
-            </ul>
-            <div class="status-section-label">正在实现中</div>
-            <ul class="status-list">
-              <li>继续降低信息密度，把更多展开式大面板改成轻量 drawer、menu 或 detail view。</li>
-              <li>把 Settings、Docs、Account 等非核心工作流入口收进更合理的信息架构。</li>
-            </ul>
+          <div class="module-card">
+            <h3>Deadline 与工作看板</h3>
+            <p><strong>已实现：</strong>从客户 profile 派生 deadline，按 Work now、Blocked、Needs review、Overdue、Archive 分诊。</p>
+            <p><strong>正在实现：</strong>筛选、状态流转、审计记录和 dashboard payload 的后端闭环。</p>
           </div>
-          <div class="status-card">
-            <h3>后端工作内容</h3>
-            <div class="status-section-label">已实现</div>
-            <ul class="status-list">
-              <li>FastAPI demo backend 已部署，前端可以通过 public API 访问。</li>
-              <li>Tenant、deadline、client、blocker、notice、audit event、reminder 等核心对象已建模。</li>
-              <li>Action endpoint 支持状态变化、确认动作、审计记录和 live demo seed。</li>
-              <li>Chat streaming 已接入 backend，可返回结构化 render spec 和 Tax Change Radar。</li>
-            </ul>
-            <div class="status-section-label">正在实现中</div>
-            <ul class="status-list">
-              <li>CA / TX / NY official source fetch / parse：已经有配置和规则队列，正在做成可重复运行的同步任务。</li>
-              <li>Import apply、Dashboard payload、client detail、review apply 的数据链路继续从前端状态迁移到数据库。</li>
-              <li>提醒发送先做真实队列和预览，后续再接正式 Email / Slack OAuth 和发送审计。</li>
-            </ul>
-            <p class="status-note">汇报口径：不要说“只是 mock”。更准确的是：核心用户体验已实现，后端 API 已部署；当前工程重点是把演示数据路径逐步替换为真实数据写入和同步任务。</p>
+          <div class="module-card">
+            <h3>官方规则与影响分析</h3>
+            <p><strong>已实现：</strong>source、rule review、before / after diff、affected clients、apply / dismiss。</p>
+            <p><strong>正在实现：</strong>CA / TX / NY source-specific fetch / parse 做成可重复运行的同步任务。</p>
+          </div>
+          <div class="module-card">
+            <h3>提醒与客户跟进</h3>
+            <p><strong>已实现：</strong>提醒时间线、client follow-up、AI draft、通知连接入口。</p>
+            <p><strong>正在实现：</strong>Email / Slack 发送队列、发送历史和可配置 reminder cadence。</p>
+          </div>
+          <div class="module-card">
+            <h3>延期、归档与导出</h3>
+            <p><strong>已实现：</strong>File / revoke extension、extended due date、archive、CSV export 入口和报告数据结构。</p>
+            <p><strong>正在实现：</strong>延期历史、PDF 报告、view-level export package 和更完整的审计记录。</p>
+          </div>
+          <div class="module-card">
+            <h3>Ask、API 与 CLI</h3>
+            <p><strong>已实现：</strong>Ask 接入 backend streaming，CLI 支持 import、client、deadline、task、notice、notify、export。</p>
+            <p><strong>正在实现：</strong>把 source sync、notification delivery、dashboard actions 做成更稳定的 API / CLI 双入口。</p>
           </div>
         </div>
       </article>
