@@ -501,6 +501,78 @@
       background: #fff0ef;
     }
 
+    .build-status {
+      display: grid;
+      grid-template-columns: 1.08fr 0.96fr 0.96fr;
+      gap: 16px;
+      max-width: 1180px;
+    }
+
+    .status-card {
+      display: grid;
+      gap: 14px;
+      align-content: start;
+      min-height: 355px;
+      padding: 22px;
+      border: 1px solid var(--line);
+      border-radius: 22px;
+      background: #fff;
+    }
+
+    .status-card.accent {
+      border-color: rgba(242, 164, 12, 0.68);
+      background: #fff8e9;
+    }
+
+    .status-card h3 {
+      font-size: 28px;
+    }
+
+    .status-list {
+      display: grid;
+      gap: 10px;
+      margin: 0;
+      padding: 0;
+      list-style: none;
+    }
+
+    .status-list li {
+      position: relative;
+      padding-left: 18px;
+      color: #3d4858;
+      font-size: 15px;
+      line-height: 1.42;
+    }
+
+    .status-list li::before {
+      content: "";
+      position: absolute;
+      top: 8px;
+      left: 0;
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--gold);
+    }
+
+    .status-section-label {
+      margin: 2px 0 -4px;
+      color: #7a8798;
+      font-size: 12px;
+      font-weight: 850;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+    }
+
+    .status-note {
+      margin: 4px 0 0;
+      padding-top: 14px;
+      border-top: 1px solid rgba(222, 215, 202, 0.78);
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.45;
+    }
+
     .flywheel {
       display: grid;
       grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -828,7 +900,8 @@
       .grid-4,
       .split-title,
       .object-flow,
-      .flywheel {
+      .flywheel,
+      .build-status {
         grid-template-columns: 1fr;
       }
 
@@ -1056,13 +1129,58 @@
 
       <article class="slide">
         <p class="eyebrow">当前完成度</p>
-        <h2>现在的产品：三个系统已经在同一个原型里合流。</h2>
-        <div class="grid-3">
-          <div class="card"><h3>传统 SaaS</h3><p>规则录入、客户管理、deadline 调度、提醒推送、状态机和审计日志已经跑通。</p></div>
-          <div class="card"><h3>规则库引擎</h3><p>官方规则和客户组合可以生成受影响 deadline，支持人工验证和后续自动化。</p></div>
-          <div class="card"><h3>对话引擎</h3><p>Intent Cache 验证完成，Ask 已接入 live backend。</p></div>
+        <h2>当前产品进度：已实现核心体验，正在补齐真实闭环。</h2>
+        <div class="build-status">
+          <div class="status-card accent">
+            <h3>功能详单</h3>
+            <div class="status-section-label">已实现</div>
+            <ul class="status-list">
+              <li>客户 CSV 导入：上传、字段映射、行级审核、新客户创建、已有客户更新。</li>
+              <li>每周分诊 Work board：Work now、Blocked、Needs review、Archive、Overdue、Extension 状态。</li>
+              <li>客户档案：实体类型、州足迹、税种、联系人、派生 deadline、blocker 和 recent activity。</li>
+              <li>官方规则 Review：source、diff、affected clients、apply / dismiss、变化追踪。</li>
+              <li>AI assist：导入字段理解、规则变化总结、客户 follow-up draft、Ask 按需渲染。</li>
+            </ul>
+            <div class="status-section-label">正在实现中</div>
+            <ul class="status-list">
+              <li>把更多页面从稳定示例数据切到真实 API 数据，减少 demo 与生产逻辑之间的距离。</li>
+              <li>把邮件 / Slack 提醒、source sync 调度、设置页连接能力做成完整可配置闭环。</li>
+            </ul>
+          </div>
+          <div class="status-card">
+            <h3>前端工作内容</h3>
+            <div class="status-section-label">已实现</div>
+            <ul class="status-list">
+              <li>完成全屏 DueDateHQ 产品 UI：Work、Clients、Review、Settings、Docs、Ask。</li>
+              <li>把 Chat 与 Dashboard 分离，Dashboard 内部动作不再跳进聊天路径。</li>
+              <li>补齐 demo 关键交互：import wizard、work detail、client detail、rule detail、follow-up drawer。</li>
+              <li>统一视觉规范：顶部导航、状态标签、按钮尺寸、轻量 icon、减少卡片堆叠。</li>
+              <li>准备 10 分钟双语 demo deck，并和产品三条用户故事对齐。</li>
+            </ul>
+            <div class="status-section-label">正在实现中</div>
+            <ul class="status-list">
+              <li>继续降低信息密度，把更多展开式大面板改成轻量 drawer、menu 或 detail view。</li>
+              <li>把 Settings、Docs、Account 等非核心工作流入口收进更合理的信息架构。</li>
+            </ul>
+          </div>
+          <div class="status-card">
+            <h3>后端工作内容</h3>
+            <div class="status-section-label">已实现</div>
+            <ul class="status-list">
+              <li>FastAPI demo backend 已部署，前端可以通过 public API 访问。</li>
+              <li>Tenant、deadline、client、blocker、notice、audit event、reminder 等核心对象已建模。</li>
+              <li>Action endpoint 支持状态变化、确认动作、审计记录和 live demo seed。</li>
+              <li>Chat streaming 已接入 backend，可返回结构化 render spec 和 Tax Change Radar。</li>
+            </ul>
+            <div class="status-section-label">正在实现中</div>
+            <ul class="status-list">
+              <li>CA / TX / NY official source fetch / parse：已经有配置和规则队列，正在做成可重复运行的同步任务。</li>
+              <li>Import apply、Dashboard payload、client detail、review apply 的数据链路继续从前端状态迁移到数据库。</li>
+              <li>提醒发送先做真实队列和预览，后续再接正式 Email / Slack OAuth 和发送审计。</li>
+            </ul>
+            <p class="status-note">汇报口径：不要说“只是 mock”。更准确的是：核心用户体验已实现，后端 API 已部署；当前工程重点是把演示数据路径逐步替换为真实数据写入和同步任务。</p>
+          </div>
         </div>
-        <p class="lead compact">现场产品：Work 是全局掌控，Ask 是深度执行，两边共享状态。</p>
       </article>
 
       <article class="slide gtm-slide">
