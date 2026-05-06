@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass, is_dataclass
+from datetime import datetime
 from typing import Any
 
 from .app import create_app
@@ -75,6 +76,18 @@ def create_fastapi_app(db_path: str | None = None):
         response = app_state.interaction_backend.process_direct_action(plan, session)
         return {"response": response, "session": session}
 
+    @api.post("/sources/sync")
+    def sync_sources(body: dict[str, Any] = Body(default={})):
+        fetched_at = _parse_datetime(body.get("fetched_at"))
+        results = app_state.engine.sync_official_sources(
+            sources=body.get("sources") if isinstance(body.get("sources"), list) else None,
+            states=body.get("states") if isinstance(body.get("states"), list) else None,
+            all_supported=bool(body.get("all", False)),
+            fetched_at=fetched_at,
+            actor=str(body.get("actor") or "api"),
+        )
+        return {"results": _jsonable(results)}
+
     @api.post("/session/{tenant_id}")
     def start_session(tenant_id: str):
         return app_state.interaction_sessions.start(tenant_id)
@@ -137,6 +150,26 @@ def create_fastapi_app(db_path: str | None = None):
         return app_state.intent_library.stats()
 
     return api
+
+
+def _parse_datetime(value: Any) -> datetime | None:
+    if not value:
+        return None
+    if isinstance(value, datetime):
+        return value
+    return datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+
+
+def _jsonable(value: Any) -> Any:
+    if is_dataclass(value):
+        return _jsonable(asdict(value))
+    if isinstance(value, datetime):
+        return value.isoformat()
+    if isinstance(value, dict):
+        return {key: _jsonable(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_jsonable(item) for item in value]
+    return value
 
 
 def _prepare_session(body: dict[str, Any]) -> dict[str, Any]:

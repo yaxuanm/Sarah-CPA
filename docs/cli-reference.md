@@ -492,6 +492,41 @@ Returns:
 }
 ```
 
+## source
+
+### source list
+
+```bash
+duedatehq source list [--supported-sync]
+```
+
+Behavior:
+
+- Lists official source definitions.
+- `--supported-sync` narrows the list to source-specific sync strategies that
+  can currently run without extra configuration.
+
+### source sync
+
+```bash
+duedatehq source sync [--source <source_key>] [--state <state_code>] [--all] [--fetched-at <iso_ts>]
+```
+
+Behavior:
+
+- Runs the source-specific official-rule sync pipeline.
+- Current supported source-specific strategies are CA, TX, and NY.
+- Each synced source creates a `fetch_run` and routes the parsed rule-change
+  payload into the rule review queue for CPA approval.
+
+Examples:
+
+```bash
+duedatehq source sync --state CA
+duedatehq source sync --state CA --state TX --state NY
+duedatehq source sync --all
+```
+
 ## deadline
 
 ### deadline list

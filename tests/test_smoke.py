@@ -87,6 +87,9 @@ def test_source_registry_matches_document_coverage():
     assert registry["fema"].poll_frequency_minutes == 15
     assert registry["state_ca"].poll_frequency_minutes == 60
     assert registry["irs"].default_url.startswith("https://")
+    assert registry["state_ca"].default_url == "https://www.ftb.ca.gov/about-ftb/newsroom/index.html"
+    assert registry["state_tx"].default_url == "https://comptroller.texas.gov/taxes/"
+    assert registry["state_ny"].default_url == "https://www.tax.ny.gov/press/"
 
 
 def test_official_source_fetcher_factory_returns_expected_fetcher():
@@ -116,6 +119,29 @@ def test_fetch_records_run_and_writes_rule(app):
     assert result["result"].source_url == "https://irs.gov/notice-1"
     assert len(app.engine.list_fetch_runs()) == 1
     assert len(app.engine.list_rules()) == 1
+
+
+def test_source_specific_sync_routes_ca_tx_ny_to_review_queue(app):
+    results = app.engine.sync_official_sources(states=["CA", "TX", "NY"])
+
+    assert [result["fetch_run"].source_key for result in results] == ["state_ca", "state_tx", "state_ny"]
+    assert all(result["fetch_run"].status == "review_queued" for result in results)
+    review_items = app.engine.list_rule_review_queue()
+    assert len(review_items) == 3
+    jurisdictions = {item.parse_payload["jurisdiction"] for item in review_items}
+    assert jurisdictions == {"CA", "TX", "NY"}
+    assert len(app.engine.list_fetch_runs()) == 3
+
+
+def test_cli_source_sync(tmp_path, monkeypatch, capsys):
+    db_path = str(tmp_path / "source-sync.sqlite3")
+    monkeypatch.setattr(sys, "argv", ["duedatehq", "--db", db_path, "source", "sync", "--state", "CA"])
+
+    assert cli_main() == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload[0]["fetch_run"]["source_key"] == "state_ca"
+    assert payload[0]["fetch_run"]["status"] == "review_queued"
+    assert payload[0]["result"]["parse_payload"]["jurisdiction"] == "CA"
 
 
 def test_fetch_worker_uses_file_fetcher(app, tmp_path):

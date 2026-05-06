@@ -70,10 +70,11 @@ Implemented:
 - Source-linked rule review surface with before/after diff and affected-client
   summary.
 - Backend models for rules, notices, deadlines, review state, and audit events.
+- Repeatable CA/TX/NY source-specific sync that creates fetch runs and routes
+  parsed official-rule payloads into the review queue.
 - CA/TX/NY source configuration and rule-change scenarios.
 
 In progress:
-- Repeatable source-specific fetch/parse jobs for CA, TX, and NY.
 - Broader official-source coverage and production scheduling for 24-hour update
   monitoring.
 
@@ -110,12 +111,13 @@ Implemented:
 - Ask streams through the backend and can return structured work surfaces.
 - HTTP API exposes bootstrap, action, chat streaming, session, and flywheel
   endpoints for the demo runtime.
+- HTTP API exposes `/sources/sync` for supported official-rule sync.
 - CLI supports tenant, client, import, task, blocker, notice, deadline, export,
-  notify, worker, celery, and log flows.
+  source, notify, worker, celery, and log flows.
 
 In progress:
-- Turning source sync and notification delivery into stable API and CLI flows
-  that can be used interchangeably.
+- Turning notification delivery into stable API and CLI flows that can be used
+  interchangeably.
 - More complete backend action coverage for dashboard interactions.
 
 ## AI Boundaries
@@ -151,6 +153,16 @@ curl -X POST http://127.0.0.1:8000/bootstrap/today \
 curl -N -X POST http://127.0.0.1:8000/chat/stream \
   -H "Content-Type: application/json" \
   -d '{"tenant_id":"2403c5e1-85ac-4593-86cc-02f8d97a8d92","session_id":"demo","message":"show California rule changes"}'
+
+curl -X POST http://127.0.0.1:8000/sources/sync \
+  -H "Content-Type: application/json" \
+  -d '{"states":["CA","TX","NY"]}'
+```
+
+CLI source sync:
+
+```bash
+uv run python -m duedatehq.cli source sync --state CA --state TX --state NY
 ```
 
 ### Frontend

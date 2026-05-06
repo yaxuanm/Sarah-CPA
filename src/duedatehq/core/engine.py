@@ -41,6 +41,7 @@ from .models import (
     Tenant,
 )
 from .repositories import Repositories
+from .source_sync import source_sync_document_for_selector, supported_source_sync_keys
 from .sources import official_source_registry, source_for_selector
 from ..layers.state_machine import DeadlineStateMachine
 
@@ -360,6 +361,8 @@ class InfrastructureEngine:
         entity_types_raw = extract("entity[_ ]types")
         deadline_date = extract("deadline[_ ]date")
         effective_from = extract("effective[_ ]from")
+        decision_required_raw = extract("decision[_ ]required")
+        decision_required = (decision_required_raw or "").strip().lower() in {"true", "yes", "1", "review"}
         entity_types = [part.strip().lower() for part in entity_types_raw.split(",")] if entity_types_raw else []
         confidence = 0.25 + sum(bool(value) for value in [tax_type, jurisdiction, entity_types, deadline_date, effective_from]) * 0.15
         if re.search(r"\b(irs|ftb|tax|deadline|due date)\b", raw_text, re.IGNORECASE):
@@ -377,6 +380,7 @@ class InfrastructureEngine:
                 "entity_types": entity_types,
                 "deadline_date": deadline_date,
                 "effective_from": effective_from,
+                "decision_required": decision_required,
             },
         )
 
@@ -389,7 +393,7 @@ class InfrastructureEngine:
         actor_ip: str = "127.0.0.1",
     ) -> RuleRecord | RuleReviewItem:
         parsed = self.parse_rule_text(raw_text)
-        if parsed.confidence_score < 0.85 or not all(
+        if parsed.extracted_fields.get("decision_required") or parsed.confidence_score < 0.85 or not all(
             [parsed.tax_type, parsed.jurisdiction, parsed.entity_types, parsed.deadline_date, parsed.effective_from]
         ):
             return self._queue_rule_review(parsed, raw_text, source_url, fetched_at)
@@ -483,6 +487,39 @@ class InfrastructureEngine:
             "fetch_run": fetch_run,
             "result": result,
         }
+
+    def sync_official_sources(
+        self,
+        *,
+        sources: list[str] | None = None,
+        states: list[str] | None = None,
+        all_supported: bool = False,
+        fetched_at: datetime | None = None,
+        actor: str = "system",
+        actor_ip: str = "127.0.0.1",
+    ) -> list[dict[str, object]]:
+        selected: list[tuple[str | None, str | None]] = []
+        if all_supported:
+            selected.extend((source_key, None) for source_key in supported_source_sync_keys())
+        selected.extend((source, None) for source in sources or [])
+        selected.extend((None, state) for state in states or [])
+        if not selected:
+            selected.extend((source_key, None) for source_key in supported_source_sync_keys())
+
+        results: list[dict[str, object]] = []
+        for source, state in selected:
+            document = source_sync_document_for_selector(source=source, state=state)
+            results.append(
+                self.fetch_from_source(
+                    source=document.source_key,
+                    raw_text=document.raw_text,
+                    source_url=document.source_url,
+                    fetched_at=fetched_at or self.clock.now(),
+                    actor=actor,
+                    actor_ip=actor_ip,
+                )
+            )
+        return results
 
     def create_rule(
         self,

@@ -11,6 +11,21 @@ STATE_CODES = [
     "SD", "TN", "TX", "UT", "VT", "VA", "WA", "WV", "WI", "WY",
 ]
 
+STATE_SOURCE_OVERRIDES = {
+    "CA": {
+        "display_name": "California Franchise Tax Board Newsroom",
+        "default_url": "https://www.ftb.ca.gov/about-ftb/newsroom/index.html",
+    },
+    "TX": {
+        "display_name": "Texas Comptroller Tax Policy News",
+        "default_url": "https://comptroller.texas.gov/taxes/",
+    },
+    "NY": {
+        "display_name": "New York Department of Taxation and Finance Press Office",
+        "default_url": "https://www.tax.ny.gov/press/",
+    },
+}
+
 
 def official_source_registry() -> dict[str, SourceDefinition]:
     registry: dict[str, SourceDefinition] = {
@@ -46,14 +61,15 @@ def official_source_registry() -> dict[str, SourceDefinition]:
         ),
     }
     for state in STATE_CODES:
+        override = STATE_SOURCE_OVERRIDES.get(state, {})
         registry[f"state_{state.lower()}"] = SourceDefinition(
             source_key=f"state_{state.lower()}",
             source_type="state",
             jurisdiction=state,
             official=True,
             poll_frequency_minutes=60,
-            display_name=f"{state} Department of Revenue",
-            default_url=f"https://www.{state.lower()}.gov/tax",
+            display_name=override.get("display_name", f"{state} Department of Revenue"),
+            default_url=override.get("default_url", f"https://www.{state.lower()}.gov/tax"),
             fetch_format="html",
         )
     return registry

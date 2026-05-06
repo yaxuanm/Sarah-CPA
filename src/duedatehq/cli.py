@@ -178,6 +178,16 @@ def build_parser() -> argparse.ArgumentParser:
     fetch_parser.add_argument("--fetched-at", default=None)
     fetch_parser.add_argument("--list-sources", action="store_true")
 
+    source_parser = subparsers.add_parser("source")
+    source_subparsers = source_parser.add_subparsers(dest="source_command", required=True)
+    source_list = source_subparsers.add_parser("list")
+    source_list.add_argument("--supported-sync", action="store_true")
+    source_sync = source_subparsers.add_parser("sync")
+    source_sync.add_argument("--source", action="append")
+    source_sync.add_argument("--state", action="append")
+    source_sync.add_argument("--all", action="store_true")
+    source_sync.add_argument("--fetched-at", default=None)
+
     deadline_parser = subparsers.add_parser("deadline")
     deadline_subparsers = deadline_parser.add_subparsers(dest="deadline_command", required=True)
     deadline_list = deadline_subparsers.add_parser("list")
@@ -592,6 +602,31 @@ def main() -> int:
         )
         print_json({"fetch_run": serialize(result["fetch_run"]), "result": serialize(result["result"])}, default=str)
         return 0
+
+    if args.command == "source":
+        if args.source_command == "list":
+            sources = engine.list_sources()
+            if args.supported_sync:
+                sources = {key: value for key, value in sources.items() if key in {"state_ca", "state_tx", "state_ny"}}
+            print_json(sources, default=str)
+            return 0
+        if args.source_command == "sync":
+            fetched_at = parse_ts(args.fetched_at) if args.fetched_at else None
+            results = engine.sync_official_sources(
+                sources=args.source,
+                states=args.state,
+                all_supported=args.all,
+                fetched_at=fetched_at,
+                actor="cli",
+            )
+            print_json(
+                [
+                    {"fetch_run": serialize(result["fetch_run"]), "result": serialize(result["result"])}
+                    for result in results
+                ],
+                default=str,
+            )
+            return 0
 
     if args.command == "deadline":
         if args.deadline_command == "list":

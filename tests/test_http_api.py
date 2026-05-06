@@ -216,6 +216,22 @@ def test_action_endpoint_confirms_pending_action_without_chat_route(tmp_path):
     assert payload["session"]["last_turn"]["plan_source"] == "direct_action_confirm"
 
 
+def test_sources_sync_endpoint_routes_supported_states_to_review_queue(tmp_path):
+    pytest.importorskip("fastapi")
+    pytest.importorskip("httpx")
+    from fastapi.testclient import TestClient
+
+    api = create_fastapi_app(str(tmp_path / "http-source-sync.sqlite3"))
+    client = TestClient(api)
+
+    response = client.post("/sources/sync", json={"states": ["CA", "TX", "NY"]})
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert [item["fetch_run"]["source_key"] for item in payload["results"]] == ["state_ca", "state_tx", "state_ny"]
+    assert all(item["fetch_run"]["status"] == "review_queued" for item in payload["results"])
+
+
 def test_latest_new_feedback_event_ignores_stale_events():
     session = {
         "flywheel_feedback_events": [{"signal": "missing_info", "user_input": "old"}],
