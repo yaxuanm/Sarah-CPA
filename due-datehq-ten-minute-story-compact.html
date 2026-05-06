@@ -893,22 +893,52 @@
       background: var(--paper);
     }
 
-    .progress {
-      position: relative;
+    .progress-slider {
       flex: 1;
-      height: 8px;
-      overflow: hidden;
-      border-radius: 999px;
-      background: #e1dbd0;
+      height: 28px;
+      margin: 0;
+      appearance: none;
+      -webkit-appearance: none;
+      background: transparent;
+      cursor: pointer;
+      --progress-fill: 0%;
     }
 
-    .progress span {
-      position: absolute;
-      inset: 0 auto 0 0;
-      width: 0;
-      border-radius: inherit;
-      background: var(--gold);
-      transition: width 180ms ease;
+    .progress-slider:focus-visible {
+      outline: 3px solid rgba(37, 99, 235, 0.25);
+      outline-offset: 4px;
+    }
+
+    .progress-slider::-webkit-slider-runnable-track {
+      height: 8px;
+      border-radius: 999px;
+      background: linear-gradient(90deg, var(--gold) 0 var(--progress-fill), #e1dbd0 var(--progress-fill) 100%);
+    }
+
+    .progress-slider::-moz-range-track {
+      height: 8px;
+      border-radius: 999px;
+      background: linear-gradient(90deg, var(--gold) 0 var(--progress-fill), #e1dbd0 var(--progress-fill) 100%);
+    }
+
+    .progress-slider::-webkit-slider-thumb {
+      width: 22px;
+      height: 22px;
+      margin-top: -7px;
+      -webkit-appearance: none;
+      border: 3px solid var(--gold);
+      border-radius: 999px;
+      background: #fff;
+      box-shadow: 0 2px 8px rgba(18, 24, 38, 0.18);
+    }
+
+    .progress-slider::-moz-range-thumb {
+      width: 18px;
+      height: 18px;
+      border: 3px solid var(--gold);
+      border-radius: 999px;
+      background: #fff;
+      box-shadow: 0 2px 8px rgba(18, 24, 38, 0.18);
     }
 
     .controls {
@@ -1156,7 +1186,15 @@
     </section>
 
     <footer class="footer">
-      <div class="progress" aria-hidden="true"><span id="progress-bar"></span></div>
+      <input
+        id="progress-slider"
+        class="progress-slider"
+        type="range"
+        min="1"
+        value="1"
+        step="1"
+        aria-label="跳转到指定页"
+      />
       <div class="controls">
         <button id="prev" aria-label="上一页">←</button>
         <div class="slide-count" id="slide-count">1 / 13</div>
@@ -1167,7 +1205,7 @@
 
   <script>
     const slides = Array.from(document.querySelectorAll(".slide"));
-    const progressBar = document.getElementById("progress-bar");
+    const progressSlider = document.getElementById("progress-slider");
     const slideCount = document.getElementById("slide-count");
     const prevButton = document.getElementById("prev");
     const nextButton = document.getElementById("next");
@@ -1242,7 +1280,10 @@
         slide.classList.toggle("active", slideIndex === current);
       });
       const progress = ((current + 1) / slides.length) * 100;
-      progressBar.style.width = `${progress}%`;
+      progressSlider.max = String(slides.length);
+      progressSlider.value = String(current + 1);
+      progressSlider.style.setProperty("--progress-fill", `${progress}%`);
+      progressSlider.setAttribute("aria-valuetext", `第 ${current + 1} 页，共 ${slides.length} 页`);
       slideCount.textContent = `${current + 1} / ${slides.length}`;
       prevButton.disabled = current === 0;
       nextButton.disabled = current === slides.length - 1;
@@ -1250,6 +1291,9 @@
 
     prevButton.addEventListener("click", () => showSlide(current - 1));
     nextButton.addEventListener("click", () => showSlide(current + 1));
+    progressSlider.addEventListener("input", (event) => {
+      showSlide(Number(event.target.value) - 1);
+    });
     langToggle?.addEventListener("click", () => {
       applyLanguage(currentLang === "en" ? "zh" : "en");
     });
