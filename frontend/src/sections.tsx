@@ -1716,7 +1716,7 @@ export function ClientsSection({ tenantId, apiBase, onExport, onNotify, importLa
   const [taxFilter, setTaxFilter] = useState("All");
   const [records, setRecords] = useState<ClientRecord[]>(() => buildInitialClientRecords());
   const [recentImportResult, setRecentImportResult] = useState<ImportApplyResult | null>(null);
-  const [importFocus, setImportFocus] = useState<"all" | "new" | "updated">("all");
+  const [importFocus, setImportFocus] = useState<"all" | "updated">("all");
   const [selectedClientId, setSelectedClientId] = useState<string | null>(null);
   const deadlines = deadlineStore ?? mockDeadlines;
 
@@ -1766,8 +1766,13 @@ export function ClientsSection({ tenantId, apiBase, onExport, onNotify, importLa
         .filter((record) => {
           if (stateFilter !== "All" && !record.client.states.includes(stateFilter)) return false;
           if (taxFilter !== "All" && !record.client.applicable_taxes.includes(taxFilter as TaxType)) return false;
-          if (recentImportResult && importFocus === "new" && !recentImportResult.createdClientIds.includes(record.client.id)) return false;
-          if (recentImportResult && importFocus === "updated" && !recentImportResult.mergedClientIds.includes(record.client.id)) return false;
+          if (
+            recentImportResult &&
+            importFocus === "updated" &&
+            ![...recentImportResult.createdClientIds, ...recentImportResult.mergedClientIds].includes(record.client.id)
+          ) {
+            return false;
+          }
           return true;
         })
         .sort((a, b) => {
@@ -1805,7 +1810,7 @@ export function ClientsSection({ tenantId, apiBase, onExport, onNotify, importLa
             ].sort((a, b) => a.due_date.localeCompare(b.due_date));
           });
           setRecentImportResult(result);
-          setImportFocus("all");
+          setImportFocus("updated");
           const backendCreated = backendResult?.created_clients.length ?? 0;
           const backendTasks = backendResult?.created_tasks.length ?? 0;
           onNotify?.(
@@ -1899,19 +1904,9 @@ export function ClientsSection({ tenantId, apiBase, onExport, onNotify, importLa
             <strong>{recentImportResult.created} new · {recentImportResult.merged} updated</strong>
             <p>{recentImportResult.skipped} skipped. Client cards below now reflect the imported portfolio changes.</p>
             <div className="ddh-inline-actions">
-              <button type="button" className={`ddh-btn ${importFocus === "all" ? "ddh-btn-primary" : ""}`} onClick={() => setImportFocus("all")}>
-                Show all
+              <button type="button" className={`ddh-btn ${importFocus === "updated" ? "ddh-btn-primary" : ""}`} onClick={() => setImportFocus("updated")}>
+                Show updated
               </button>
-              {recentImportResult.created > 0 ? (
-                <button type="button" className={`ddh-btn ${importFocus === "new" ? "ddh-btn-primary" : ""}`} onClick={() => setImportFocus("new")}>
-                  View new clients
-                </button>
-              ) : null}
-              {recentImportResult.merged > 0 ? (
-                <button type="button" className={`ddh-btn ${importFocus === "updated" ? "ddh-btn-primary" : ""}`} onClick={() => setImportFocus("updated")}>
-                  View updated clients
-                </button>
-              ) : null}
             </div>
           </div>
           <div className="import-result-groups">
