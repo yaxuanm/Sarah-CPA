@@ -839,10 +839,7 @@ export function WorkSection({
   const [followupLog, setFollowupLog] = useState<
     Record<string, { id: string; to: string; subject: string; sentAt: string; status: "queued" | "sent" }[]>
   >({});
-  const [extensionDraft, setExtensionDraft] = useState<{ days: 30 | 60 | 90 | 153 | "custom"; dueDate: string }>({
-    days: 30,
-    dueDate: ""
-  });
+  const [extensionDraftDate, setExtensionDraftDate] = useState("");
   const [actionMenuOpen, setActionMenuOpen] = useState(false);
   const actionMenuRef = useRef<HTMLDivElement | null>(null);
 
@@ -870,7 +867,7 @@ export function WorkSection({
             if (deadline.status === "completed") return false;
           } else {
             if (deadline.status === "completed" || deadline.status === "blocked" || deadline.notice_rule_id) return false;
-            if (!(isThisWeek(deadline) || deadline.days_remaining < 0)) return false;
+            if (!(isThisWeek(deadline) || deadline.days_remaining < 0 || changedDeadlineIds.includes(deadline.id))) return false;
           }
           if (stateFilter !== "All" && deadline.jurisdiction !== stateFilter) return false;
           if (taxFilter !== "All" && deadline.tax_type !== taxFilter) return false;
@@ -911,10 +908,7 @@ export function WorkSection({
     setFollowupAiGenerated(false);
     setFollowupOpen(false);
     const recommendedDays = recommendedExtensionDays(selectedDeadline);
-    setExtensionDraft({
-      days: recommendedDays as 30 | 153,
-      dueDate: deriveExtensionDueDate(selectedDeadline, recommendedDays)
-    });
+    setExtensionDraftDate(deriveExtensionDueDate(selectedDeadline, recommendedDays));
     setActionMenuOpen(false);
     setEditingDeadlineId(null);
   }, [selectedDeadlineId, selectedDeadline]);
@@ -969,37 +963,20 @@ export function WorkSection({
                         <span className="menu-item-icon"><ExtensionIcon /></span>
                         <span>File extension</span>
                       </div>
-                      <div className="extension-menu-options" aria-label="Choose extension length">
-                        {[30, 60, 90, 153].map((days) => (
-                          <button
-                            key={days}
-                            type="button"
-                            className={`extension-choice ${extensionDraft.days === days ? "active" : ""}`}
-                            onClick={() =>
-                              setExtensionDraft({
-                                days: days as 30 | 60 | 90 | 153,
-                                dueDate: deriveExtensionDueDate(selectedDeadline, days)
-                              })
-                            }
-                          >
-                            {days} days
-                          </button>
-                        ))}
-                      </div>
                       <label className="extension-date-field">
                         <span>Extended due date</span>
                         <input
                           type="date"
-                          value={extensionDraft.dueDate}
-                          onChange={(event) => setExtensionDraft({ days: "custom", dueDate: event.target.value })}
+                          value={extensionDraftDate}
+                          onChange={(event) => setExtensionDraftDate(event.target.value)}
                         />
                       </label>
                       <button
                         type="button"
                         className="extension-submit"
-                        disabled={!extensionDraft.dueDate}
+                        disabled={!extensionDraftDate}
                         onClick={() => {
-                          const extensionDate = extensionDraft.dueDate;
+                          const extensionDate = extensionDraftDate;
                           updateDeadline(selectedDeadline.id, (deadline) => ({
                             ...deadline,
                             status: "extension-approved",
@@ -1386,7 +1363,7 @@ export function WorkSection({
             <button
               type="button"
               key={deadline.id}
-              className={`ddh-row ${deadline.status === "blocked" ? "blocked" : ""}`}
+              className={`ddh-row ${deadline.status === "blocked" ? "blocked" : ""} ${changedDeadlineIds.includes(deadline.id) ? "changed-flash" : ""}`}
               onClick={() => setSelectedDeadlineId(deadline.id)}
             >
               <span className="ddh-client">{deadline.client_name}</span>
@@ -2030,7 +2007,7 @@ function ClientTile({
   return (
     <button
       type="button"
-      className={`ddh-client-card ${client.risk_label === "high" ? "high" : client.risk_label === "watch" ? "watch" : ""}`}
+      className={`ddh-client-card ${client.risk_label === "high" ? "high" : client.risk_label === "watch" ? "watch" : ""} ${hasChanged ? "changed-flash" : ""}`}
       onClick={() => onOpenClient(client.id)}
     >
       <div className="client-tile-head">
@@ -3074,6 +3051,7 @@ export function ReviewSection({
   deadlines: deadlineStore,
   setDeadlines,
   setChangedDeadlineIds,
+  openSection,
   onNotify,
   reviewFocusRuleId,
   sourceStatus = [],
@@ -3087,6 +3065,11 @@ export function ReviewSection({
   const autoApplied = rules.filter((rule) => rule.status === "auto-applied");
   const dismissedRules = rules.filter((rule) => rule.status === "dismissed");
   const [selectedRuleId, setSelectedRuleId] = useState<string | null>(null);
+  const [applyOutcome, setApplyOutcome] = useState<{
+    ruleTitle: string;
+    changedIds: string[];
+    clientNames: string[];
+  } | null>(null);
   const supportedSourceCount = sourceStatus.filter((source) => source.sync_supported).length || 3;
   const latestSyncedCount = sourceStatus.filter((source) => source.latest_fetch_run).length;
   const latestSync = sourceStatus
@@ -3102,6 +3085,7 @@ export function ReviewSection({
 
   function applyRule(ruleId: string) {
     const changedIds: string[] = [];
+    const appliedRule = rules.find((rule) => rule.id === ruleId);
     setRules?.((current) => current.map((rule) => rule.id === ruleId ? { ...rule, status: "applied" } : rule));
     setDeadlines?.((current) =>
       current.map((deadline) => {
@@ -3120,7 +3104,21 @@ export function ReviewSection({
     );
     setResolvedRuleIds?.((current) => current.includes(ruleId) ? current : [...current, ruleId]);
     setChangedDeadlineIds?.((current) => [...new Set([...current, ...changedIds])]);
-    onNotify?.("Rule applied to affected clients.", "green");
+    if (appliedRule) {
+      const clientNames = buildRuleImpactRows(appliedRule, deadlineStore ?? mockDeadlines, true)
+        .map((row) => row.clientName)
+        .filter((name, index, all) => all.indexOf(name) === index);
+      setApplyOutcome({
+        ruleTitle: appliedRule.title,
+        changedIds,
+        clientNames
+      });
+    }
+    window.setTimeout(() => {
+      setChangedDeadlineIds?.((current) => current.filter((id) => !changedIds.includes(id)));
+      setApplyOutcome((current) => (current?.changedIds.some((id) => changedIds.includes(id)) ? null : current));
+    }, 18_000);
+    onNotify?.("Rule applied. Changed client and work cards are highlighted briefly.", "green");
   }
 
   function dismissRule(ruleId: string) {
@@ -3180,6 +3178,26 @@ export function ReviewSection({
               {sourceLabel(item.source_key)} · {item.fetch_run?.status || item.result?.status || "processed"}
             </span>
           ))}
+        </div>
+      ) : null}
+      {applyOutcome ? (
+        <div className="review-apply-outcome">
+          <div>
+            <strong>Applied: {applyOutcome.ruleTitle}</strong>
+            <span>
+              {applyOutcome.clientNames.length
+                ? `${applyOutcome.clientNames.slice(0, 3).join(", ")}${applyOutcome.clientNames.length > 3 ? ` +${applyOutcome.clientNames.length - 3} more` : ""} updated.`
+                : "Affected work items updated."}
+            </span>
+          </div>
+          <div>
+            <button type="button" className="ddh-btn ddh-btn-sm" onClick={() => openSection?.("clients")}>
+              View changed clients
+            </button>
+            <button type="button" className="ddh-btn ddh-btn-sm" onClick={() => openSection?.("work")}>
+              View changed work
+            </button>
+          </div>
         </div>
       ) : null}
       <div className="ddh-review-label">

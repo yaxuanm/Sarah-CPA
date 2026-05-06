@@ -2569,35 +2569,6 @@ input {
   font-weight: 650;
 }
 
-.extension-menu-options {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-
-.extension-choice {
-  appearance: none;
-  border: 1px solid var(--paper-3);
-  border-radius: 999px;
-  padding: 5px 8px;
-  background: var(--white);
-  color: var(--ink-2);
-  font-size: 11.5px;
-  font-weight: 600;
-  cursor: pointer;
-}
-
-.extension-choice:hover,
-.extension-choice.active {
-  border-color: var(--ink);
-  color: var(--ink);
-}
-
-.extension-choice.active {
-  background: var(--ink);
-  color: var(--white);
-}
-
 .extension-date-field {
   display: grid;
   gap: 5px;
@@ -6059,6 +6030,52 @@ body {
 
 .ddh-rule.auto .ddh-rule-top > span {
   color: #1e7a3e;
+}
+
+.review-apply-outcome {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  margin: 12px 0;
+  padding: 12px 14px;
+  border: 1px solid rgba(21, 115, 71, 0.22);
+  border-radius: 12px;
+  background: var(--green-soft);
+}
+
+.review-apply-outcome > div {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.review-apply-outcome strong {
+  color: var(--green);
+  font-size: 13px;
+}
+
+.review-apply-outcome span {
+  color: #335b42;
+  font-size: 12px;
+}
+
+.changed-flash {
+  position: relative;
+  animation: changedPulse 1.4s ease-in-out 0s 3;
+}
+
+@keyframes changedPulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(37, 99, 235, 0);
+  }
+  35% {
+    box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.2);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(37, 99, 235, 0);
+  }
 }
 
 .ddh-rule-tags {
