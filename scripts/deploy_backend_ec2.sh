@@ -14,6 +14,7 @@ HOST_GATEWAY="${DUEDATEHQ_NGINX_HOST_GATEWAY:-172.22.0.1}"
 
 rsync -avz --delete \
   --exclude ".git" \
+  --exclude ".env" \
   --exclude ".venv" \
   --exclude ".duedatehq" \
   --exclude ".logs" \
@@ -35,6 +36,13 @@ set -euo pipefail
 
 cd "$REMOTE_APP"
 mkdir -p .logs .duedatehq
+
+if [ -f .env ]; then
+  set -a
+  # shellcheck disable=SC1091
+  . ./.env
+  set +a
+fi
 
 if ! command -v uv >/dev/null 2>&1; then
   echo "uv is required on the server to run the demo backend." >&2
