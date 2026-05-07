@@ -10,8 +10,20 @@ export type BackendResponse = {
 };
 
 export type StreamUpdate =
+  | { event: "agent_step"; label?: string; detail?: string; tone?: string }
   | { event: "thinking"; message: string }
   | { event: "intent_confirmed"; intentLabel?: string; planSource?: string }
+  | { event: "action_started"; actionType?: string; announce?: string; template?: string }
+  | {
+      event: "render_event";
+      templateId: string;
+      filledSlots: Record<string, unknown>;
+      view?: ViewEnvelope | null;
+      actions: ActionPlan[];
+      summary?: string;
+      highlight?: string[];
+      crossReference?: { reply?: string; summary?: string; highlight?: string[] };
+    }
   | { event: "workspace_rendered"; view: ViewEnvelope | null; actions: ActionPlan[] }
   | { event: "view_rendered"; view: ViewEnvelope | null; actions: ActionPlan[] }
   | { event: "feedback_recorded"; signal?: string }
@@ -413,9 +425,25 @@ function parseSseChunk(chunk: string): StreamUpdate | null {
   if (!event || !rawData) return null;
   const data = JSON.parse(rawData);
 
+  if (event === "agent_step") return { event, label: data.label, detail: data.detail, tone: data.tone };
   if (event === "thinking") return { event, message: data.message };
   if (event === "intent_confirmed") {
     return { event, intentLabel: data.intent_label, planSource: data.plan_source };
+  }
+  if (event === "action_started") {
+    return { event, actionType: data.type, announce: data.announce, template: data.template };
+  }
+  if (event === "render_event") {
+    return {
+      event,
+      templateId: data.template_id,
+      filledSlots: data.filled_slots || {},
+      view: data.view,
+      actions: data.actions || [],
+      summary: data.summary,
+      highlight: data.highlight || [],
+      crossReference: data.cross_reference
+    };
   }
   if (event === "workspace_rendered") return { event, view: data.view, actions: data.actions || [] };
   if (event === "view_rendered") return { event, view: data.view, actions: data.actions || [] };

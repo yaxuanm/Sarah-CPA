@@ -180,11 +180,11 @@ class ClaudeNLUService:
             return plan
 
         if intent_label == "help":
-            message = "你可以直接问今天先做什么、查看某个客户、完成当前任务，或追问为什么。"
-            options = ["今天先做什么", "看第一条", "完成当前任务"]
+            message = "You can ask what to do first today, view a client, complete the current task, or ask why."
+            options = ["What should I do first today?", "Open the first item", "Complete the current task"]
         else:
-            message = "好的，当前任务不做更改。"
-            options = ["查看今天的待处理事项", "继续看当前客户"]
+            message = "Okay. I will leave the current task unchanged."
+            options = ["View today's queue", "Continue with current client"]
         return {
             "special": "reference_unresolvable",
             "intent_label": intent_label,

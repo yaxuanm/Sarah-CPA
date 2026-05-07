@@ -100,10 +100,10 @@ class ConversationService:
     def _render_response(self, tenant_id: str | None, intent: IntentType) -> tuple[str, list[RenderBlock]]:
         if intent is IntentType.TODAY:
             if not tenant_id:
-                return "需要先指定 tenant 才能渲染 today 视图。", [self._help_block()]
+                return "A tenant is required before I can render the today view.", [self._help_block()]
             deadlines = self.engine.today(tenant_id, limit=10)
             return (
-                f"你今天最需要看的，是 {len(deadlines)} 条待处理 deadline。",
+                f"The most important work today is {len(deadlines)} pending deadlines.",
                 [
                     RenderBlock(
                         block_type="today",
@@ -123,10 +123,10 @@ class ConversationService:
             )
         if intent is IntentType.DEADLINES:
             if not tenant_id:
-                return "需要先指定 tenant 才能渲染 deadline 列表。", [self._help_block()]
+                return "A tenant is required before I can render the deadline list.", [self._help_block()]
             deadlines = self.engine.list_deadlines(tenant_id)
             return (
-                f"当前共有 {len(deadlines)} 条 deadline。",
+                f"There are {len(deadlines)} deadlines.",
                 [
                     RenderBlock(
                         block_type="deadlines",
@@ -147,7 +147,7 @@ class ConversationService:
         if intent is IntentType.RULE_REVIEW:
             queue = self.engine.list_rule_review_queue()
             return (
-                f"当前有 {len(queue)} 条规则在人工审核队列里。",
+                f"There are {len(queue)} rules in the manual review queue.",
                 [
                     RenderBlock(
                         block_type="rule_review",
@@ -165,11 +165,11 @@ class ConversationService:
             )
         if intent is IntentType.NOTIFICATIONS:
             if not tenant_id:
-                return "需要先指定 tenant 才能渲染通知视图。", [self._help_block()]
+                return "A tenant is required before I can render notifications.", [self._help_block()]
             pending = self.engine.list_notification_deliveries(tenant_id, pending_only=True)
             history = self.engine.notify_history(tenant_id)
             return (
-                f"当前有 {len(pending)} 条待发送通知，最近历史提醒 {len(history)} 条。",
+                f"There are {len(pending)} pending notifications and {len(history)} recent reminder history items.",
                 [
                     RenderBlock(
                         block_type="notifications",
@@ -200,8 +200,8 @@ class ConversationService:
                 ],
             )
         if intent is IntentType.HELP:
-            return "你可以直接问 today、deadlines、review queue 或 notifications。", [self._help_block()]
-        return "我先给你当前最重要的入口。", [self._help_block()]
+            return "You can ask for today, deadlines, review queue, or notifications.", [self._help_block()]
+        return "I will show the most useful starting points first.", [self._help_block()]
 
     def _help_block(self) -> RenderBlock:
         return RenderBlock(

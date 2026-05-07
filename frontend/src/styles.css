@@ -560,11 +560,11 @@ input {
 }
 
 .msg.status {
-  opacity: 0.78;
+  opacity: 1;
 }
 
 .msg.thinking {
-  opacity: 1;
+  opacity: 0.72;
 }
 
 .msg-badge {
@@ -618,6 +618,21 @@ input {
 
 .msg.thinking .msg-bubble {
   color: var(--ink-3);
+  background: transparent;
+  border-color: transparent;
+  padding-left: 2px;
+  font-size: 13px;
+  font-style: italic;
+  letter-spacing: 0;
+  filter: blur(0.25px);
+  text-shadow: 0 0 10px rgba(68, 64, 55, 0.18);
+  transition: opacity 0.18s ease, filter 0.18s ease;
+}
+
+.thinking-text {
+  max-width: 360px;
+  color: var(--ink-3);
+  white-space: normal;
 }
 
 .thinking-dots {

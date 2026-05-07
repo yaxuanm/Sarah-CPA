@@ -17,6 +17,7 @@ from .core.ai_assistants import (
 )
 from .core.models import NotificationChannel
 from .core.notifiers import ConsoleNotifier, NotifierRegistry
+from .core.secretary_envelope import envelope_from_response
 from .core.system_state import record_operation, remember_response_state
 
 
@@ -45,6 +46,12 @@ def create_fastapi_app(db_path: str | None = None):
         allow_origins=[
             "http://127.0.0.1:5173",
             "http://localhost:5173",
+            "http://127.0.0.1:5174",
+            "http://localhost:5174",
+            "http://127.0.0.1:5182",
+            "http://localhost:5182",
+            "http://127.0.0.1:5183",
+            "http://localhost:5183",
         ],
         allow_credentials=True,
         allow_methods=["*"],
@@ -77,7 +84,7 @@ def create_fastapi_app(db_path: str | None = None):
             return {
                 "response": {
                     "status": "error",
-                    "message": "这个按钮缺少可执行计划，我没有改动任何数据。",
+                    "message": "This button is missing an executable plan. No data was changed.",
                     "view": session.get("current_view"),
                     "actions": session.get("current_actions", []),
                     "session_id": session.get("session_id"),
@@ -225,7 +232,7 @@ def create_fastapi_app(db_path: str | None = None):
 
         def events():
             user_input = body.get("user_input", "")
-            yield _sse("message_delta", {"delta": _instant_response_prefix(user_input, session)})
+            yield _sse("agent_step", {"label": "Receive request", "detail": "Reply first, then decide whether to pull supporting material.", "tone": "blue"})
             yield _sse("thinking", {"message": _thinking_status(user_input, session)})
             previous_feedback_count = len(session.get("flywheel_feedback_events", []))
             try:
@@ -233,12 +240,12 @@ def create_fastapi_app(db_path: str | None = None):
             except Exception as exc:  # noqa: BLE001 - keep SSE stream readable during prototype failures.
                 response = {
                     "status": "error",
-                    "message": f"这次请求处理失败：{type(exc).__name__}。我没有改动任何数据。",
+                    "message": f"This request failed: {type(exc).__name__}. No data was changed.",
                     "view": {
                         "type": "GuidanceCard",
                         "data": {
-                            "message": "这次请求处理失败，但系统没有写入任何变化。请回到今日列表后再试。",
-                            "options": ["查看今天的待处理事项"],
+                            "message": "This request failed, but the system did not write any changes. Return to today's queue and try again.",
+                            "options": ["View today's queue"],
                             "context_options": session.get("selectable_items", []),
                         },
                         "selectable_items": session.get("selectable_items", []),
@@ -258,12 +265,62 @@ def create_fastapi_app(db_path: str | None = None):
                     "template_id": last_turn.get("template_id"),
                 },
             )
+            secretary = response.get("secretary") if isinstance(response.get("secretary"), dict) else envelope_from_response(response)
+            reply = str(secretary.get("reply") or response.get("message") or "")
+            for chunk in _message_chunks(reply):
+                yield _sse("message_delta", {"delta": chunk})
+            action = secretary.get("action") if isinstance(secretary.get("action"), dict) else {}
+            if action.get("type") == "render":
+                render_template = str(action.get("template") or (response.get("view") or {}).get("type") or "generated_workspace")
+                if _needs_template_render_loop(response.get("view"), render_template):
+                    yield _sse("agent_step", {"label": "Prepare material", "detail": action.get("announce") or "Pull supporting material", "tone": "gold"})
+                    yield _sse(
+                        "action_started",
+                        {
+                            "type": "render",
+                            "announce": action.get("announce"),
+                            "template": render_template,
+                        },
+                    )
+                    slots = _slots_from_secretary_action(action, session)
+                    yield _sse("agent_step", {"label": "resolve_template", "detail": render_template, "tone": "blue"})
+                    template_result = app_state.template_tools.run_render_loop(
+                        intent=render_template,
+                        slots=slots,
+                        tenant_id=session["tenant_id"],
+                        session=session,
+                        response_view=response.get("view") if isinstance(response.get("view"), dict) else None,
+                    )
+                    resolution = template_result["resolution"]
+                    yield _sse(
+                        "agent_step",
+                        {
+                            "label": "fetch_slot_data",
+                            "detail": f"{resolution.get('status')}:{resolution.get('template_id') or resolution.get('base_template_id') or resolution.get('staging_template_id')}",
+                            "tone": "gold",
+                        },
+                    )
+                    yield _sse("agent_step", {"label": "dispatch_render", "detail": template_result["render_event"]["render_id"], "tone": "green"})
+                    yield _sse(
+                        "render_event",
+                        {
+                            **template_result["render_event"],
+                            "resolution": resolution,
+                            "actions": response.get("actions", []),
+                            "summary": action.get("summary"),
+                            "highlight": action.get("highlight") if isinstance(action.get("highlight"), list) else [],
+                            "cross_reference": {
+                                "reply": reply,
+                                "summary": action.get("summary"),
+                                "highlight": action.get("highlight") if isinstance(action.get("highlight"), list) else [],
+                            },
+                        },
+                    )
+                yield _sse("workspace_rendered", {"view": response.get("view"), "actions": response.get("actions", [])})
             yield _sse("view_rendered", {"view": response.get("view"), "actions": response.get("actions", [])})
             new_feedback = _latest_new_feedback_event(session, previous_feedback_count)
             if new_feedback:
                 yield _sse("feedback_recorded", new_feedback)
-            for chunk in _message_chunks(str(response.get("message") or "")):
-                yield _sse("message_delta", {"delta": chunk})
             yield _sse("done", {"response": response, "session": session})
 
         return StreamingResponse(events(), media_type="text/event-stream")
@@ -273,6 +330,39 @@ def create_fastapi_app(db_path: str | None = None):
         return app_state.intent_library.stats()
 
     return api
+
+
+def _slots_from_secretary_action(action: dict[str, Any], session: dict[str, Any]) -> dict[str, Any]:
+    slots: dict[str, Any] = {}
+    workspace = action.get("workspace") if isinstance(action.get("workspace"), dict) else {}
+    fields = workspace.get("fields") if isinstance(workspace.get("fields"), dict) else {}
+    for name, field in fields.items():
+        if isinstance(field, dict):
+            slots[str(name)] = field.get("value")
+    if session.get("current_view"):
+        slots.setdefault(
+            "current_view_type",
+            (session.get("current_view") or {}).get("type") if isinstance(session.get("current_view"), dict) else None,
+        )
+    return slots
+
+
+def _needs_template_render_loop(view: Any, render_template: str) -> bool:
+    if isinstance(view, dict) and view.get("type") in {
+        "ClientCard",
+        "ListCard",
+        "ConfirmCard",
+        "HistoryCard",
+        "GuidanceCard",
+        "TaxChangeRadarCard",
+        "ClientListCard",
+        "ReviewQueueCard",
+        "ReminderPreviewCard",
+    }:
+        return False
+    return render_template in {"generated_workspace", "RenderSpecSurface"} or (
+        isinstance(view, dict) and view.get("type") == "RenderSpecSurface"
+    )
 
 
 def _parse_datetime(value: Any) -> datetime | None:
@@ -371,30 +461,30 @@ def _prepare_session(body: dict[str, Any]) -> dict[str, Any]:
 def _instant_response_prefix(user_input: str, session: dict[str, Any]) -> str:
     text = user_input.strip().casefold()
     if not text:
-        return "好的，我来看看。\n\n"
+        return "Okay, I will take a look.\n\n"
     if _looks_like_tax_change_need(text):
-        return "好的，我帮你查一下哪些变化可能影响你的客户。\n\n"
+        return "Okay, I will check which changes may affect your clients.\n\n"
     if any(term in text for term in ["今天", "today", "待处理", "queue"]):
-        return "好的，我帮你看看今天哪些事最需要先处理。\n\n"
+        return "Okay, I will check what needs attention first today.\n\n"
     if _looks_like_comparison_need(text):
-        return "好的，我把相关事项放在一起比较一下。\n\n"
+        return "Okay, I will compare the relevant items side by side.\n\n"
     if any(term in text for term in ["来源", "变更", "历史", "source", "history", "changed"]):
-        return "好的，我帮你查这件事的来源和变更记录。\n\n"
+        return "Okay, I will check the source and change history for this item.\n\n"
     if any(term in text for term in ["起草", "草稿", "邮件", "prepare", "draft", "email"]):
-        return "好的，我先帮你准备一版可以检查的内容。\n\n"
-    return "好的，我来处理这个问题。\n\n"
+        return "Okay, I will prepare a draft you can review.\n\n"
+    return "Okay, I will handle this.\n\n"
 
 
 def _thinking_status(user_input: str, session: dict[str, Any]) -> str:
     text = user_input.strip().casefold()
     if _looks_like_tax_change_need(text):
-        return "正在读取规则库、notice 和近期 deadline。"
+        return "Reading the rule library, notices, and recent deadlines."
     if _looks_like_comparison_need(text):
-        return "正在比较当前客户、截止日和可见工作项。"
+        return "Comparing the current clients, deadlines, and visible work items."
     current_view = session.get("current_view")
     if isinstance(current_view, dict) and current_view.get("type"):
-        return "正在结合当前页面和后台数据分析。"
-    return "正在理解需求并准备工作面。"
+        return "Analyzing the current page with backend data."
+    return "Understanding the request and preparing the workspace."
 
 
 def _looks_like_tax_change_need(text: str) -> bool:

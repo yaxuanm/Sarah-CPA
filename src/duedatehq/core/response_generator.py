@@ -8,11 +8,19 @@ from .system_state import workspace_snapshot
 
 
 ACTION_LABELS = {
-    "complete": "标记完成",
-    "snooze": "稍后提醒",
-    "waive": "标记不适用",
-    "reopen": "撤销",
-    "override": "修改日期",
+    "complete": "Mark complete",
+    "snooze": "Remind later",
+    "waive": "Mark not applicable",
+    "reopen": "Reopen",
+    "override": "Change date",
+}
+
+CONFIRM_LABELS = {
+    "complete": "Confirm complete",
+    "snooze": "Confirm reminder",
+    "waive": "Confirm not applicable",
+    "reopen": "Confirm reopen",
+    "override": "Confirm date change",
 }
 
 INTENT_RELEVANT_ACTIONS = {
@@ -65,16 +73,16 @@ class ResponseGenerator:
             }
         ]
         return {
-            "message": self._truncate(f"确认执行：{client_name}{label}，截止日 {deadline['due_date']}。"),
+            "message": self._truncate(f"Confirm {label.lower()} for {client_name}, due {deadline['due_date']}."),
             "view": {
                 "type": "ConfirmCard",
                 "data": {
                     "description": f"{client_name} — {deadline['tax_type']}",
                     "due_date": deadline["due_date"],
-                    "consequence": f"确认后会把这条截止事项{label}；取消则不改动任何数据。",
+                    "consequence": f"Confirming will apply '{label}' to this deadline. Canceling will leave the data unchanged.",
                     "options": [
-                        {"label": f"确认{label.replace('标记', '')}", "style": "primary", "plan": plan},
-                        {"label": "取消", "style": "secondary", "plan": None},
+                        {"label": CONFIRM_LABELS.get(args["action"], f"Confirm {label.lower()}"), "style": "primary", "plan": plan},
+                        {"label": "Cancel", "style": "secondary", "plan": None},
                     ],
                 },
                 "selectable_items": selectable_items,
@@ -97,7 +105,7 @@ class ResponseGenerator:
             "view": {
                 "type": "GuidanceCard",
                 "data": {
-                    "title": title or "需要一点上下文",
+                    "title": title or "Need a little context",
                     "eyebrow": eyebrow or "Need one more bit of context",
                     "message": message,
                     "options": options,
@@ -115,53 +123,53 @@ class ResponseGenerator:
         session: dict[str, Any],
         message: str | None = None,
     ) -> dict[str, Any]:
-        text = user_input.strip() or "用户提出了一个开放需求"
+        text = user_input.strip() or "The user asked an open-ended question"
         selected = session.get("selectable_items") or []
         if selected and self._looks_like_draft_request(text):
             return self._build_client_message_draft_surface(text, session, selected[0])
 
-        context_label = selected[0].get("client_name") if selected else "当前工作队列"
+        context_label = selected[0].get("client_name") if selected else "the current work queue"
         render_spec = {
             "version": "0.1",
             "surface": "work_card",
-            "title": "我先帮你把这件事理清楚",
+            "title": "Let me frame this work",
             "intent_summary": text,
             "blocks": [
                 {
                     "type": "decision_brief",
-                    "title": "我理解的是",
+                    "title": "What I understand",
                     "body": (
-                        f"你想继续处理 {context_label}，但这句话还没有指向某一个具体截止事项或动作。"
-                        "我可以先帮你整理现状，也可以继续查依据。"
+                        f"You want to continue with {context_label}, but the request does not point to one specific deadline or action yet. "
+                        "I can frame the current state or help you check the source."
                     ),
                 },
                 {
                     "type": "fact_strip",
                     "facts": [
-                        {"label": "当前对象", "value": str(context_label), "tone": "blue"},
-                        {"label": "当前阶段", "value": "先整理，不改记录", "tone": "gold"},
-                        {"label": "状态变更", "value": "尚未发生", "tone": "green"},
+                        {"label": "Current object", "value": str(context_label), "tone": "blue"},
+                        {"label": "Current stage", "value": "Organize first; no record changes", "tone": "gold"},
+                        {"label": "Status change", "value": "None yet", "tone": "green"},
                     ],
                 },
                 {
                     "type": "choice_set",
-                    "question": "如果这个工作面不对，可以直接继续说你的需求。",
+                    "question": "If this workspace is not right, tell me what to adjust.",
                     "choices": [
-                        {"label": "补充说明", "intent": "我再补充一下需求", "style": "primary"},
-                        {"label": "回到今日清单", "intent": "查看今天的待处理事项", "style": "secondary"},
+                        {"label": "Add detail", "intent": "I want to add more detail", "style": "primary"},
+                        {"label": "Back to today's queue", "intent": "View today's queue", "style": "secondary"},
                     ],
                 },
             ],
         }
         return {
-            "message": self._truncate(message or "我先把这件事整理成一个可推进的工作面。"),
+            "message": self._truncate(message or "I framed this as a workspace you can move forward from."),
             "view": {
                 "type": "RenderSpecSurface",
                 "data": {"render_spec": render_spec},
                 "selectable_items": selected,
             },
             "actions": [],
-            "state_summary": "根据开放需求生成受约束工作面。",
+            "state_summary": "Generated a constrained workspace from an open-ended request.",
         }
 
     def _build_client_message_draft_surface(
@@ -173,10 +181,10 @@ class ResponseGenerator:
         deadline_id = selected.get("deadline_id")
         deadline = self._serialize_deadline(self.engine.get_deadline(session["tenant_id"], deadline_id)) if deadline_id else {}
         client = self._client_map(session["tenant_id"]).get(deadline.get("client_id"))
-        client_name = client["name"] if client else selected.get("client_name") or "当前客户"
-        tax_type = deadline.get("tax_type") or "当前事项"
-        due_date = deadline.get("due_date") or "当前截止日"
-        jurisdiction = deadline.get("jurisdiction") or "相关辖区"
+        client_name = client["name"] if client else selected.get("client_name") or "Current client"
+        tax_type = deadline.get("tax_type") or "current item"
+        due_date = deadline.get("due_date") or "current due date"
+        jurisdiction = deadline.get("jurisdiction") or "relevant jurisdiction"
         record_action = self._deadline_action_direct_action(session["tenant_id"], deadline_id, "complete") if deadline_id else None
         history_action = self._deadline_history_direct_action(session["tenant_id"], deadline_id) if deadline_id else None
         today_action = self._today_direct_action(session["tenant_id"])
@@ -189,49 +197,49 @@ class ResponseGenerator:
         render_spec = {
             "version": "0.1",
             "surface": "work_card",
-            "title": f"{client_name} 的客户消息草稿",
+            "title": f"{client_name} client message draft",
             "intent_summary": user_input,
             "blocks": [
                 {
                     "type": "decision_brief",
-                    "title": "这是一封需要你发出去的消息",
+                    "title": "Message ready for your review",
                     "body": (
-                        f"我根据当前选中的 {client_name} - {tax_type} 生成了草稿。"
-                        "DueDateHQ 只生成内容，不会替你发送，也不会修改记录。"
+                        f"I drafted this from the selected {client_name} - {tax_type}. "
+                        "DueDateHQ only prepares the text; it will not send the message or change records."
                     ),
                 },
                 {
                     "type": "fact_strip",
                     "facts": [
-                        {"label": "客户", "value": str(client_name), "tone": "blue"},
-                        {"label": "事项", "value": str(tax_type), "tone": "gold"},
-                        {"label": "截止日", "value": str(due_date), "tone": "red"},
+                        {"label": "Client", "value": str(client_name), "tone": "blue"},
+                        {"label": "Item", "value": str(tax_type), "tone": "gold"},
+                        {"label": "Due date", "value": str(due_date), "tone": "red"},
                     ],
                 },
                 {
                     "type": "action_draft",
-                    "label": "发送给客户的内容",
+                    "label": "Client-facing text",
                     "body": draft,
-                    "note": "请通过你的邮箱或客户 portal 发出。发出后再回来记录为已发送。",
+                    "note": "Send this through your email or client portal. After sending, come back and record it as sent.",
                 },
                 {
                     "type": "choice_set",
-                    "question": "发出之后回来记录。",
+                    "question": "After sending, record it here.",
                     "choices": [
                         {
-                            "label": "记录为已发送",
+                            "label": "Record as sent",
                             "intent": "record as sent",
                             "style": "primary",
                             "action": record_action,
                         },
                         {
-                            "label": "查看依据",
+                            "label": "Show source",
                             "intent": "show source",
                             "style": "secondary",
                             "action": history_action,
                         },
                         {
-                            "label": "回到今日清单",
+                            "label": "Back to today's queue",
                             "intent": "today",
                             "style": "secondary",
                             "action": today_action,
@@ -241,14 +249,14 @@ class ResponseGenerator:
             ],
         }
         return {
-            "message": self._truncate(f"我已经为 {client_name} 生成客户消息草稿。发出后再回来记录。"),
+            "message": self._truncate(f"I drafted a client message for {client_name}. After sending it, come back and record it."),
             "view": {
                 "type": "RenderSpecSurface",
                 "data": {"render_spec": render_spec},
                 "selectable_items": [selected],
             },
             "actions": [],
-            "state_summary": f"生成 {client_name} 的客户消息草稿。",
+            "state_summary": f"Drafted a client message for {client_name}.",
         }
 
     def _deadline_action_direct_action(self, tenant_id: str, deadline_id: str, action: str) -> dict[str, Any]:
@@ -344,25 +352,25 @@ class ResponseGenerator:
             for index, item in enumerate(visible, start=1)
         ]
         self._remember_prefetch_pool(session, selectable_items)
-        message = "今天没有待处理事项。" if not items else f"当前有 {len(items)} 件待处理，最早 {items[0]['due_date']} 到期。"
+        message = "There are no pending items today." if not items else f"There are {len(items)} pending items. The earliest due date is {items[0]['due_date']}."
         return {
             "message": self._truncate(message),
             "view": {
                 "type": "ListCard",
                 "data": {
-                    "title": "今天需要处理的事项",
-                    "headline": "先看最可能卡住申报的事项",
-                    "description": "这是今天最值得你注意的工作队列。打开一项后，我会只围绕那一项继续帮你处理。",
+                    "title": "Today's Work Queue",
+                    "headline": "Start with the items most likely to block filing",
+                    "description": "This is today's highest-attention queue. Once you open an item, I will stay focused on that item.",
                     "items": visible,
                     "total": len(items),
                     "has_more": len(items) > 5,
-                    "status_label": "待处理",
-                    "suggested_prompts": ["查看所有未来截止日", "只看某个客户", "哪些需要催客户"],
+                    "status_label": "Pending",
+                    "suggested_prompts": ["View upcoming deadlines", "Filter to one client", "Which clients need follow-up"],
                 },
                 "selectable_items": selectable_items,
             },
             "actions": self._build_actions(session["tenant_id"], visible[0]["deadline_id"], "today") if visible else [],
-            "state_summary": None if not items else f"显示 {len(visible)} / {len(items)} 条待处理事项。",
+            "state_summary": None if not items else f"Showing {len(visible)} of {len(items)} pending items.",
         }
 
     def _build_client_deadline_response(self, final_data: Any, session: dict[str, Any]) -> dict[str, Any]:
@@ -370,7 +378,7 @@ class ResponseGenerator:
         enriched_deadlines = [self._enrich_deadline_item(item, session) for item in deadline_items]
         enriched_deadlines.sort(key=lambda item: (item["due_date"], item["deadline_id"]))
         if not enriched_deadlines:
-            return self.generate_guidance("没有找到该客户的截止日期。", ["查看今天的待处理事项"])
+            return self.generate_guidance("I could not find deadlines for that client.", ["View today's queue"])
 
         client_map = self._client_map(session["tenant_id"])
         bundled_client = self._extract_bundled_client(final_data)
@@ -381,7 +389,7 @@ class ResponseGenerator:
             for index, item in enumerate(enriched_deadlines, start=1)
         ]
         return {
-            "message": self._truncate(f"{client_name} 有 {len(enriched_deadlines)} 个截止日期，最近 {enriched_deadlines[0]['due_date']}。"),
+            "message": self._truncate(f"{client_name} has {len(enriched_deadlines)} deadlines. The nearest is {enriched_deadlines[0]['due_date']}."),
             "view": {
                 "type": "ClientCard",
                 "data": {
@@ -394,7 +402,7 @@ class ResponseGenerator:
                 "selectable_items": selectable_items,
             },
             "actions": self._build_actions(session["tenant_id"], enriched_deadlines[0]["deadline_id"], "client_deadline_list"),
-            "state_summary": f"显示 {client_name} 的 {len(enriched_deadlines)} 个截止日期。",
+            "state_summary": f"Showing {len(enriched_deadlines)} deadlines for {client_name}.",
         }
 
     def _build_deadline_history_response(self, final_data: Any, session: dict[str, Any]) -> dict[str, Any]:
@@ -409,9 +417,9 @@ class ResponseGenerator:
         selectable_items = [selected] if selected else []
         source_url = rule.source_url if rule else None
         message = (
-            f"{client_name} 这条记录来自规则来源，当前有 {len(transitions)} 条变更记录。"
+            f"{client_name} has a rule source for this record and {len(transitions)} change records."
             if source_url
-            else f"{client_name or '当前事项'} 当前有 {len(transitions)} 条变更记录。"
+            else f"{client_name or 'The current item'} has {len(transitions)} change records."
         )
         return {
             "message": self._truncate(message),
@@ -430,7 +438,7 @@ class ResponseGenerator:
                 "selectable_items": selectable_items,
             },
             "actions": [],
-            "state_summary": f"显示 {client_name or '当前事项'} 的来源和变更记录。",
+            "state_summary": f"Showing source and change history for {client_name or 'the current item'}.",
         }
 
     def _build_deadline_collection_response(
@@ -452,20 +460,20 @@ class ResponseGenerator:
         ]
         self._remember_prefetch_pool(session, selectable_items)
         is_upcoming = intent_label == "upcoming_deadlines"
-        title = "所有未来待处理截止事项" if is_upcoming else "已完成截止事项"
-        headline = "这里是还没有完成的全部未来 DDL" if is_upcoming else "这里是已经处理完的事项"
+        title = "All Upcoming Pending Deadlines" if is_upcoming else "Completed Deadlines"
+        headline = "All future deadlines that are not complete yet" if is_upcoming else "Items that have already been completed"
         description = (
-            "我先按截止日期排序。你可以继续追问：按客户分组、只看某个客户、只看本周、或解释某一条为什么在这里。"
+            "I sorted these by due date. You can ask to group by client, filter to one client, show this week, or explain why an item is here."
             if is_upcoming
-            else "这些事项已经完成，只用于核对和追溯，不提供写操作。"
+            else "These items are complete and shown for review and traceability. No write actions are available here."
         )
         suggested_prompts = (
-            ["按客户分组", "只看本周", "解释第一条为什么在这里"]
+            ["Group by client", "Show this week only", "Explain the first item"]
             if is_upcoming
-            else ["查看今天待处理事项", "查看所有未来截止日"]
+            else ["View today's queue", "View upcoming deadlines"]
         )
         return {
-            "message": self._truncate(f"{title}：{len(items)} 条。"),
+            "message": self._truncate(f"{title}: {len(items)} items."),
             "view": {
                 "type": "ListCard",
                 "data": {
@@ -475,13 +483,13 @@ class ResponseGenerator:
                     "items": visible,
                     "total": len(items),
                     "has_more": len(items) > 10,
-                    "status_label": "待处理" if is_upcoming else "已完成",
+                    "status_label": "Pending" if is_upcoming else "Completed",
                     "suggested_prompts": suggested_prompts,
                 },
                 "selectable_items": selectable_items,
             },
             "actions": [],
-            "state_summary": f"显示 {len(visible)} / {len(items)} 条{title}。",
+            "state_summary": f"Showing {len(visible)} of {len(items)} items in {title}.",
         }
 
     def _build_notification_preview_response(self, final_data: Any, session: dict[str, Any]) -> dict[str, Any]:
@@ -498,7 +506,7 @@ class ResponseGenerator:
             reminder["tax_type"] = deadline.get("tax_type")
             reminder["due_date"] = deadline.get("due_date")
         return {
-            "message": self._truncate(f"接下来需要提醒 {len(reminders)} 项。"),
+            "message": self._truncate(f"{len(reminders)} reminders are coming up."),
             "view": {
                 "type": "ReminderPreviewCard",
                 "data": {"reminders": reminders, "total": len(reminders)},
@@ -513,14 +521,14 @@ class ResponseGenerator:
                 ],
             },
             "actions": [],
-            "state_summary": f"显示 {len(reminders)} 项待提醒事项。",
+            "state_summary": f"Showing {len(reminders)} reminders.",
         }
 
     def _build_client_list_response(self, final_data: Any, session: dict[str, Any]) -> dict[str, Any]:
         clients = [self._serialize_client(item) for item in final_data] if isinstance(final_data, list) else []
         clients.sort(key=lambda item: item["name"])
         return {
-            "message": self._truncate(f"共有 {len(clients)} 个客户。"),
+            "message": self._truncate(f"There are {len(clients)} clients."),
             "view": {
                 "type": "ClientListCard",
                 "data": {"clients": clients, "total": len(clients)},
@@ -530,13 +538,13 @@ class ResponseGenerator:
                 ],
             },
             "actions": [],
-            "state_summary": f"显示 {len(clients)} 个客户。",
+            "state_summary": f"Showing {len(clients)} clients.",
         }
 
     def _build_rule_review_response(self, final_data: Any) -> dict[str, Any]:
         review_items = [self._serialize_rule_review_item(item) for item in final_data] if isinstance(final_data, list) else []
         return {
-            "message": self._truncate(f"有 {len(review_items)} 条规则需要审核。"),
+            "message": self._truncate(f"{len(review_items)} rules need review."),
             "view": {
                 "type": "ReviewQueueCard",
                 "data": {"items": review_items, "total": len(review_items)},
@@ -546,7 +554,7 @@ class ResponseGenerator:
                 ],
             },
             "actions": [],
-            "state_summary": f"显示 {len(review_items)} 条规则审核项。",
+            "state_summary": f"Showing {len(review_items)} rule review items.",
         }
 
     def _build_generic_list_response(self, final_data: Any, session: dict[str, Any], intent_label: str) -> dict[str, Any]:
@@ -558,7 +566,7 @@ class ResponseGenerator:
         return self.generate_render_spec_surface(
             latest_user_input or intent_label,
             session,
-            f"{intent_label} 没有命中专用工作面，已生成受约束 render spec。",
+            f"{intent_label} did not match a dedicated workspace, so I generated a constrained render spec.",
         )
 
     def _build_actions(self, tenant_id: str, deadline_id: str, intent_label: str) -> list[dict[str, Any]]:
@@ -792,7 +800,7 @@ class ResponseGenerator:
             "deadlines": enriched_deadlines,
         }
         view = {"type": "ClientCard", "data": view_data, "selectable_items": selectable_items}
-        snapshot = workspace_snapshot(view, f"预取 {client_name} 的客户工作区。")
+        snapshot = workspace_snapshot(view, f"Prefetched {client_name}'s client workspace.")
         return {
             "prefetch_key": snapshot["key"] if snapshot else f"ClientWorkspace:{client_id}",
             "view_data": view_data,
@@ -822,5 +830,5 @@ class ResponseGenerator:
         today = date.fromisoformat(today_value)
         return (due - today).days
 
-    def _truncate(self, text: str, max_chars: int = 50) -> str:
+    def _truncate(self, text: str, max_chars: int = 160) -> str:
         return text if len(text) <= max_chars else f"{text[: max_chars - 1]}…"

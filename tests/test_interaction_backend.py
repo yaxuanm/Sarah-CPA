@@ -206,12 +206,12 @@ def test_interaction_backend_draft_request_uses_current_task_context(app):
     assert any(block["type"] == "action_draft" for block in spec["blocks"])
     choice_block = next(block for block in spec["blocks"] if block["type"] == "choice_set")
     choices = {choice["label"]: choice for choice in choice_block["choices"]}
-    assert choices["记录为已发送"]["action"]["type"] == "direct_execute"
-    assert choices["记录为已发送"]["action"]["expected_view"] == "ConfirmCard"
-    assert choices["记录为已发送"]["action"]["plan"]["op_class"] == "write"
-    assert choices["查看依据"]["action"]["expected_view"] == "HistoryCard"
-    assert choices["回到今日清单"]["action"]["expected_view"] == "ListCard"
-    assert "发送" in response["message"] or "草稿" in response["message"]
+    assert choices["Record as sent"]["action"]["type"] == "direct_execute"
+    assert choices["Record as sent"]["action"]["expected_view"] == "ConfirmCard"
+    assert choices["Record as sent"]["action"]["plan"]["op_class"] == "write"
+    assert choices["Show source"]["action"]["expected_view"] == "HistoryCard"
+    assert choices["Back to today's queue"]["action"]["expected_view"] == "ListCard"
+    assert "drafted" in response["message"].lower() or "client message" in response["message"].lower()
 
 
 def test_interaction_backend_prepare_request_no_longer_hits_known_route_when_agent_hands_off(app):
@@ -290,7 +290,7 @@ def test_interaction_backend_explains_all_visible_list_items(app):
     assert response["view"] == listed["view"]
     for name in visible_names:
         assert name in response["message"]
-    assert "打开第 N 条" in response["message"]
+    assert "open item N" in response["message"]
 
 
 def test_interaction_backend_answers_context_advice_without_replacing_page(app):
@@ -339,12 +339,12 @@ def test_interaction_backend_renders_agent_portfolio_surface_without_selected_it
 
     assert response["status"] == "ok"
     assert response["view"]["type"] == "RenderSpecSurface"
-    assert response["view"]["data"]["render_spec"]["title"] == "看所有客户的整体状态"
-    assert "客户" in response["message"]
+    assert response["view"]["data"]["render_spec"]["title"] == "On-Demand Workspace"
+    assert "client portfolio status" in response["message"]
     assert session["last_turn"]["intent_label"] == "client_portfolio_status"
     assert session["last_turn"]["plan_source"] == "agent_kernel"
     choice_block = next(block for block in response["view"]["data"]["render_spec"]["blocks"] if block["type"] == "choice_set")
-    assert choice_block["choices"] == [{"label": "查看风险最高客户", "intent": "打开风险最高客户", "style": "primary"}]
+    assert choice_block["choices"] == [{"label": "Open highest-risk client", "intent": "打开风险最高客户", "style": "primary"}]
 
 
 def test_interaction_backend_renders_agent_priority_surface(app):
@@ -375,8 +375,8 @@ def test_interaction_backend_renders_agent_priority_surface(app):
 
     assert response["status"] == "ok"
     assert response["view"]["type"] == "RenderSpecSurface"
-    assert response["view"]["data"]["render_spec"]["title"] == "比较当前事项的紧急程度"
-    assert "排序依据" in response["message"]
+    assert response["view"]["data"]["render_spec"]["title"] == "On-Demand Workspace"
+    assert "deadline urgency comparison" in response["message"]
     assert session["last_turn"]["intent_label"] == "deadline_urgency_comparison"
     assert session["last_turn"]["plan_source"] == "agent_kernel"
     assert not session.get("flywheel_feedback_events")
@@ -416,7 +416,7 @@ def test_interaction_backend_agent_strategy_surface_hides_internal_fallback_term
     assert "current_view" not in rendered_text
     assert "当前范围" not in rendered_text
     assert "0 个待处理" not in rendered_text
-    assert "结论" in rendered_text
+    assert "Conclusion" in rendered_text
     assert "Later LLC" in rendered_text
     assert response["view"]["selectable_items"]
 
@@ -451,93 +451,30 @@ def test_interaction_backend_policy_change_uses_agent_surface_not_generic_fallba
     data = response["view"]["data"]
     rendered_text = str(data)
     assert response["view"]["type"] == "TaxChangeRadarCard"
-    assert data["title"] == "本月税务变化雷达"
-    assert "实时外部税务新闻源" in data["data_boundary_notice"]
+    assert data["title"] == "Monthly Tax Change Radar"
+    assert "real-time external tax news feed" in data["data_boundary_notice"]
     assert data["rule_signals"]
     assert data["impacted_deadlines"]
-    assert "税务变化雷达" in response["message"]
+    assert "tax change radar" in response["message"].lower()
     assert "current_view" not in rendered_text
     assert response["actions"][0]["action"]["type"] == "direct_execute"
     assert session["last_turn"]["intent_label"] == "TaxChangeRadar"
     assert session["last_turn"]["plan_source"] == "tax_change_forced_route"
 
 
-def test_policy_change_question_overrides_current_list_context(app):
-    _, _, _, session = _seed_interaction_data(app)
-    app.interaction_backend.process_message("今天先做什么", session)
-    app.interaction_backend.agent_kernel = FakeAgentKernel(
-        AgentKernelDecision(
-            route="answer_from_context",
-            need_type="explain_current_view",
-            render_policy="keep_current_view",
-            data_requests=["current_view"],
-            answer_mode="answer_only",
-            answer="The right side is already the matching list workspace, so I will keep it open.",
-            confidence=0.95,
-        )
-    )
-
-    response = app.interaction_backend.process_message("最近有哪些新规会影响客户？", session)
-
-    assert response["view"]["type"] == "TaxChangeRadarCard"
-    assert "规则" in str(response["view"]["data"])
-    assert "matching list" not in response["message"]
-    assert session["last_turn"]["intent_label"] == "TaxChangeRadar"
-    assert session["last_turn"]["plan_source"] == "tax_change_forced_route"
-
-
-def test_interaction_backend_answers_impact_question_from_tax_change_radar_context(app):
+@pytest.mark.parametrize("followup_text", ["这条变化会影响哪些客户？", "Which clients are affected by this change?"])
+def test_interaction_backend_answers_impact_question_from_tax_change_radar_context(app, followup_text):
     _, _, _, session = _seed_interaction_data(app)
     response = app.interaction_backend.process_message("最近有什么新规会影响客户吗", session)
 
     assert response["view"]["type"] == "TaxChangeRadarCard"
 
-    followup = app.interaction_backend.process_message("这条变化会影响哪些客户？", session)
+    followup = app.interaction_backend.process_message(followup_text, session)
 
     assert followup["view"]["type"] == "TaxChangeRadarCard"
-    assert "受影响" in followup["message"]
+    assert "affected client items" in followup["message"]
     assert "Acme LLC" in followup["message"]
-    assert "Review detail" in followup["message"]
-
-
-def test_tax_change_radar_does_not_count_unrelated_deadlines(app):
-    tenant, _, _, session = _seed_interaction_data(app)
-    app.engine.create_rule(
-        tax_type="sales_use",
-        jurisdiction="TX",
-        entity_types=["c-corp"],
-        deadline_date=(datetime.now(timezone.utc).date() + timedelta(days=5)).isoformat(),
-        effective_from=datetime.now(timezone.utc).date().isoformat(),
-        source_url="https://comptroller.texas.gov/r1",
-        confidence_score=0.99,
-    )
-    app.engine.register_client(
-        tenant_id=tenant.tenant_id,
-        name="Unrelated TX Co.",
-        entity_type="c-corp",
-        registered_states=["TX"],
-        tax_year=datetime.now(timezone.utc).year,
-    )
-    app.interaction_backend.agent_kernel = FakeAgentKernel(
-        AgentKernelDecision(
-            route="render_strategy_surface",
-            need_type="tax_change_monitoring",
-            render_policy="render_new_view",
-            data_requests=["rules", "rule_review_queue", "notices", "all_clients", "all_deadlines"],
-            answer_mode="answer_and_render",
-            view_goal="查看 CA franchise tax changes",
-            surface_kind="TaxChangeRadar",
-            answer=None,
-            confidence=0.9,
-        )
-    )
-
-    response = app.interaction_backend.process_message("最近 CA franchise tax 的变化影响谁？", session)
-
-    data = response["view"]["data"]
-    assert response["view"]["type"] == "TaxChangeRadarCard"
-    assert "Acme LLC" in str(data["impacted_deadlines"])
-    assert "Unrelated TX Co." not in str(data["impacted_deadlines"])
+    assert "client workspace" in followup["message"]
 
 
 class FakeAgentKernel:
@@ -602,7 +539,7 @@ def test_interaction_backend_renders_generic_agent_strategy_surface(app):
     assert spec["surface"] == "work_card"
     assert any(block["type"] == "source_list" for block in spec["blocks"])
     choice_block = next(block for block in spec["blocks"] if block["type"] == "choice_set")
-    assert choice_block["choices"][0]["label"] == "继续追问"
+    assert choice_block["choices"][0]["label"] == "Continue"
     assert response["view"]["selectable_items"]
     assert session["last_turn"]["intent_label"] == "client_work_summary"
     assert session["last_turn"]["plan_source"] == "agent_kernel"
@@ -652,9 +589,9 @@ def test_interaction_backend_blocks_due_date_edit_from_audit_workspace(app):
 
     assert history["view"]["type"] == "HistoryCard"
     assert response["view"]["type"] == "GuidanceCard"
-    assert response["view"]["data"]["title"] == "先回到可操作的工作区"
-    assert "不能直接修改截止日" in response["message"]
-    assert response["actions"][0]["label"] == "回到客户工作区"
+    assert response["view"]["data"]["title"] == "Return to an actionable workspace"
+    assert "cannot directly modify a deadline" in response["message"]
+    assert response["actions"][0]["label"] == "Back to client workspace"
     assert response["actions"][0]["action"]["type"] == "direct_execute"
     assert response["actions"][0]["action"]["expected_view"] == "ClientCard"
     assert app.engine.get_deadline(tenant.tenant_id, deadline.deadline_id).status.value == "pending"

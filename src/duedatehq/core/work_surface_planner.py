@@ -104,12 +104,12 @@ class WorkSurfacePlanner:
         if not self._looks_like_tax_change_need(text):
             return None
         return NeedFrame(
-            goal="了解有无影响当前客户工作的税务变化",
-            scope="当前客户列表 + 近期待处理事项",
+            goal="Understand whether tax changes may affect current client work",
+            scope="Current client list plus upcoming pending deadlines",
             evidence_needed=["rule_changes", "review_queue", "notices", "affected_clients", "upcoming_deadlines", "external_tax_news"],
             user_decision_needed=False,
             actionability="monitoring",
-            data_boundary="当前没有实时外部税务新闻源；以下结果仅来自内部规则库、规则审核队列、notice 记录和客户 deadline。",
+            data_boundary="No real-time external tax news feed is connected. These results only use the internal rule library, rule review queue, notice records, and client deadlines.",
         )
 
     def _looks_like_tax_change_need(self, text: str) -> bool:
@@ -162,7 +162,7 @@ class WorkSurfacePlanner:
     def decide_surface(self, need: NeedFrame, evidence_plan: EvidencePlan, session: dict[str, Any]) -> SurfaceDecision:
         return SurfaceDecision(
             action="new_surface",
-            reason="这是跨客户、跨规则来源的监控需求，当前工作区不足以承载。",
+            reason="This is a cross-client, cross-rule monitoring request, so the current workspace is not enough.",
             surface_kind="TaxChangeRadar",
         )
 
@@ -175,18 +175,18 @@ class WorkSurfacePlanner:
     ) -> SurfacePlan:
         return SurfacePlan(
             surface_kind=decision.surface_kind or "GeneratedWorkspace",
-            title="本月税务变化雷达",
-            primary_question="有哪些规则变更或 notice 可能影响当前客户？",
+            title="Monthly Tax Change Radar",
+            primary_question="Which rule changes or notices may affect current clients?",
             sections=[
-                SurfaceSection("数据边界", "data_boundary"),
-                SurfaceSection("近期规则变更", "rule_changes"),
-                SurfaceSection("待审核规则", "review_queue"),
-                SurfaceSection("受影响客户与近期截止日", "affected_clients"),
+                SurfaceSection("Data boundary", "data_boundary"),
+                SurfaceSection("Recent rule changes", "rule_changes"),
+                SurfaceSection("Rules needing review", "review_queue"),
+                SurfaceSection("Affected clients and upcoming deadlines", "affected_clients"),
             ],
             data_boundary_notice=need.data_boundary,
             action_contract=[
-                ContractButton(label="查看规则审核队列", type="agent_routed", prompt="查看规则审核队列", context_keys=["review_queue"]),
-                ContractButton(label="查看近期截止日", type="agent_routed", prompt="查看所有未来截止日", context_keys=["upcoming_deadlines"]),
+                ContractButton(label="View rule review queue", type="agent_routed", prompt="View rule review queue", context_keys=["review_queue"]),
+                ContractButton(label="View upcoming deadlines", type="agent_routed", prompt="View upcoming deadlines", context_keys=["upcoming_deadlines"]),
             ],
         )
 

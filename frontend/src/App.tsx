@@ -57,7 +57,7 @@ const tenantId = import.meta.env.VITE_DUEDATEHQ_TENANT_ID || "2403c5e1-85ac-4593
 const apiBase = import.meta.env.VITE_DUEDATEHQ_API_BASE || "http://127.0.0.1:8000";
 
 const initialActions: ActionPlan[] = [];
-const openingAssistantMessage = "早上好。Aurora 的 federal income 5 月 15 日到期，最紧急。先处理这个？";
+const openingAssistantMessage = "Good morning. Acme Holdings LLC's federal income deadline is the most urgent item today. Start there?";
 
 export function App() {
   const [currentSection, setCurrentSection] = useState<SectionId>("work");
@@ -74,7 +74,7 @@ export function App() {
     session_id: "frontend-validation-session",
     today: "2026-04-26",
     history_window: [{ actor: "system", text: openingAssistantMessage }],
-    state_summary: "Sarah Johnson is a Texas independent CPA managing about 60 clients. The current opening recommendation is Aurora Tech Labs federal income, due 2026-05-15."
+    state_summary: "Sarah Johnson is a Texas independent CPA managing about 60 clients. The current opening recommendation is Acme Holdings LLC federal income, due 2026-05-15."
   });
   const [busy, setBusy] = useState(false);
   const [apiBootstrapped, setApiBootstrapped] = useState(false);
@@ -308,7 +308,7 @@ export function App() {
     if (!cleaned || busy) return;
     setInput("");
     append("user", userEcho?.trim() || cleaned);
-    const thinkingMessageId = append("status", "__thinking__");
+    const thinkingMessageId = append("status", "Reading the current workspace...");
 
     setBusy(true);
     let streamedMessageId: string | null = null;
@@ -324,10 +324,25 @@ export function App() {
           seen_visual_contexts: seenVisualContexts.slice(0, 6)
         },
         onUpdate: (update) => {
+          if (update.event === "agent_step") {
+            const statusText = [update.label, update.detail].filter(Boolean).join(" - ");
+            if (statusText && thinkingMessageId) replaceMessage(thinkingMessageId, statusText);
+            return;
+          }
           if (update.event === "thinking") {
+            if (update.message && thinkingMessageId) replaceMessage(thinkingMessageId, update.message);
             return;
           }
           if (update.event === "intent_confirmed") {
+            return;
+          }
+          if (update.event === "action_started") {
+            const actionText = update.announce || update.template || "Preparing the workspace";
+            if (thinkingMessageId) replaceMessage(thinkingMessageId, actionText);
+            return;
+          }
+          if (update.event === "render_event") {
+            if (thinkingMessageId) replaceMessage(thinkingMessageId, update.summary || "Rendering the workspace");
             return;
           }
           if (update.event === "workspace_rendered" || update.event === "view_rendered") {

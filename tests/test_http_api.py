@@ -56,17 +56,17 @@ def test_message_chunks_prefer_natural_boundaries():
 
 
 def test_instant_response_prefix_uses_current_view_context():
-    assert _instant_response_prefix("看下今天的情况", {"current_view": {"type": "ListCard"}}).startswith("好的，我帮你看看今天")
-    assert _instant_response_prefix("总体情况如何", {}).startswith("好的，我来处理")
-    assert _instant_response_prefix("最近有什么政策更新吗", {}).startswith("好的，我帮你查一下哪些变化")
-    assert "放在一起比较" not in _instant_response_prefix("最近有什么政策更新吗", {})
+    assert _instant_response_prefix("看下今天的情况", {"current_view": {"type": "ListCard"}}).startswith("Okay, I will check what needs attention")
+    assert _instant_response_prefix("总体情况如何", {}).startswith("Okay, I will handle")
+    assert _instant_response_prefix("最近有什么政策更新吗", {}).startswith("Okay, I will check which changes")
+    assert "side by side" not in _instant_response_prefix("最近有什么政策更新吗", {})
 
 
 def test_thinking_status_is_user_facing_not_internal_log():
-    assert _thinking_status("有什么税务新闻", {}) == "正在读取规则库、notice 和近期 deadline。"
-    assert _thinking_status("最近有什么政策更新吗", {}) == "正在读取规则库、notice 和近期 deadline。"
-    assert "当前页面和后台数据" in _thinking_status("总体情况如何", {"current_view": {"type": "ListCard"}})
-    assert "我先看" not in _thinking_status("总体情况如何", {"current_view": {"type": "ListCard"}})
+    assert _thinking_status("有什么税务新闻", {}) == "Reading the rule library, notices, and recent deadlines."
+    assert _thinking_status("最近有什么政策更新吗", {}) == "Reading the rule library, notices, and recent deadlines."
+    assert "current page" in _thinking_status("总体情况如何", {"current_view": {"type": "ListCard"}})
+    assert "I will first" not in _thinking_status("总体情况如何", {"current_view": {"type": "ListCard"}})
 
 
 def test_fastapi_app_requires_optional_dependency(monkeypatch):

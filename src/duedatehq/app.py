@@ -21,6 +21,7 @@ from .core.repositories import Repositories
 from .core.response_generator import ResponseGenerator
 from .core.session_manager import InMemoryInteractionSessionManager, RedisInteractionSessionManager
 from .core.storage import SQLiteStorage
+from .core.template_tools import TemplateToolset
 
 
 @dataclass(slots=True)
@@ -33,6 +34,7 @@ class App:
     response_generator: ResponseGenerator
     interaction_backend: InteractionBackend
     interaction_sessions: InMemoryInteractionSessionManager | RedisInteractionSessionManager
+    template_tools: TemplateToolset
 
 
 def create_app(db_path: str | None = None) -> App:
@@ -69,6 +71,7 @@ def create_app(db_path: str | None = None) -> App:
     else:
         intent_planner = RuleBasedIntentPlanner(engine)
     response_generator = ResponseGenerator(engine)
+    template_tools = TemplateToolset(engine)
     agent_kernel = (
         ClaudeAgentKernel(engine)
         if os.getenv("DUEDATEHQ_USE_AGENT_KERNEL") == "1" or os.getenv("DUEDATEHQ_USE_AGENT_POLICY") == "1"
@@ -96,6 +99,7 @@ def create_app(db_path: str | None = None) -> App:
         response_generator=response_generator,
         interaction_backend=interaction_backend,
         interaction_sessions=interaction_sessions,
+        template_tools=template_tools,
     )
 
 

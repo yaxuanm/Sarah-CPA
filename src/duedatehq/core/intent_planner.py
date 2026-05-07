@@ -21,8 +21,8 @@ class RuleBasedIntentPlanner:
         if not tenant_id:
             return {
                 "special": "reference_unresolvable",
-                "message": "需要先指定 tenant，才能读取或更新任务。",
-                "options": ["查看今天的待处理事项"],
+                "message": "A tenant is required before I can read or update tasks.",
+                "options": ["View today's queue"],
             }
 
         lowered = text.casefold()
@@ -40,8 +40,8 @@ class RuleBasedIntentPlanner:
                 return {
                     "special": "reference_unresolvable",
                     "intent_label": "deadline_history",
-                    "message": "要看变更原因，需要先选中一条任务，或者直接说客户名称。",
-                    "options": ["查看今天的待处理事项"],
+                    "message": "To review change reasons, select one task first or name the client directly.",
+                    "options": ["View today's queue"],
                     "selectable_items": session.get("selectable_items", []),
                 }
             return self._deadline_history_plan(tenant_id, target["deadline_id"])
@@ -50,8 +50,8 @@ class RuleBasedIntentPlanner:
             return {
                 "special": "reference_unresolvable",
                 "intent_label": "defer",
-                "message": "好的，当前任务不做更改。",
-                "options": ["查看今天的待处理事项", "继续看当前客户"],
+                "message": "Okay. I will leave the current task unchanged.",
+                "options": ["View today's queue", "Continue with current client"],
                 "selectable_items": session.get("selectable_items", []),
             }
 
@@ -66,8 +66,8 @@ class RuleBasedIntentPlanner:
                 return {
                     "special": "reference_unresolvable",
                     "intent_label": "deadline_action_complete",
-                    "message": "我还不知道你要更新哪一项。先打开一项任务，或说“完成第一条”。",
-                    "options": ["查看今天的待处理事项"],
+                    "message": "I do not know which item to update yet. Open a task first, or say 'complete the first item'.",
+                    "options": ["View today's queue"],
                     "selectable_items": session.get("selectable_items", []),
                 }
             return self._deadline_action_plan(tenant_id, target["deadline_id"], "complete")
@@ -80,8 +80,8 @@ class RuleBasedIntentPlanner:
             return {
                 "special": "reference_unresolvable",
                 "intent_label": "defer",
-                "message": "好的，不会标记完成。",
-                "options": ["查看今天的待处理事项", "继续看当前客户"],
+                "message": "Okay. I will not mark anything complete.",
+                "options": ["View today's queue", "Continue with current client"],
                 "selectable_items": session.get("selectable_items", []),
             }
 
@@ -89,8 +89,8 @@ class RuleBasedIntentPlanner:
             return {
                 "special": "reference_unresolvable",
                 "intent_label": "help",
-                "message": "你可以直接问今天先做什么、查看某个客户、完成当前任务，或追问为什么。",
-                "options": ["今天先做什么", "看第一条", "完成当前任务"],
+                "message": "You can ask what to do first today, view a client, complete the current task, or ask why.",
+                "options": ["What should I do first today?", "Open the first item", "Complete the current task"],
                 "selectable_items": session.get("selectable_items", []),
             }
 
@@ -98,7 +98,7 @@ class RuleBasedIntentPlanner:
             return {
                 "special": "render_spec_needed",
                 "intent_label": "ad_hoc_render_spec",
-                "message": "我会根据这个需求生成一个临时工作面，而不是回到通用面板。",
+                "message": "I will generate a temporary workspace for this request instead of returning to a generic panel.",
                 "user_input": text,
                 "selectable_items": session.get("selectable_items", []),
             }
@@ -122,7 +122,7 @@ class RuleBasedIntentPlanner:
         return {
             "special": "render_spec_needed",
             "intent_label": "ad_hoc_render_spec",
-            "message": "我会根据这个需求生成一个临时工作面，而不是回到通用面板。",
+            "message": "I will generate a temporary workspace for this request instead of returning to a generic panel.",
             "user_input": text,
             "selectable_items": session.get("selectable_items", []),
         }
